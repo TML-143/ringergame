@@ -1,299 +1,326 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#050814" />
     <title>Ringer Game</title>
+
+    <link rel="icon" href="ringer_game_icon.png" />
+    <link rel="manifest" href="manifest.webmanifest" />
+
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-7TEG531231"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){ dataLayer.push(arguments); }
+      gtag('js', new Date());
+    </script>
+
     <style>
-*,
-*::before,
-*::after { box-sizing: border-box; }
-
-html, body { margin: 0; padding: 0; width: 100%; height: 100%; }
-
-body {
-  display: flex;
-  justify-content: center;
-  align-items: stretch;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: radial-gradient(circle at top, #151b33 0, #050814 55%, #020308 100%);
-  color: #f5f5f7;
+html{background:var(--bg);}
+:root{
+  --bg:#050814;
+  --panel:rgba(255,255,255,0.04);
+  --panel2:rgba(255,255,255,0.06);
+  --stroke:rgba(255,255,255,0.10);
+  --stroke2:rgba(255,255,255,0.14);
+  --text:#e8eeff;
+  --muted:#9aa2bb;
+  --accent:#f9c74f;
+  --ok:#06d6a0;
+  --bad:#ef476f;
 }
 
-#app {
-  width: 100%;
-  max-width: 1240px;
-  margin: 12px;
-  padding: 12px 12px 18px;
-  border-radius: 20px;
-  background: radial-gradient(circle at top left, #192135 0, #050814 60%, #020308 100%);
-  box-shadow: 0 16px 40px rgba(0,0,0,0.6);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+*{box-sizing:border-box}
+html,body{min-height:100%}
+body{
+  margin:0;
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  background:radial-gradient(1100px 500px at 20% -10%, rgba(249,199,79,0.12), transparent 60%),
+             radial-gradient(900px 500px at 110% 0%, rgba(6,214,160,0.09), transparent 55%),
+             var(--bg);
+  color:var(--text);
 }
 
-.top-bar h1 {
-  margin: 0 0 8px;
-  font-size: 24px;
-  font-weight: 650;
-  text-align: center;
-  letter-spacing: 0.06em;
+#app{max-width:1220px;margin:0 auto;padding:14px}
+
+.top-bar{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:16px;
+  flex-wrap:wrap;
+  padding:12px 14px;
+  background:var(--panel);
+  border:1px solid var(--stroke);
+  border-radius:18px;
+  box-shadow:0 12px 26px rgba(0,0,0,0.30);
 }
 
-#controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: center;
-  align-items: flex-end;
-  padding: 10px;
-  border-radius: 14px;
-  background: rgba(3, 7, 20, 0.9);
-  border: 1px solid rgba(255,255,255,0.05);
+h1{
+  margin:0;
+  font-size:20px;
+  letter-spacing:0.2px;
 }
 
-.control {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 11px;
-  color: #c3c8d8;
+
+#controls{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px 14px;
+  align-items:flex-end;
+  justify-content:flex-end;
 }
 
-.control label {
-  text-transform: uppercase;
-  letter-spacing: 0.09em;
-  font-size: 10px;
-  color: #c3c8d8;
+.control{display:flex;flex-direction:column;gap:6px;min-width:120px}
+.control > label{font-size:12px;color:rgba(232,238,255,0.75)}
+.control input, .control select{
+  appearance:none;
+  background:rgba(255,255,255,0.05);
+  border:1px solid rgba(255,255,255,0.12);
+  border-radius:12px;
+  padding:8px 10px;
+  color:var(--text);
+  outline:none;
 }
 
-.control select,
-.control input[type="number"],
-.control input[type="file"] {
-  font-size: 12px;
-  padding: 3px 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.12);
-  background: #050b1e;
-  color: #f5f5f7;
+
+/* Darker native dropdown menus (Chrome/Windows) */
+select { color-scheme: dark; }
+select option { background-color: #0b1026; color: #e8eeff; }
+
+.control input:focus,.control select:focus{border-color:rgba(249,199,79,0.40);box-shadow:0 0 0 3px rgba(249,199,79,0.14)}
+
+.control-buttons{flex-direction:row;gap:10px;min-width:auto}
+.control-buttons button{
+  border:1px solid rgba(255,255,255,0.14);
+  background:rgba(255,255,255,0.06);
+  color:var(--text);
+  padding:9px 14px;
+  border-radius:14px;
+  cursor:pointer;
+  font-weight:600;
+}
+.control-buttons button:hover{border-color:rgba(249,199,79,0.40)}
+.control-buttons button:disabled{opacity:0.5;cursor:not-allowed}
+
+.toggles{display:flex;gap:10px;flex-wrap:wrap}
+.toggle{
+  display:flex;align-items:center;gap:6px;
+  padding:6px 10px;border-radius:999px;
+  border:1px solid rgba(255,255,255,0.10);
+  background:rgba(255,255,255,0.04);
+  user-select:none;
 }
 
-.control input[type="file"] { padding: 2px 6px; }
+.path-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.pill{
+  border:1px solid rgba(255,255,255,0.12);
+  background:rgba(255,255,255,0.05);
+  color:var(--text);
+  padding:7px 10px;
+  border-radius:999px;
+  cursor:pointer;
+  font-weight:600;
+}
+.pill.active{border-color:rgba(249,199,79,0.45);box-shadow:0 0 0 3px rgba(249,199,79,0.12) inset}
 
-.control-buttons { flex-direction: row; align-items: center; gap: 6px; }
-
-.control-buttons button {
-  font-size: 12px;
-  padding: 5px 14px;
-  border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.18);
-  background: #141b31;
-  color: #f5f5f7;
-  cursor: pointer;
+.bell-picker{
+  display:grid;
+  grid-template-columns:repeat(8,1fr);
+  gap:8px;
+}
+.bell-picker--small{grid-template-columns:repeat(8,1fr)}
+.bell-picker button{
+  border:1px solid rgba(255,255,255,0.10);
+  background:rgba(255,255,255,0.03);
+  color:var(--text);
+  padding:8px 0;
+  border-radius:12px;
+  cursor:pointer;
+  font-weight:700;
+}
+.bell-picker button.selected{
+  border-color:rgba(249,199,79,0.50);
+  box-shadow:0 0 0 3px rgba(249,199,79,0.12) inset;
+  background:rgba(249,199,79,0.10);
 }
 
-#startBtn {
-  background: linear-gradient(135deg, #06d6a0, #08b18d);
-  border-color: rgba(6,214,160,0.9);
-  color: #02120b;
-  font-weight: 750;
+.main{
+  margin-top:12px;
+  display:grid;
+  grid-template-columns: 0.9fr 1.1fr;
+  gap:12px;
+  align-items:start;
 }
 
-.control-buttons button:disabled { opacity: 0.45; cursor: default; }
-
-.bell-picker { display: flex; gap: 4px; padding: 2px 0; }
-
-.bell-picker button {
-  width: 26px;
-  height: 26px;
-  border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.16);
-  background: #10162c;
-  color: #f5f5f7;
-  font-size: 13px;
-  cursor: pointer;
+#leftStack{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  min-height:0;
 }
 
-.bell-picker--small button { width: 24px; height: 24px; font-size: 12px; }
+.main.onecol{grid-template-columns:1fr}
 
-.bell-picker button.selected {
-  background: #f9c74f;
-  color: #111;
-  border-color: #f9c74f;
+.pane{
+  background:var(--panel);
+  border:1px solid var(--stroke);
+  border-radius:18px;
+  overflow:hidden;
+  box-shadow:0 10px 22px rgba(0,0,0,0.24);
 }
 
-.view-control .toggles {
-  display: flex;
-  gap: 10px;
-  padding: 3px 6px;
-  border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.12);
-  background: #050b1e;
+.pane-title{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:12px 14px;
+  border-bottom:1px solid rgba(255,255,255,0.08);
+  font-weight:700;
+  font-size:13px;
+  color:rgba(232,238,255,0.90);
 }
 
-.toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: #e5e7ef;
-  font-size: 11px;
-  letter-spacing: 0.02em;
-  text-transform: none;
+.pane canvas{
+  display:block;
+  width:100%;
+  height:260px;
+}
+#displayCanvas{height:240px}
+#notationCanvas{height:540px}
+
+.pane-span{grid-column:1 / -1}
+.pane-span #stats{padding:12px 14px}
+
+.hidden{display:none !important}
+
+.footer{
+  margin-top:12px;
+  padding:10px 14px;
+  border-radius:18px;
+  border:1px solid rgba(255,255,255,0.10);
+  background:rgba(255,255,255,0.03);
+  color:rgba(232,238,255,0.78);
+  font-size:12px;
 }
 
-.toggle input { accent-color: #f9c74f; }
-
-.path-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 6px;
-  border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.12);
-  background: #050b1e;
+.summary{
+  padding:10px 12px;
+  border-radius:14px;
+  background:rgba(255,255,255,0.03);
+  border:1px solid rgba(255,255,255,0.08);
+  margin-bottom:10px;
+  font-weight:700;
 }
 
-.pill {
-  font-size: 11px;
-  padding: 3px 8px;
-  border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.16);
-  background: #10162c;
-  color: #f5f5f7;
-  cursor: pointer;
+#stats table{
+  width:100%;
+  border-collapse:separate;
+  border-spacing:0;
+}
+#stats th,#stats td{
+  text-align:right;
+  padding:9px 10px;
+  font-variant-numeric:tabular-nums;
+  border-bottom:1px solid rgba(255,255,255,0.06);
+}
+#stats th{color:rgba(232,238,255,0.75);font-size:12px;font-weight:700}
+#stats td:first-child,#stats th:first-child{text-align:left}
+
+.stats-info{
+  margin-top:10px;
+  color:rgba(232,238,255,0.70);
+  font-size:12px;
+  line-height:1.4;
 }
 
-.pill.active {
-  background: rgba(249,199,79,0.92);
-  border-color: rgba(249,199,79,0.92);
-  color: #111;
-  font-weight: 650;
+.hit-window-control{
+  display:flex;align-items:center;gap:10px;font-weight:600;
+}
+.hit-window-control label{font-size:12px;color:rgba(232,238,255,0.72);font-weight:700}
+.hit-window-control select{padding:6px 10px;border-radius:12px}
+
+@media (max-width: 980px){
+  .main{grid-template-columns:1fr}
+  #notationCanvas{height:460px}
+}
+    
+
+/* Menu hide toggle */
+.top-bar{ position:relative; }
+.menu-toggle{
+  position:absolute;
+  top:12px;
+  right:18px;
+  width:36px;
+  height:36px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,0.12);
+  background:rgba(255,255,255,0.06);
+  color:#e8eeff;
+  cursor:pointer;
+  display:grid;
+  place-items:center;
+  font-size:18px;
+  line-height:1;
+}
+.menu-toggle:hover{ background:rgba(255,255,255,0.10); }
+.menu-toggle:active{ transform:translateY(1px); }
+
+.menu-hidden #controls .control:not(.control-buttons){
+  display:none !important;
+}
+.menu-hidden #controls{
+  gap:10px;
+}
+.menu-hidden .menu-toggle{
+  transform:rotate(180deg);
 }
 
-.main { display: grid; gap: 10px; }
-
-.main.layout-sn {
-  grid-template-columns: 0.95fr 1.55fr;
-  grid-template-areas: "spot notation" "stats stats";
+/* Countdown overlay (Rounds count-up) */
+.count-overlay{
+  position:fixed;
+  left:50%;
+  top:84px;
+  transform:translateX(-50%);
+  z-index:60;
+  display:none;
+  pointer-events:none;
+}
+.count-overlay .bubble{
+  min-width:110px;
+  padding:18px 20px 14px;
+  border-radius:20px;
+  border:1px solid rgba(255,255,255,0.14);
+  background:rgba(5,8,20,0.78);
+  box-shadow:0 20px 70px rgba(0,0,0,0.55);
+  text-align:center;
+}
+.count-overlay .num{
+  font:800 64px/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  color:#f9c74f;
+}
+.count-overlay .lbl{
+  margin-top:8px;
+  font:600 12px/1.1 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,"Helvetica Neue",Arial;
+  color:rgba(232,238,255,0.82);
+  letter-spacing:0.06em;
+  text-transform:uppercase;
 }
 
-.main.layout-s { grid-template-columns: 1fr; grid-template-areas: "spot" "stats"; }
-.main.layout-n { grid-template-columns: 1fr; grid-template-areas: "notation" "stats"; }
-.main.layout-none { grid-template-columns: 1fr; grid-template-areas: "stats"; }
 
-#spotlightPane { grid-area: spot; }
-#notationPane { grid-area: notation; }
-#statsPane { grid-area: stats; }
+.menu-hidden #controls{ padding-top:46px; }
 
-.pane {
-  border-radius: 16px;
-  background: radial-gradient(circle at top, #1a233c 0, #050814 65%);
-  border: 1px solid rgba(255,255,255,0.08);
-  overflow: hidden;
-}
-
-.pane-title {
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: #b7bdd0;
-  padding: 8px 10px;
-  border-bottom: 1px solid rgba(255,255,255,0.08);
-  background: rgba(0,0,0,0.10);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.hit-window-control {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: #c3c8d8;
-}
-
-.hit-window-control select {
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.16);
-  background: #050b1e;
-  color: #f5f5f7;
-}
-
-#spotlightCanvas { width: 100%; height: 170px; display: block; touch-action: manipulation; }
-#notationCanvas { width: 100%; height: 440px; display: block; }
-
-.bell-pads {
-  display: flex;
-  gap: 8px;
-  justify-content: center;
-  align-items: center;
-  padding: 10px 10px 12px;
-  border-top: 1px solid rgba(255,255,255,0.08);
-  background: rgba(0,0,0,0.08);
-}
-
-.bell-pads button {
-  width: 44px;
-  height: 38px;
-  border-radius: 12px;
-  border: 1px solid rgba(255,255,255,0.16);
-  background: #0b1126;
-  color: #e8eeff;
-  font-size: 18px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.bell-pads button:active { transform: translateY(1px); }
-.bell-pads button.live { border-color: rgba(6,214,160,0.40); }
-
-#stats { padding: 8px 10px 12px; font-size: 12px; overflow-x: auto; }
-#stats table { width: 100%; border-collapse: collapse; }
-
-#stats th, #stats td {
-  padding: 3px 8px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-#stats th:first-child, #stats td:first-child { text-align: left; }
-#stats thead { border-bottom: 1px solid rgba(255,255,255,0.16); }
-#stats tbody tr:nth-child(even) { background: rgba(255,255,255,0.02); }
-
-.summary { margin-bottom: 6px; color: #dce0ef; }
-.stats-info { margin-top: 6px; font-size: 11px; color: #c2c8dd; }
-
-.footer { margin-top: 4px; text-align: center; font-size: 11px; color: #a7aec5; }
-.hidden { display: none !important; }
-
-@media (max-width: 980px) {
-  #app { margin: 0; border-radius: 0; }
-  .main.layout-sn { grid-template-columns: 1fr; grid-template-areas: "spot" "notation" "stats"; }
-  #spotlightCanvas { height: 160px; }
-  #notationCanvas { height: 390px; }
-  #controls { justify-content: flex-start; }
-  .view-control .toggles { flex-wrap: wrap; }
-}
-
-@media (max-width: 520px) {
-  #notationCanvas { height: 350px; }
-  .path-row { flex-wrap: wrap; border-radius: 14px; }
-  .bell-pads { gap: 6px; }
-  .bell-pads button { width: 40px; height: 36px; font-size: 17px; }
-}
-
-    </style>
+.count-overlay .num.ready{ font-size:40px; letter-spacing:0.02em; }
+</style>
   </head>
   <body>
     <div id="app">
+      <div id="countOverlay" class="count-overlay" aria-hidden="true"></div>
       <header class="top-bar">
         <h1>Ringer Game</h1>
+        <button id="menuToggle" class="menu-toggle" type="button" aria-label="Toggle menu" title="Hide menu">▾</button>
 
         <div id="controls">
           <div class="control">
@@ -312,7 +339,19 @@ body {
               <option value="4">4</option>
               <option value="5">5</option>
               <option value="6" selected>6</option>
+              <option value="7">7</option>
+              <option value="8">8</option>
             </select>
+          </div>
+
+          <div class="control">
+            <label for="scaleSelect">Scale</label>
+            <select id="scaleSelect"></select>
+          </div>
+
+          <div class="control">
+            <label for="octaveSelect">Octave</label>
+            <select id="octaveSelect"></select>
           </div>
 
           <div class="control">
@@ -333,6 +372,7 @@ body {
           <div class="control view-control">
             <label>View</label>
             <div class="toggles" role="group" aria-label="View toggles">
+              <label class="toggle"><input id="viewDisplay" type="checkbox" checked /> Display</label>
               <label class="toggle"><input id="viewSpotlight" type="checkbox" checked /> Spotlight</label>
               <label class="toggle"><input id="viewNotation" type="checkbox" checked /> Notation</label>
               <label class="toggle"><input id="viewStats" type="checkbox" checked /> Stats</label>
@@ -360,12 +400,18 @@ body {
         </div>
       </header>
 
-      <main id="main" class="main layout-sn">
-        <section id="spotlightPane" class="pane">
-          <div class="pane-title"><span>Spotlight</span></div>
-          <canvas id="spotlightCanvas" aria-label="Spotlight"></canvas>
-          <div id="bellPads" class="bell-pads" aria-label="Bell pads"></div>
-        </section>
+      <main id="main" class="main">
+        <div id="leftStack">
+          <section id="displayPane" class="pane">
+            <div class="pane-title"><span>Display</span></div>
+            <canvas id="displayCanvas" aria-label="Display"></canvas>
+          </section>
+
+          <section id="spotlightPane" class="pane">
+            <div class="pane-title"><span>Spotlight</span></div>
+            <canvas id="spotlightCanvas" aria-label="Spotlight"></canvas>
+          </section>
+        </div>
 
         <section id="notationPane" class="pane">
           <div class="pane-title"><span>Notation</span></div>
@@ -378,9 +424,9 @@ body {
             <div class="hit-window-control">
               <label for="hitWindowSelect">Hit window</label>
               <select id="hitWindowSelect">
-                <option value="tight">Tight (±120&nbsp;ms)</option>
-                <option value="medium" selected>Medium (±180&nbsp;ms)</option>
-                <option value="loose">Loose (±240&nbsp;ms)</option>
+                <option value="tight">Tight (±120 ms)</option>
+                <option value="medium" selected>Medium (±180 ms)</option>
+                <option value="loose">Loose (±240 ms)</option>
               </select>
             </div>
           </div>
@@ -389,7 +435,7 @@ body {
       </main>
 
       <footer class="footer">
-        <p id="hint">Keys 1–6 ring bells. On touch screens: tap the highlighted bell in Spotlight, or use the bell pads. Non-live bells are rung by bots. Only your selected live bells are scored.</p>
+        <p id="hint">Keys 1–8 ring bells. Tap/click bells in the Display. Non-live bells are rung by bots. Only your selected live bells are scored.</p>
       </footer>
     </div>
 
@@ -403,28 +449,125 @@ body {
   const HIT_WINDOWS = { tight: 120, medium: 180, loose: 240 };
   const DEFAULT_HIT_WINDOW = 'medium';
 
+  // === Analytics (GA4) ===
+  const GA_ID = 'G-7TEG531231';
+  const SITE_VERSION = 'v10_display_scales';
+
+  function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
+  function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
+  function safeSetLS(key, val) { try { localStorage.setItem(key, val); } catch (_) {} }
+
+  function rid(prefix) {
+    try {
+      if (window.crypto && crypto.getRandomValues) {
+        const b = new Uint8Array(16);
+        crypto.getRandomValues(b);
+        let s = '';
+        for (let i = 0; i < b.length; i++) s += b[i].toString(16).padStart(2, '0');
+        return prefix + s;
+      }
+    } catch (_) {}
+    return prefix + Math.random().toString(16).slice(2) + Date.now().toString(16);
+  }
+
+  const analytics = (function () {
+    const LS_VISITOR = 'rg_visitor_id_v1';
+    const LS_TOTALS = 'rg_visitor_totals_v1';
+
+    const sessionId = rid('s_');
+
+    let visitorId = safeGetLS(LS_VISITOR);
+    if (!visitorId) {
+      visitorId = rid('v_');
+      safeSetLS(LS_VISITOR, visitorId);
+    }
+
+    const defaults = {
+      plays_total: 0,
+      seconds_total: 0,
+      targets_total: 0,
+      hits_total: 0,
+      misses_total: 0,
+      score_total: 0,
+      pr_combo_global: 0
+    };
+
+    function loadTotals() {
+      const raw = safeGetLS(LS_TOTALS);
+      const parsed = raw ? safeJsonParse(raw) : null;
+      const t = Object.assign({}, defaults, parsed || {});
+      for (const k of Object.keys(defaults)) t[k] = Number(t[k] || 0);
+      return t;
+    }
+
+    let totals = loadTotals();
+
+    function configure() {
+      try {
+        if (typeof window.gtag === 'function') {
+          window.gtag('config', GA_ID, {
+            user_id: visitorId,
+            allow_google_signals: false,
+            allow_ad_personalization_signals: false
+          });
+        }
+      } catch (_) {}
+    }
+
+    function track(name, params) {
+      try {
+        if (typeof window.gtag === 'function') window.gtag('event', name, params || {});
+      } catch (_) {}
+    }
+
+    function setUserProps(props) {
+      try {
+        if (typeof window.gtag === 'function') window.gtag('set', 'user_properties', props || {});
+      } catch (_) {}
+    }
+
+    function saveTotals() { safeSetLS(LS_TOTALS, JSON.stringify(totals)); }
+    function refreshTotals() { totals = loadTotals(); return totals; }
+
+    return { visitorId, sessionId, totals, configure, track, setUserProps, saveTotals, refreshTotals };
+  })();
+
+  // === DOM ===
   const main = document.getElementById('main');
+  const leftStack = document.getElementById('leftStack');
+
+  const displayPane = document.getElementById('displayPane');
   const spotlightPane = document.getElementById('spotlightPane');
   const notationPane = document.getElementById('notationPane');
   const statsPane = document.getElementById('statsPane');
 
+  const displayCanvas = document.getElementById('displayCanvas');
+  const dctx = displayCanvas.getContext('2d');
   const spotlightCanvas = document.getElementById('spotlightCanvas');
   const sctx = spotlightCanvas.getContext('2d');
   const notationCanvas = document.getElementById('notationCanvas');
   const nctx = notationCanvas.getContext('2d');
 
-  const bellPads = document.getElementById('bellPads');
-
   const methodSelect = document.getElementById('methodSelect');
   const bellCountSelect = document.getElementById('bellCount');
+  const scaleSelect = document.getElementById('scaleSelect');
+  const octaveSelect = document.getElementById('octaveSelect');
+
   const liveCountSelect = document.getElementById('liveCount');
   const bellPicker = document.getElementById('bellPicker');
   const bpmInput = document.getElementById('bpmInput');
   const fileInput = document.getElementById('fileInput');
   const startBtn = document.getElementById('startBtn');
   const stopBtn = document.getElementById('stopBtn');
+  const menuToggle = document.getElementById('menuToggle');
+  if (menuToggle) {
+    menuToggle.addEventListener('click', () => {
+      document.body.classList.toggle('menu-hidden');
+    });
+  }
   const statsDiv = document.getElementById('stats');
 
+  const viewDisplay = document.getElementById('viewDisplay');
   const viewSpotlight = document.getElementById('viewSpotlight');
   const viewNotation = document.getElementById('viewNotation');
   const viewStats = document.getElementById('viewStats');
@@ -435,30 +578,85 @@ body {
 
   const hitWindowSelect = document.getElementById('hitWindowSelect');
 
+  // === Musical scales (8 tones incl octave) ===
+  // Intervals are semitones ascending from root to octave.
+  const SCALE_LIBRARY = [
+    { key: 'C_major', label: 'C major', root: 'C', intervals: [0,2,4,5,7,9,11,12] },
+    { key: 'Cs_major', label: 'C# major', root: 'C#', intervals: [0,2,4,5,7,9,11,12] },
+    { key: 'D_major', label: 'D major', root: 'D', intervals: [0,2,4,5,7,9,11,12] },
+    { key: 'Ef_major', label: 'Eb major', root: 'Eb', intervals: [0,2,4,5,7,9,11,12] },
+    { key: 'E_major', label: 'E major', root: 'E', intervals: [0,2,4,5,7,9,11,12] },
+    { key: 'F_major', label: 'F major', root: 'F', intervals: [0,2,4,5,7,9,11,12] },
+    { key: 'Fs_major', label: 'F# major', root: 'F#', intervals: [0,2,4,5,7,9,11,12] },
+    { key: 'G_major', label: 'G major', root: 'G', intervals: [0,2,4,5,7,9,11,12] },
+    { key: 'Af_major', label: 'Ab major', root: 'Ab', intervals: [0,2,4,5,7,9,11,12] },
+    { key: 'A_major', label: 'A major', root: 'A', intervals: [0,2,4,5,7,9,11,12] },
+    { key: 'Bf_major', label: 'Bb major', root: 'Bb', intervals: [0,2,4,5,7,9,11,12] },
+    { key: 'B_major', label: 'B major', root: 'B', intervals: [0,2,4,5,7,9,11,12] },
+    { key: 'C_minor', label: 'C minor', root: 'C', intervals: [0,2,3,5,7,8,10,12] },
+    { key: 'Cs_minor', label: 'C# minor', root: 'C#', intervals: [0,2,3,5,7,8,10,12] },
+    { key: 'D_minor', label: 'D minor', root: 'D', intervals: [0,2,3,5,7,8,10,12] },
+    { key: 'Ef_minor', label: 'Eb minor', root: 'Eb', intervals: [0,2,3,5,7,8,10,12] },
+    { key: 'E_minor', label: 'E minor', root: 'E', intervals: [0,2,3,5,7,8,10,12] },
+    { key: 'F_minor', label: 'F minor', root: 'F', intervals: [0,2,3,5,7,8,10,12] },
+    { key: 'Fs_minor', label: 'F# minor', root: 'F#', intervals: [0,2,3,5,7,8,10,12] },
+    { key: 'G_minor', label: 'G minor', root: 'G', intervals: [0,2,3,5,7,8,10,12] },
+    { key: 'Af_minor', label: 'Ab minor', root: 'Ab', intervals: [0,2,3,5,7,8,10,12] },
+    { key: 'A_minor', label: 'A minor', root: 'A', intervals: [0,2,3,5,7,8,10,12] },
+    { key: 'Bf_minor', label: 'Bb minor', root: 'Bb', intervals: [0,2,3,5,7,8,10,12] },
+    { key: 'B_minor', label: 'B minor', root: 'B', intervals: [0,2,3,5,7,8,10,12] }
+  ];
+
+  const NOTE_TO_SEMI = { 'C':0,'C#':1,'Db':1,'D':2,'D#':3,'Eb':3,'E':4,'F':5,'F#':6,'Gb':6,'G':7,'G#':8,'Ab':8,'A':9,'A#':10,'Bb':10,'B':11 };
+
+  function noteToMidi(note, octave) {
+    const semi = NOTE_TO_SEMI[note];
+    // MIDI: C-1 = 0, C4 = 60
+    return (octave + 1) * 12 + semi;
+  }
+  function midiToFreq(midi) {
+    return 440 * Math.pow(2, (midi - 69) / 12);
+  }
+
+  // === Game state ===
   const state = {
     method: 'plainhunt',
     stage: 6,
     liveCount: 2,
     liveBells: [1, 2],
     bpm: 80,
+
+    // musical settings
+    scaleKey: 'C_major',
+    octaveC: 3, // UI shows C1..C6
+    bellFreq: [],
+
     pathBells: [],
     rows: [],
     customRows: null,
     phase: 'idle',
+
     countFirstBeatMs: 0,
     countExec: 0,
     countSched: 0,
     methodStartMs: 0,
+
     schedBeatIndex: 0,
     execBeatIndex: 0,
+
     targets: [],
+
     elapsedMs: 0,
     runStartPerfMs: 0,
+
     statsByBell: {},
-    globalScore: 0,
     comboCurrentGlobal: 0,
     comboBestGlobal: 0,
-    hitWindow: DEFAULT_HIT_WINDOW
+    hitWindow: DEFAULT_HIT_WINDOW,
+
+    currentPlay: null, // { playId, began }
+
+    lastRingAtMs: {}, // bell -> ms (intended beat time or actual key time)
   };
 
   let audioCtx = null;
@@ -467,6 +665,7 @@ body {
   function perfNow() { return performance.now(); }
   function getHitWindowMs() { return HIT_WINDOWS[state.hitWindow] || HIT_WINDOWS[DEFAULT_HIT_WINDOW]; }
 
+  // === Audio ===
   function ensureAudio() {
     if (!audioCtx) {
       const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -474,28 +673,36 @@ body {
     }
     if (audioCtx.state === 'suspended') audioCtx.resume();
   }
-  function closeAudio() {
-    if (audioCtx) { try { audioCtx.close(); } catch (_) {} audioCtx = null; }
-  }
+  function closeAudio() { if (audioCtx) { try { audioCtx.close(); } catch (_) {} audioCtx = null; } }
   function msToAudioTime(whenMs) {
     ensureAudio();
     const deltaMs = Math.max(0, whenMs - perfNow());
     return audioCtx.currentTime + deltaMs / 1000;
   }
+
+  function getBellFrequency(bell) {
+    const i = bell - 1;
+    return state.bellFreq[i] || 440;
+  }
+
   function playBellAt(bell, whenMs) {
     ensureAudio();
     const t = msToAudioTime(whenMs);
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
+
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(245 + bell * 44, t);
+    osc.frequency.setValueAtTime(getBellFrequency(bell), t);
+
     gain.gain.setValueAtTime(0.0001, t);
     gain.gain.exponentialRampToValueAtTime(0.16, t + 0.01);
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+
     osc.connect(gain).connect(audioCtx.destination);
     osc.start(t);
     osc.stop(t + 0.32);
   }
+
   function playTickAt(whenMs) {
     ensureAudio();
     const t = msToAudioTime(whenMs);
@@ -511,6 +718,7 @@ body {
     osc.stop(t + 0.07);
   }
 
+  // === Canvas helpers ===
   function fitCanvas(el, ctx) {
     const rect = el.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
@@ -531,7 +739,7 @@ body {
     ctx.closePath();
   }
 
-  // Methods
+  // === Methods ===
   function applyX(row, stage) {
     const next = row.slice();
     for (let i = 0; i < stage - 1; i += 2) { const tmp = next[i]; next[i] = next[i+1]; next[i+1] = tmp; }
@@ -587,7 +795,48 @@ body {
     else state.rows = makeLibraryRows(state.method, state.stage);
   }
 
-  // Selection
+  function methodLabel() {
+    if (state.method === 'custom') return 'Custom';
+    if (state.method === 'plainhunt') return 'Plain Hunt';
+    if (state.method === 'plainbob') return 'Plain Bob (variation)';
+    if (state.method === 'grandsire') return 'Grandsire (variation)';
+    return state.method;
+  }
+
+  // === Scale -> bell frequencies ===
+  function getScaleDef() { return SCALE_LIBRARY.find(s => s.key === state.scaleKey) || SCALE_LIBRARY[0]; }
+
+  function downsampleIntervals(intervals, stage) {
+    if (stage <= 1) return [intervals[0]];
+    const out = [];
+    const last = intervals.length - 1;
+    for (let i = 0; i < stage; i++) {
+      const t = i / (stage - 1);
+      const idx = Math.round(t * last);
+      out.push(intervals[idx]);
+    }
+    out[0] = intervals[0];
+    out[out.length - 1] = intervals[last];
+    return out;
+  }
+
+  function rebuildBellFrequencies() {
+    const def = getScaleDef();
+    const rootMidi = noteToMidi(def.root, state.octaveC);
+    const rootFreq = midiToFreq(rootMidi);
+    const intervals = downsampleIntervals(def.intervals, state.stage); // ascending low->high
+    const freq = [];
+    for (let bell = 1; bell <= state.stage; bell++) {
+      const off = intervals[state.stage - bell]; // bell 1 highest
+      freq.push(rootFreq * Math.pow(2, off / 12));
+    }
+    state.bellFreq = freq;
+  }
+
+  function currentTrebleToneLabel() { return getScaleDef().label; }
+  function currentOctaveLabel() { return 'C' + String(state.octaveC); }
+
+  // === Selection ===
   function ensureLiveBells() {
     const max = state.liveCount;
     const chosen = [];
@@ -600,6 +849,7 @@ body {
     if (!chosen.length) for (let b = 1; b <= state.stage && chosen.length < max; b++) chosen.push(b);
     state.liveBells = chosen;
   }
+
   function rebuildLiveCountOptions() {
     liveCountSelect.innerHTML = '';
     for (let n = 1; n <= state.stage; n++) {
@@ -611,6 +861,7 @@ body {
     state.liveCount = clamp(state.liveCount, 1, state.stage);
     liveCountSelect.value = String(state.liveCount);
   }
+
   function rebuildBellPicker() {
     ensureLiveBells();
     bellPicker.innerHTML = '';
@@ -632,7 +883,6 @@ body {
         }
         state.liveBells = list;
         rebuildBellPicker();
-        rebuildBellPads();
         resetStats();
       });
       if (state.liveBells.includes(b)) btn.classList.add('selected');
@@ -673,62 +923,44 @@ body {
   }
   function setPathNone() { state.pathBells = []; rebuildPathPicker(); }
   function setPathAll() { state.pathBells = []; for (let b=1; b<=state.stage; b++) state.pathBells.push(b); rebuildPathPicker(); }
+  function getPathMode() {
+    if (state.pathBells.length === 0) return 'none';
+    if (state.pathBells.length === state.stage) return 'all';
+    return 'custom';
+  }
 
+  // === View layout ===
   function syncViewLayout() {
+    displayPane.classList.toggle('hidden', !viewDisplay.checked);
     spotlightPane.classList.toggle('hidden', !viewSpotlight.checked);
     notationPane.classList.toggle('hidden', !viewNotation.checked);
     statsPane.classList.toggle('hidden', !viewStats.checked);
 
-    const s = viewSpotlight.checked, n = viewNotation.checked;
-    main.classList.remove('layout-sn', 'layout-s', 'layout-n', 'layout-none');
-    if (s && n) main.classList.add('layout-sn');
-    else if (s && !n) main.classList.add('layout-s');
-    else if (!s && n) main.classList.add('layout-n');
-    else main.classList.add('layout-none');
+    const leftVisible = viewDisplay.checked || viewSpotlight.checked;
+    leftStack.classList.toggle('hidden', !leftVisible);
+
+    const rightVisible = viewNotation.checked;
+    main.classList.toggle('onecol', !(leftVisible && rightVisible));
   }
 
-  function applyCustomRows(rows, stage) {
-    state.method = 'custom';
-    methodSelect.value = 'custom';
-    state.customRows = rows.slice();
-    state.stage = stage;
-    bellCountSelect.value = String(stage);
-    rebuildLiveCountOptions();
-    ensureLiveBells();
-    rebuildBellPicker();
-    rebuildBellPads();
-    ensurePathBells();
-    rebuildPathPicker();
-    computeRows();
-    resetStats();
-  }
+  // === Visual ring flash ===
+  function markRung(bell, atMs) { state.lastRingAtMs[bell] = atMs; }
 
-  // Touch-friendly pads
+  // === Bell ring action (user) ===
   function ringBell(bell) {
     const now = perfNow();
+    markRung(bell, now);
     playBellAt(bell, now);
     if (state.phase === 'running') scoreHit(bell, now);
   }
-  function rebuildBellPads() {
-    bellPads.innerHTML = '';
-    for (let b = 1; b <= state.stage; b++) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.textContent = String(b);
-      if (state.liveBells.includes(b)) btn.classList.add('live');
-      btn.addEventListener('pointerdown', (e) => { e.preventDefault(); ringBell(b); });
-      bellPads.appendChild(btn);
-    }
-  }
 
-  // Stats and scoring
+  // === Stats ===
   function resetStats() {
     state.statsByBell = {};
     for (let b = 1; b <= state.stage; b++) {
       state.statsByBell[b] = { bell: b, hits: 0, misses: 0, sumAbsDelta: 0, sumSignedDelta: 0, score: 0, comboCurrent: 0, comboBest: 0 };
     }
     state.targets.length = 0;
-    state.globalScore = 0;
     state.comboCurrentGlobal = 0;
     state.comboBestGlobal = 0;
   }
@@ -742,6 +974,12 @@ body {
   }
 
   function recordTarget(bell, timeMs) { state.targets.push({ bell, timeMs, judged: false, hit: false }); }
+
+  function getHitWindowPoints(absDelta, windowMs) {
+    const tight = windowMs * 0.4;
+    const med = windowMs * 0.75;
+    return (absDelta <= tight) ? 12 : (absDelta <= med ? 11 : 10);
+  }
 
   function updateMisses(nowMs) {
     const live = new Set(state.liveBells);
@@ -760,6 +998,21 @@ body {
     }
     const cutoff = nowMs - 8000;
     while (state.targets.length && state.targets[0].timeMs < cutoff && state.targets[0].judged) state.targets.shift();
+  }
+
+  function finalizePendingAsMisses(nowMs) {
+    state.targets = state.targets.filter(t => t.timeMs <= nowMs);
+    const live = new Set(state.liveBells);
+    for (const t of state.targets) {
+      if (t.judged) continue;
+      t.judged = true;
+      if (live.has(t.bell)) {
+        const s = state.statsByBell[t.bell];
+        s.misses += 1;
+        s.comboCurrent = 0;
+        state.comboCurrentGlobal = 0;
+      }
+    }
   }
 
   function scoreHit(bell, timeMs) {
@@ -789,12 +1042,9 @@ body {
     s.sumAbsDelta += absDelta;
     s.sumSignedDelta += deltaMs;
 
-    const tight = windowMs * 0.4;
-    const med = windowMs * 0.75;
-    const points = (absDelta <= tight) ? 12 : (absDelta <= med ? 11 : 10);
+    const points = getHitWindowPoints(absDelta, windowMs);
 
     s.score += points;
-    state.globalScore += points;
 
     s.comboCurrent += 1;
     if (s.comboCurrent > s.comboBest) s.comboBest = s.comboCurrent;
@@ -810,33 +1060,44 @@ body {
 
   function countdownDisplay(nowMs) {
     if (state.phase !== 'countdown') return null;
-    const remaining = Math.max(0, COUNTDOWN_BEATS - state.countExec);
-    if (remaining === 0) { if (nowMs < state.methodStartMs + 120) return 'GO'; return null; }
-    return String(remaining);
+    const beatMs = 60000 / state.bpm;
+
+    // Before the first count-in beat, show Ready (no sound yet).
+    if (nowMs < state.countFirstBeatMs) return 'Ready';
+
+    const k = Math.floor((nowMs - state.countFirstBeatMs) / beatMs); // 0-based count-in beat
+    if (k >= 0 && k < state.stage) return String(k + 1);
+    return null;
   }
 
-  // Spotlight
+  const countOverlay = document.getElementById('countOverlay');
+  function renderCountdownOverlay(nowMs) {
+    if (!countOverlay) return;
+    const cd = countdownDisplay(nowMs);
+    if (!cd) { countOverlay.style.display = 'none'; countOverlay.innerHTML = ''; return; }
+
+    countOverlay.style.display = 'block';
+
+    if (cd === 'Ready') {
+      countOverlay.innerHTML =
+        '<div class="bubble"><div class="num ready">Ready</div><div class="lbl">Count in</div></div>';
+      return;
+    }
+
+    countOverlay.innerHTML =
+      '<div class="bubble"><div class="num">' + cd + '</div><div class="lbl">Count in</div></div>';
+  }
+
+
+  // === Spotlight (cue only; not clickable) ===
   function drawSpotlight(nowMs) {
     const { W, H } = fitCanvas(spotlightCanvas, sctx);
     sctx.clearRect(0, 0, W, H);
 
     const cd = countdownDisplay(nowMs);
-    if (cd) {
-      sctx.save();
-      sctx.fillStyle = 'rgba(255,255,255,0.05)';
-      sctx.strokeStyle = 'rgba(255,255,255,0.10)';
-      roundRect(sctx, 14, 12, W - 28, H - 24, 16);
-      sctx.fill(); sctx.stroke();
-      sctx.font = '76px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
-      sctx.textAlign = 'center';
-      sctx.textBaseline = 'middle';
-      sctx.fillStyle = (cd === 'GO') ? '#06d6a0' : '#f9c74f';
-      sctx.fillText(cd, W / 2, H / 2);
-      sctx.restore();
-      return;
-    }
-
     if (!state.rows.length) return;
+
+    // countdown badge intentionally omitted (overlay handles count-in)
 
     const stage = state.stage;
     const totalBeats = state.rows.length * stage;
@@ -870,7 +1131,7 @@ body {
         const isLive = state.liveBells.includes(bell);
 
         if (!faded && i === highlightPos) {
-          sctx.fillStyle = '#f9c74f';
+          sctx.fillStyle = (cd === 'Ready') ? 'rgba(232,238,255,0.86)' : '#f9c74f';
           roundRect(sctx, i * cellW + 4, 6, cellW - 8, rowBlockH - 12, 10);
           sctx.fill();
           sctx.fillStyle = '#10162c';
@@ -885,44 +1146,102 @@ body {
     drawRow(nextRow, padY + rowBlockH + gapY, -1, true);
   }
 
-  function spotlightHighlightedBell() {
-    if (state.phase !== 'running') return null;
-    if (!state.rows.length) return null;
-    const stage = state.stage;
-    const totalBeats = state.rows.length * stage;
-    const strikeIdx = clamp(state.execBeatIndex - 1, 0, Math.max(0, totalBeats - 1));
-    const rowIdx = Math.floor(strikeIdx / stage);
-    const pos = strikeIdx % stage;
-    const row = state.rows[rowIdx] || state.rows[0];
-    return { bell: row[pos], pos };
+  // === Display (polygon; primary touch control) ===
+  function computeDisplayPoints(W, H) {
+    const cx = W / 2;
+    const cy = H / 2;
+    const r = Math.min(W, H) * 0.34;
+    const pts = [];
+    for (let b = 1; b <= state.stage; b++) {
+      const ang = -Math.PI / 2 + (b - 1) * (2 * Math.PI / state.stage);
+      pts.push({ bell: b, x: cx + Math.cos(ang) * r, y: cy + Math.sin(ang) * r });
+    }
+    return { cx, cy, r, pts };
   }
 
-  function spotlightHitTest(clientX, clientY) {
-    if (state.phase !== 'running') return null;
-    const info = spotlightHighlightedBell();
-    if (!info) return null;
+  function drawDisplay(nowMs) {
+    const { W, H } = fitCanvas(displayCanvas, dctx);
+    dctx.clearRect(0, 0, W, H);
 
-    const rect = spotlightCanvas.getBoundingClientRect();
+    dctx.save();
+    dctx.fillStyle = 'rgba(255,255,255,0.03)';
+    dctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    roundRect(dctx, 14, 12, W - 28, H - 24, 16);
+    dctx.fill(); dctx.stroke();
+    dctx.restore();
+
+    const geom = computeDisplayPoints(W, H);
+
+    const ringRadius = Math.max(18, Math.min(34, Math.floor(Math.min(W, H) * 0.06)));
+    const fontSize = Math.max(16, Math.min(26, Math.floor(ringRadius * 0.9)));
+
+    dctx.save();
+    dctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    dctx.setLineDash([4, 6]);
+    dctx.beginPath();
+    geom.pts.forEach((p, i) => { if (i === 0) dctx.moveTo(p.x, p.y); else dctx.lineTo(p.x, p.y); });
+    dctx.closePath();
+    dctx.stroke();
+    dctx.setLineDash([]);
+    dctx.restore();
+
+    for (const p of geom.pts) {
+      const bell = p.bell;
+      const isLive = state.liveBells.includes(bell);
+      const t = state.lastRingAtMs[bell] || -1e9;
+      const age = nowMs - t;
+
+      let glow = 0;
+      if (age >= 0 && age <= 260) glow = 1 - (age / 260);
+      if (age < 0 && age >= -60) glow = 0.25;
+
+      dctx.save();
+      dctx.fillStyle = 'rgba(255,255,255,0.05)';
+      dctx.strokeStyle = isLive ? 'rgba(249,199,79,0.50)' : 'rgba(255,255,255,0.12)';
+      dctx.lineWidth = 2;
+      dctx.beginPath();
+      dctx.arc(p.x, p.y, ringRadius, 0, Math.PI * 2);
+      dctx.fill();
+      dctx.stroke();
+
+      if (glow > 0) {
+        dctx.fillStyle = `rgba(249,199,79,${0.18 + glow * 0.30})`;
+        dctx.beginPath();
+        dctx.arc(p.x, p.y, ringRadius + 6, 0, Math.PI * 2);
+        dctx.fill();
+      }
+
+      dctx.font = fontSize + 'px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
+      dctx.textAlign = 'center';
+      dctx.textBaseline = 'middle';
+      dctx.fillStyle = glow > 0.2 ? '#10162c' : (isLive ? '#e8eeff' : '#9aa2bb');
+      dctx.fillText(String(bell), p.x, p.y);
+      dctx.restore();
+    }
+  }
+
+  function displayHitTest(clientX, clientY) {
+    const rect = displayCanvas.getBoundingClientRect();
     const x = clientX - rect.left;
     const y = clientY - rect.top;
     if (x < 0 || y < 0 || x > rect.width || y > rect.height) return null;
 
-    const stage = state.stage;
-    const W = rect.width, H = rect.height;
-    const padX = 14, padY = 12, gapY = 10;
-    const rowBlockH = (H - padY * 2 - gapY) / 2;
-    const cellW = (W - padX * 2) / stage;
+    const geom = computeDisplayPoints(rect.width, rect.height);
+    const ringRadius = Math.max(18, Math.min(34, Math.floor(Math.min(rect.width, rect.height) * 0.06)));
 
-    const cellLeft = padX + info.pos * cellW + 4;
-    const cellTop = padY + 6;
-    const cellW2 = cellW - 8;
-    const cellH2 = rowBlockH - 12;
-
-    const inside = x >= cellLeft && x <= cellLeft + cellW2 && y >= cellTop && y <= cellTop + cellH2;
-    return inside ? info.bell : null;
+    let best = null;
+    let bestD2 = Infinity;
+    for (const p of geom.pts) {
+      const dx = x - p.x;
+      const dy = y - p.y;
+      const d2 = dx*dx + dy*dy;
+      if (d2 < bestD2) { bestD2 = d2; best = p.bell; }
+    }
+    if (best == null) return null;
+    return bestD2 <= (ringRadius + 10) * (ringRadius + 10) ? best : null;
   }
 
-  // Notation readability improvements
+  // === Notation ===
   const PATH_STYLES = [[ ], [8,4], [2,6], [10,4,2,4], [4,4], [1,3], [12,5,3,5]];
 
   function drawNotation() {
@@ -985,9 +1304,13 @@ body {
       }
       nctx.setLineDash([]);
 
+      // clip
       nctx.save();
-      nctx.beginPath(); nctx.rect(x0 + 2, contentTop, w0 - 4, contentH); nctx.clip();
+      nctx.beginPath();
+      nctx.rect(x0 + 2, contentTop, w0 - 4, contentH);
+      nctx.clip();
 
+      // paths terminate per page
       bellsForPath.forEach((bell, bi) => {
         nctx.strokeStyle = '#f9c74f';
         nctx.lineWidth = 2;
@@ -1007,6 +1330,7 @@ body {
         nctx.setLineDash([]);
       });
 
+      // digits
       nctx.font = fontSize + 'px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
       nctx.textAlign = 'center';
       nctx.textBaseline = 'middle';
@@ -1041,7 +1365,7 @@ body {
     drawPage(pageBStart, pad + pageW + gap, pad, 'NEXT PAGE', false);
   }
 
-  // Stats render (math-safe)
+  // === Stats render (Mean Δ only + scale/octave) ===
   function fmtMs(ms, signed) {
     if (ms == null || isNaN(ms)) return '&ndash;';
     const v = Math.round(ms);
@@ -1053,18 +1377,24 @@ body {
     return String(v);
   }
 
+  function getPRCombo() {
+    const t = analytics.totals || analytics.refreshTotals();
+    return Number((t && t.pr_combo_global) || 0);
+  }
+
   function renderStats(nowMs) {
     if (!viewStats.checked) return;
     const live = state.liveBells.slice().sort((a,b)=>a-b);
     if (!live.length) { statsDiv.textContent = 'No live bells selected.'; return; }
 
-    let totalHits = 0, totalMisses = 0, sumAbs = 0, sumSigned = 0;
+    let totalHits = 0, totalMisses = 0, sumAbs = 0, sumSigned = 0, scoreTotal = 0;
     live.forEach(b => {
       const s = state.statsByBell[b];
       totalHits += s.hits;
       totalMisses += s.misses;
       sumAbs += s.sumAbsDelta;
       sumSigned += s.sumSignedDelta;
+      scoreTotal += s.score;
     });
 
     const totalTargets = totalHits + totalMisses;
@@ -1072,29 +1402,25 @@ body {
     const totalRows = state.rows.length;
 
     const accOverall = totalTargets > 0 ? (totalHits / totalTargets) * 100 : null;
-    const meanAbsOverall = totalHits > 0 ? Math.round(sumAbs / totalHits) : null;
     const meanSignedOverall = totalHits > 0 ? Math.round(sumSigned / totalHits) : null;
     const elapsed = getElapsedSeconds(nowMs);
-
-    let html = '';
-    html += '<div class="summary">';
+    let html = '';html += '<div class="summary">';
     html += 'Rows: ' + rowsCompleted + ' / ' + totalRows + ' &nbsp; ';
     html += 'Acc%: ' + (accOverall == null ? '&ndash;' : accOverall.toFixed(0)) + ' &nbsp; ';
     html += 'Combo: ' + state.comboCurrentGlobal + ' (best ' + state.comboBestGlobal + ') &nbsp; ';
-    html += 'Mean |Δ|: ' + (meanAbsOverall == null ? '&ndash;' : meanAbsOverall + ' ms') + ' &nbsp; ';
     html += 'Mean Δ: ' + (meanSignedOverall == null ? '&ndash;' : fmtMs(meanSignedOverall, true) + ' ms') + ' &nbsp; ';
+    html += 'Score: ' + Math.round(scoreTotal) + ' &nbsp; ';
     html += 'Time: ' + elapsed.toFixed(1) + ' s';
     html += '</div>';
 
     html += '<table><thead><tr>';
-    html += '<th>Bell</th><th>Targets</th><th>Hits</th><th>Misses</th><th>Acc%</th><th>Cur combo</th><th>Best combo</th><th>Mean |Δ|</th><th>Mean Δ</th><th>Score</th>';
+    html += '<th>Bell</th><th>Targets</th><th>Hits</th><th>Misses</th><th>Acc%</th><th>Cur combo</th><th>Best combo</th><th>Mean Δ</th><th>Score</th>';
     html += '</tr></thead><tbody>';
 
     live.forEach(bell => {
       const s = state.statsByBell[bell];
       const targets = s.hits + s.misses;
       const acc = targets > 0 ? (s.hits / targets) * 100 : null;
-      const meanAbs = s.hits > 0 ? Math.round(s.sumAbsDelta / s.hits) : null;
       const meanSigned = s.hits > 0 ? Math.round(s.sumSignedDelta / s.hits) : null;
 
       html += '<tr>';
@@ -1105,7 +1431,6 @@ body {
       html += '<td>' + (acc == null ? '&ndash;' : acc.toFixed(0)) + '</td>';
       html += '<td>' + s.comboCurrent + '</td>';
       html += '<td>' + s.comboBest + '</td>';
-      html += '<td>' + fmtMs(meanAbs, false) + '</td>';
       html += '<td>' + fmtMs(meanSigned, true) + '</td>';
       html += '<td>' + Math.round(s.score) + '</td>';
       html += '</tr>';
@@ -1129,12 +1454,45 @@ body {
     statsDiv.innerHTML = html;
   }
 
-  // Engine
+  // === Engine start/stop + analytics ===
   function startPressed() {
     if (!state.rows.length) { alert('No rows loaded.'); return; }
-    ensureAudio();
-    state.bpm = clamp(parseInt(bpmInput.value, 10) || 80, 30, 240);
+
+    const playId = rid('p_');
+    state.currentPlay = { playId, began: false };
+
+    const tempoBpm = clamp(parseInt(bpmInput.value, 10) || 80, 30, 240);
+    state.bpm = tempoBpm;
     bpmInput.value = String(state.bpm);
+
+    const pathMode = getPathMode();
+    const pathBellsStr = (pathMode === 'custom')
+      ? state.pathBells.slice().sort((a,b)=>a-b).join(',')
+      : (pathMode === 'all')
+        ? Array.from({length: state.stage}, (_,i)=>i+1).join(',')
+        : '';
+
+    analytics.track('play_start', {
+      play_id: playId,
+      session_id: analytics.sessionId,
+      method: state.method,
+      method_label: methodLabel(),
+      stage: state.stage,
+      live_count: state.liveCount,
+      live_bells: state.liveBells.slice().sort((a,b)=>a-b).join(','),
+      tempo_bpm: tempoBpm,
+      hit_window_ms: getHitWindowMs(),
+      view_display: viewDisplay.checked ? 1 : 0,
+      view_spotlight: viewSpotlight.checked ? 1 : 0,
+      view_notation: viewNotation.checked ? 1 : 0,
+      view_stats: viewStats.checked ? 1 : 0,
+      path_mode: pathMode,
+      path_bells: pathMode === 'none' ? '' : pathBellsStr,
+      treble_tone: currentTrebleToneLabel(),
+      octave: currentOctaveLabel()
+    });
+
+    ensureAudio();
 
     const now = perfNow();
     const beatMs = 60000 / state.bpm;
@@ -1150,36 +1508,156 @@ body {
     state.countFirstBeatMs = now + beatMs;
     state.countExec = 0;
     state.countSched = 0;
-    state.methodStartMs = state.countFirstBeatMs + COUNTDOWN_BEATS * beatMs;
+    state.countdownBeats = state.stage; // rounds: 1..stage
+    state.methodStartMs = state.countFirstBeatMs + state.countdownBeats * beatMs;
 
     startBtn.disabled = true;
     stopBtn.disabled = false;
   }
 
-  function stopPressed() {
-    if (state.phase === 'running') state.elapsedMs += (perfNow() - state.runStartPerfMs);
+  function buildPlayEndPayload(nowMs, endReason) {
+    updateMisses(nowMs);
+    finalizePendingAsMisses(nowMs);
+
+    const live = state.liveBells.slice().sort((a,b)=>a-b);
+    let totalHits = 0, totalMisses = 0, sumAbs = 0, sumSigned = 0, scoreTotal = 0;
+
+    for (const b of live) {
+      const s = state.statsByBell[b];
+      totalHits += s.hits;
+      totalMisses += s.misses;
+      sumAbs += s.sumAbsDelta;
+      sumSigned += s.sumSignedDelta;
+      scoreTotal += s.score;
+    }
+    const totalTargets = totalHits + totalMisses;
+    const accuracyPct = totalTargets > 0 ? (totalHits / totalTargets) * 100 : 0;
+
+    const meanAbs = totalHits > 0 ? Math.round(sumAbs / totalHits) : 0;
+    const meanSigned = totalHits > 0 ? Math.round(sumSigned / totalHits) : 0;
+
+    const totalBeats = state.rows.length * state.stage;
+    const beatsExecuted = clamp(state.execBeatIndex, 0, totalBeats);
+    const rowsCompleted = Math.min(Math.floor(beatsExecuted / state.stage), state.rows.length);
+
+    const durationMs = Math.max(0, Math.round(state.elapsedMs));
+
+    const parts = [];
+    for (const b of live) {
+      const s = state.statsByBell[b];
+      const targets = s.hits + s.misses;
+      const ma = s.hits > 0 ? Math.round(s.sumAbsDelta / s.hits) : 0;
+      const ms = s.hits > 0 ? Math.round(s.sumSignedDelta / s.hits) : 0;
+      const msStr = (ms > 0 ? '+' + ms : (ms < 0 ? '' + ms : '0'));
+      parts.push('b' + b +
+        ':h' + s.hits +
+        'm' + s.misses +
+        't' + targets +
+        's' + Math.round(s.score) +
+        'ma' + ma +
+        'ms' + msStr +
+        'cb' + s.comboBest
+      );
+    }
+
+    return {
+      play_id: state.currentPlay ? state.currentPlay.playId : '',
+      session_id: analytics.sessionId,
+      end_reason: endReason,
+      duration_ms: durationMs,
+      rows_completed: rowsCompleted,
+      total_targets: totalTargets,
+      total_hits: totalHits,
+      total_misses: totalMisses,
+      accuracy_pct: Math.round(accuracyPct * 10) / 10,
+      mean_abs_delta_ms: meanAbs,
+      mean_signed_delta_ms: meanSigned,
+      score_total: Math.round(scoreTotal),
+      combo_best_global: state.comboBestGlobal,
+      bell_stats: parts.join('|'),
+      treble_tone: currentTrebleToneLabel(),
+      octave: currentOctaveLabel()
+    };
+  }
+
+  function updateVisitorTotals(playEndPayload) {
+    const t = analytics.totals;
+    t.plays_total += 1;
+    t.seconds_total += Math.round((playEndPayload.duration_ms || 0) / 1000);
+    t.targets_total += Number(playEndPayload.total_targets || 0);
+    t.hits_total += Number(playEndPayload.total_hits || 0);
+    t.misses_total += Number(playEndPayload.total_misses || 0);
+    t.score_total += Number(playEndPayload.score_total || 0);
+
+    const combo = Number(playEndPayload.combo_best_global || 0);
+    if (combo > t.pr_combo_global) t.pr_combo_global = combo;
+
+    analytics.saveTotals();
+    analytics.setUserProps({
+      plays_total: t.plays_total,
+      seconds_total: t.seconds_total,
+      targets_total: t.targets_total,
+      hits_total: t.hits_total,
+      misses_total: t.misses_total,
+      score_total: t.score_total,
+      pr_combo_global: t.pr_combo_global
+    });
+  }
+
+  function stopPressed(endReason) {
+    const now = perfNow();
+    if (state.phase === 'running') state.elapsedMs += (now - state.runStartPerfMs);
+
+    const hadPlay = !!state.currentPlay;
+
     state.phase = 'idle';
     startBtn.disabled = false;
     stopBtn.disabled = true;
+
+    if (hadPlay) {
+      const payload = buildPlayEndPayload(now, endReason);
+      analytics.track('play_end', payload);
+      updateVisitorTotals(payload);
+      state.currentPlay = null;
+    }
+
     closeAudio();
   }
 
   function scheduleCountdown(nowMs) {
     if (state.phase !== 'countdown') return;
     const beatMs = 60000 / state.bpm;
+    const total = state.countdownBeats || state.stage;
 
-    while (state.countSched < COUNTDOWN_BEATS) {
+    // Rounds: ring 1..stage on each beat.
+    while (state.countSched < total) {
       const tMs = state.countFirstBeatMs + state.countSched * beatMs;
-      if (tMs <= nowMs + LOOKAHEAD_MS) { playTickAt(tMs); state.countSched += 1; }
-      else break;
+      if (tMs <= nowMs + LOOKAHEAD_MS) {
+        const bell = (state.countSched % state.stage) + 1; // 1..stage
+        playBellAt(bell, tMs);
+        state.countSched += 1;
+      } else break;
     }
-    while (state.countExec < COUNTDOWN_BEATS) {
+
+    while (state.countExec < total) {
       const tMs = state.countFirstBeatMs + state.countExec * beatMs;
       if (nowMs >= tMs) state.countExec += 1; else break;
     }
-    if (state.countExec >= COUNTDOWN_BEATS && nowMs >= state.methodStartMs) {
+
+    if (state.countExec >= total && nowMs >= state.methodStartMs) {
       state.phase = 'running';
       state.runStartPerfMs = state.methodStartMs;
+
+      if (state.currentPlay && !state.currentPlay.began) {
+        state.currentPlay.began = true;
+        analytics.track('play_begin', {
+          play_id: state.currentPlay.playId,
+          session_id: analytics.sessionId,
+          tempo_bpm: state.bpm,
+          treble_tone: currentTrebleToneLabel(),
+          octave: currentOctaveLabel()
+        });
+      }
     }
   }
 
@@ -1201,10 +1679,14 @@ body {
 
     while (state.execBeatIndex < totalBeats) {
       const tMs = state.methodStartMs + state.execBeatIndex * beatMs;
-      if (nowMs >= tMs) state.execBeatIndex += 1; else break;
+      if (nowMs >= tMs) {
+        const bell = getBellForStrikeIndex(state.execBeatIndex);
+        markRung(bell, tMs);
+        state.execBeatIndex += 1;
+      } else break;
     }
 
-    if (state.execBeatIndex >= totalBeats) stopPressed();
+    if (state.execBeatIndex >= totalBeats) stopPressed('completed');
   }
 
   function loop() {
@@ -1213,7 +1695,9 @@ body {
     scheduleCountdown(nowMs);
     scheduleMethod(nowMs);
     if (state.phase === 'running') updateMisses(nowMs);
+    renderCountdownOverlay(nowMs);
 
+    if (viewDisplay.checked) drawDisplay(nowMs);
     if (viewSpotlight.checked) drawSpotlight(nowMs);
     if (viewNotation.checked) drawNotation();
     if (viewStats.checked) renderStats(nowMs);
@@ -1221,7 +1705,7 @@ body {
     window.requestAnimationFrame(loop);
   }
 
-  // Inputs
+  // === Inputs ===
   document.addEventListener('keydown', (e) => {
     if (e.altKey || e.ctrlKey || e.metaKey) return;
     const t = e.target;
@@ -1234,10 +1718,46 @@ body {
     }
   });
 
-  spotlightCanvas.addEventListener('pointerdown', (e) => {
-    const bell = spotlightHitTest(e.clientX, e.clientY);
+  // Spotlight is intentionally NOT clickable in v10.
+  displayCanvas.addEventListener('pointerdown', (e) => {
+    const bell = displayHitTest(e.clientX, e.clientY);
     if (bell != null) { e.preventDefault(); ringBell(bell); }
   });
+
+
+  // Spotlight top-row tap: ring the tapped bell (non-keyboard alternative control).
+  spotlightCanvas.addEventListener('pointerdown', (e) => {
+    const rect = spotlightCanvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    if (x < 0 || y < 0 || x > rect.width || y > rect.height) return;
+
+    // Mirror drawSpotlight's layout math (CSS pixels).
+    const stage = state.stage;
+    const padX = 14, padY = 12, gapY = 10;
+    const rowBlockH = (rect.height - padY * 2 - gapY) / 2;
+    const topRowY = padY;
+
+    // Only accept taps in the top row body (not the title area).
+    if (y < topRowY || y > topRowY + rowBlockH) return;
+    if (x < padX || x > rect.width - padX) return;
+
+    const cellW = (rect.width - padX * 2) / stage;
+    const idx = Math.max(0, Math.min(stage - 1, Math.floor((x - padX) / cellW)));
+
+    if (!state.rows.length) return;
+
+    const totalBeats = state.rows.length * stage;
+    const strikeIdx = clamp(state.execBeatIndex - 1, 0, Math.max(0, totalBeats - 1));
+    const rowIdx = Math.floor(strikeIdx / stage);
+    const currentRow = state.rows[rowIdx] || state.rows[0];
+    const bell = currentRow[idx];
+    if (bell != null) {
+      e.preventDefault();
+      ringBell(bell);
+    }
+  });
+
 
   methodSelect.addEventListener('change', () => {
     if (state.phase !== 'idle') return;
@@ -1248,16 +1768,16 @@ body {
 
   bellCountSelect.addEventListener('change', () => {
     if (state.phase !== 'idle') return;
-    state.stage = clamp(parseInt(bellCountSelect.value,10)||6, 4, 6);
+    state.stage = clamp(parseInt(bellCountSelect.value,10)||6, 4, 8);
     if (state.method === 'custom') { state.method = 'plainhunt'; methodSelect.value='plainhunt'; state.customRows=null; }
-    rebuildLiveCountOptions(); ensureLiveBells(); rebuildBellPicker(); rebuildBellPads();
-    ensurePathBells(); rebuildPathPicker(); computeRows(); resetStats();
+    rebuildLiveCountOptions(); ensureLiveBells(); rebuildBellPicker();
+    ensurePathBells(); rebuildPathPicker(); computeRows(); resetStats(); rebuildBellFrequencies();
   });
 
   liveCountSelect.addEventListener('change', () => {
     if (state.phase !== 'idle') return;
     state.liveCount = clamp(parseInt(liveCountSelect.value,10)||1, 1, state.stage);
-    ensureLiveBells(); rebuildBellPicker(); rebuildBellPads(); resetStats();
+    ensureLiveBells(); rebuildBellPicker(); resetStats();
   });
 
   bpmInput.addEventListener('change', () => {
@@ -1266,7 +1786,7 @@ body {
     bpmInput.value = String(state.bpm);
   });
 
-  [viewSpotlight, viewNotation, viewStats].forEach(cb => cb.addEventListener('change', syncViewLayout));
+  [viewDisplay, viewSpotlight, viewNotation, viewStats].forEach(cb => cb.addEventListener('change', syncViewLayout));
 
   pathNoneBtn.addEventListener('click', setPathNone);
   pathAllBtn.addEventListener('click', setPathAll);
@@ -1274,6 +1794,18 @@ body {
   hitWindowSelect.addEventListener('change', () => {
     if (state.phase !== 'idle') { hitWindowSelect.value = state.hitWindow; return; }
     state.hitWindow = hitWindowSelect.value;
+  });
+
+  scaleSelect.addEventListener('change', () => {
+    if (state.phase !== 'idle') return;
+    state.scaleKey = scaleSelect.value;
+    rebuildBellFrequencies();
+  });
+
+  octaveSelect.addEventListener('change', () => {
+    if (state.phase !== 'idle') return;
+    state.octaveC = parseInt(octaveSelect.value, 10) || 3;
+    rebuildBellFrequencies();
   });
 
   fileInput.addEventListener('change', () => {
@@ -1284,7 +1816,22 @@ body {
     reader.onload = (ev) => {
       try {
         const parsed = parseCustom(String(ev.target.result));
-        applyCustomRows(parsed.rows, parsed.stage);
+        state.method = 'custom';
+        methodSelect.value = 'custom';
+        state.customRows = parsed.rows.slice();
+        state.stage = clamp(parsed.stage, 2, 12);
+
+        if (state.stage <= 8) bellCountSelect.value = String(state.stage);
+
+        rebuildLiveCountOptions();
+        ensureLiveBells();
+        rebuildBellPicker();
+        ensurePathBells();
+        rebuildPathPicker();
+        computeRows();
+        resetStats();
+        rebuildBellFrequencies();
+
         alert('Custom method loaded: ' + parsed.rows.length + ' rows on ' + parsed.stage + ' bells.');
       } catch (err) {
         alert('Could not load custom method: ' + err.message);
@@ -1293,24 +1840,63 @@ body {
     reader.readAsText(file);
   });
 
-  startBtn.addEventListener('click', startPressed);
-  stopBtn.addEventListener('click', stopPressed);
+  startBtn.addEventListener('click', () => startPressed());
+  stopBtn.addEventListener('click', () => stopPressed('stopped'));
 
+  // === Boot ===
   function boot() {
-    state.stage = clamp(parseInt(bellCountSelect.value,10)||6, 4, 6);
+    state.stage = clamp(parseInt(bellCountSelect.value,10)||6, 4, 8);
     state.liveCount = Math.min(2, state.stage);
+
+    scaleSelect.innerHTML = '';
+    for (const s of SCALE_LIBRARY) {
+      const opt = document.createElement('option');
+      opt.value = s.key;
+      opt.textContent = s.label;
+      scaleSelect.appendChild(opt);
+    }
+    state.scaleKey = SCALE_LIBRARY[0].key;
+    scaleSelect.value = state.scaleKey;
+
+    octaveSelect.innerHTML = '';
+    for (let o = 1; o <= 6; o++) {
+      const opt = document.createElement('option');
+      opt.value = String(o);
+      opt.textContent = 'C' + String(o);
+      octaveSelect.appendChild(opt);
+    }
+    state.octaveC = 3;
+    octaveSelect.value = String(state.octaveC);
+
     rebuildLiveCountOptions();
     ensureLiveBells();
     rebuildBellPicker();
-    rebuildBellPads();
+
     state.pathBells = [];
     rebuildPathPicker();
+
     state.hitWindow = hitWindowSelect.value || DEFAULT_HIT_WINDOW;
+
     computeRows();
     resetStats();
+    rebuildBellFrequencies();
     syncViewLayout();
+
+    analytics.configure();
+    analytics.setUserProps({
+      plays_total: analytics.totals.plays_total,
+      seconds_total: analytics.totals.seconds_total,
+      targets_total: analytics.totals.targets_total,
+      hits_total: analytics.totals.hits_total,
+      misses_total: analytics.totals.misses_total,
+      score_total: analytics.totals.score_total,
+      pr_combo_global: analytics.totals.pr_combo_global
+    });
+    analytics.track('game_start', { session_id: analytics.sessionId, site_version: SITE_VERSION });
+
     window.requestAnimationFrame(loop);
   }
+
   boot();
 })();
     </script>

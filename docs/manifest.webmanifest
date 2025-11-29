@@ -1,0 +1,16 @@
+{
+  "name": "Ringer Game",
+  "short_name": "Ringer",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#050814",
+  "theme_color": "#050814",
+  "icons": [
+    {
+      "src": "ringer_game_icon.png",
+      "sizes": "1024x1024",
+      "type": "image/png"
+    }
+  ]
+}
