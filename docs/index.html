@@ -1,0 +1,1318 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ringer Game</title>
+    <style>
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html, body { margin: 0; padding: 0; width: 100%; height: 100%; }
+
+body {
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: radial-gradient(circle at top, #151b33 0, #050814 55%, #020308 100%);
+  color: #f5f5f7;
+}
+
+#app {
+  width: 100%;
+  max-width: 1240px;
+  margin: 12px;
+  padding: 12px 12px 18px;
+  border-radius: 20px;
+  background: radial-gradient(circle at top left, #192135 0, #050814 60%, #020308 100%);
+  box-shadow: 0 16px 40px rgba(0,0,0,0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.top-bar h1 {
+  margin: 0 0 8px;
+  font-size: 24px;
+  font-weight: 650;
+  text-align: center;
+  letter-spacing: 0.06em;
+}
+
+#controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  align-items: flex-end;
+  padding: 10px;
+  border-radius: 14px;
+  background: rgba(3, 7, 20, 0.9);
+  border: 1px solid rgba(255,255,255,0.05);
+}
+
+.control {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: #c3c8d8;
+}
+
+.control label {
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  font-size: 10px;
+  color: #c3c8d8;
+}
+
+.control select,
+.control input[type="number"],
+.control input[type="file"] {
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: #050b1e;
+  color: #f5f5f7;
+}
+
+.control input[type="file"] { padding: 2px 6px; }
+
+.control-buttons { flex-direction: row; align-items: center; gap: 6px; }
+
+.control-buttons button {
+  font-size: 12px;
+  padding: 5px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.18);
+  background: #141b31;
+  color: #f5f5f7;
+  cursor: pointer;
+}
+
+#startBtn {
+  background: linear-gradient(135deg, #06d6a0, #08b18d);
+  border-color: rgba(6,214,160,0.9);
+  color: #02120b;
+  font-weight: 750;
+}
+
+.control-buttons button:disabled { opacity: 0.45; cursor: default; }
+
+.bell-picker { display: flex; gap: 4px; padding: 2px 0; }
+
+.bell-picker button {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.16);
+  background: #10162c;
+  color: #f5f5f7;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.bell-picker--small button { width: 24px; height: 24px; font-size: 12px; }
+
+.bell-picker button.selected {
+  background: #f9c74f;
+  color: #111;
+  border-color: #f9c74f;
+}
+
+.view-control .toggles {
+  display: flex;
+  gap: 10px;
+  padding: 3px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: #050b1e;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #e5e7ef;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+.toggle input { accent-color: #f9c74f; }
+
+.path-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: #050b1e;
+}
+
+.pill {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.16);
+  background: #10162c;
+  color: #f5f5f7;
+  cursor: pointer;
+}
+
+.pill.active {
+  background: rgba(249,199,79,0.92);
+  border-color: rgba(249,199,79,0.92);
+  color: #111;
+  font-weight: 650;
+}
+
+.main { display: grid; gap: 10px; }
+
+.main.layout-sn {
+  grid-template-columns: 0.95fr 1.55fr;
+  grid-template-areas: "spot notation" "stats stats";
+}
+
+.main.layout-s { grid-template-columns: 1fr; grid-template-areas: "spot" "stats"; }
+.main.layout-n { grid-template-columns: 1fr; grid-template-areas: "notation" "stats"; }
+.main.layout-none { grid-template-columns: 1fr; grid-template-areas: "stats"; }
+
+#spotlightPane { grid-area: spot; }
+#notationPane { grid-area: notation; }
+#statsPane { grid-area: stats; }
+
+.pane {
+  border-radius: 16px;
+  background: radial-gradient(circle at top, #1a233c 0, #050814 65%);
+  border: 1px solid rgba(255,255,255,0.08);
+  overflow: hidden;
+}
+
+.pane-title {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #b7bdd0;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  background: rgba(0,0,0,0.10);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.hit-window-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #c3c8d8;
+}
+
+.hit-window-control select {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.16);
+  background: #050b1e;
+  color: #f5f5f7;
+}
+
+#spotlightCanvas { width: 100%; height: 170px; display: block; touch-action: manipulation; }
+#notationCanvas { width: 100%; height: 440px; display: block; }
+
+.bell-pads {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  align-items: center;
+  padding: 10px 10px 12px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  background: rgba(0,0,0,0.08);
+}
+
+.bell-pads button {
+  width: 44px;
+  height: 38px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.16);
+  background: #0b1126;
+  color: #e8eeff;
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.bell-pads button:active { transform: translateY(1px); }
+.bell-pads button.live { border-color: rgba(6,214,160,0.40); }
+
+#stats { padding: 8px 10px 12px; font-size: 12px; overflow-x: auto; }
+#stats table { width: 100%; border-collapse: collapse; }
+
+#stats th, #stats td {
+  padding: 3px 8px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+#stats th:first-child, #stats td:first-child { text-align: left; }
+#stats thead { border-bottom: 1px solid rgba(255,255,255,0.16); }
+#stats tbody tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+
+.summary { margin-bottom: 6px; color: #dce0ef; }
+.stats-info { margin-top: 6px; font-size: 11px; color: #c2c8dd; }
+
+.footer { margin-top: 4px; text-align: center; font-size: 11px; color: #a7aec5; }
+.hidden { display: none !important; }
+
+@media (max-width: 980px) {
+  #app { margin: 0; border-radius: 0; }
+  .main.layout-sn { grid-template-columns: 1fr; grid-template-areas: "spot" "notation" "stats"; }
+  #spotlightCanvas { height: 160px; }
+  #notationCanvas { height: 390px; }
+  #controls { justify-content: flex-start; }
+  .view-control .toggles { flex-wrap: wrap; }
+}
+
+@media (max-width: 520px) {
+  #notationCanvas { height: 350px; }
+  .path-row { flex-wrap: wrap; border-radius: 14px; }
+  .bell-pads { gap: 6px; }
+  .bell-pads button { width: 40px; height: 36px; font-size: 17px; }
+}
+
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <header class="top-bar">
+        <h1>Ringer Game</h1>
+
+        <div id="controls">
+          <div class="control">
+            <label for="methodSelect">Method</label>
+            <select id="methodSelect">
+              <option value="plainhunt">Plain Hunt</option>
+              <option value="plainbob">Plain Bob (variation)</option>
+              <option value="grandsire">Grandsire (variation)</option>
+              <option value="custom">Custom (text file)</option>
+            </select>
+          </div>
+
+          <div class="control">
+            <label for="bellCount">Bells</label>
+            <select id="bellCount">
+              <option value="4">4</option>
+              <option value="5">5</option>
+              <option value="6" selected>6</option>
+            </select>
+          </div>
+
+          <div class="control">
+            <label for="liveCount">Live bells</label>
+            <select id="liveCount"></select>
+          </div>
+
+          <div class="control">
+            <label>Pick bells</label>
+            <div id="bellPicker" class="bell-picker" aria-label="Pick bells"></div>
+          </div>
+
+          <div class="control">
+            <label for="bpmInput">Tempo (BPM)</label>
+            <input id="bpmInput" type="number" min="30" max="240" value="80" />
+          </div>
+
+          <div class="control view-control">
+            <label>View</label>
+            <div class="toggles" role="group" aria-label="View toggles">
+              <label class="toggle"><input id="viewSpotlight" type="checkbox" checked /> Spotlight</label>
+              <label class="toggle"><input id="viewNotation" type="checkbox" checked /> Notation</label>
+              <label class="toggle"><input id="viewStats" type="checkbox" checked /> Stats</label>
+            </div>
+          </div>
+
+          <div class="control path-control">
+            <label>Path</label>
+            <div class="path-row">
+              <button id="pathNoneBtn" class="pill active" type="button">None</button>
+              <button id="pathAllBtn" class="pill" type="button">All</button>
+              <div id="pathPicker" class="bell-picker bell-picker--small" aria-label="Path bells"></div>
+            </div>
+          </div>
+
+          <div class="control">
+            <label for="fileInput">Custom file</label>
+            <input id="fileInput" type="file" accept=".txt" />
+          </div>
+
+          <div class="control control-buttons">
+            <button id="startBtn">Start</button>
+            <button id="stopBtn" disabled>Stop</button>
+          </div>
+        </div>
+      </header>
+
+      <main id="main" class="main layout-sn">
+        <section id="spotlightPane" class="pane">
+          <div class="pane-title"><span>Spotlight</span></div>
+          <canvas id="spotlightCanvas" aria-label="Spotlight"></canvas>
+          <div id="bellPads" class="bell-pads" aria-label="Bell pads"></div>
+        </section>
+
+        <section id="notationPane" class="pane">
+          <div class="pane-title"><span>Notation</span></div>
+          <canvas id="notationCanvas" aria-label="Notation"></canvas>
+        </section>
+
+        <section id="statsPane" class="pane pane-span">
+          <div class="pane-title">
+            <span>Stats</span>
+            <div class="hit-window-control">
+              <label for="hitWindowSelect">Hit window</label>
+              <select id="hitWindowSelect">
+                <option value="tight">Tight (±120&nbsp;ms)</option>
+                <option value="medium" selected>Medium (±180&nbsp;ms)</option>
+                <option value="loose">Loose (±240&nbsp;ms)</option>
+              </select>
+            </div>
+          </div>
+          <div id="stats"></div>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <p id="hint">Keys 1–6 ring bells. On touch screens: tap the highlighted bell in Spotlight, or use the bell pads. Non-live bells are rung by bots. Only your selected live bells are scored.</p>
+      </footer>
+    </div>
+
+    <script>
+(function () {
+  'use strict';
+
+  const LOOKAHEAD_MS = 160;
+  const COUNTDOWN_BEATS = 3;
+
+  const HIT_WINDOWS = { tight: 120, medium: 180, loose: 240 };
+  const DEFAULT_HIT_WINDOW = 'medium';
+
+  const main = document.getElementById('main');
+  const spotlightPane = document.getElementById('spotlightPane');
+  const notationPane = document.getElementById('notationPane');
+  const statsPane = document.getElementById('statsPane');
+
+  const spotlightCanvas = document.getElementById('spotlightCanvas');
+  const sctx = spotlightCanvas.getContext('2d');
+  const notationCanvas = document.getElementById('notationCanvas');
+  const nctx = notationCanvas.getContext('2d');
+
+  const bellPads = document.getElementById('bellPads');
+
+  const methodSelect = document.getElementById('methodSelect');
+  const bellCountSelect = document.getElementById('bellCount');
+  const liveCountSelect = document.getElementById('liveCount');
+  const bellPicker = document.getElementById('bellPicker');
+  const bpmInput = document.getElementById('bpmInput');
+  const fileInput = document.getElementById('fileInput');
+  const startBtn = document.getElementById('startBtn');
+  const stopBtn = document.getElementById('stopBtn');
+  const statsDiv = document.getElementById('stats');
+
+  const viewSpotlight = document.getElementById('viewSpotlight');
+  const viewNotation = document.getElementById('viewNotation');
+  const viewStats = document.getElementById('viewStats');
+
+  const pathNoneBtn = document.getElementById('pathNoneBtn');
+  const pathAllBtn = document.getElementById('pathAllBtn');
+  const pathPicker = document.getElementById('pathPicker');
+
+  const hitWindowSelect = document.getElementById('hitWindowSelect');
+
+  const state = {
+    method: 'plainhunt',
+    stage: 6,
+    liveCount: 2,
+    liveBells: [1, 2],
+    bpm: 80,
+    pathBells: [],
+    rows: [],
+    customRows: null,
+    phase: 'idle',
+    countFirstBeatMs: 0,
+    countExec: 0,
+    countSched: 0,
+    methodStartMs: 0,
+    schedBeatIndex: 0,
+    execBeatIndex: 0,
+    targets: [],
+    elapsedMs: 0,
+    runStartPerfMs: 0,
+    statsByBell: {},
+    globalScore: 0,
+    comboCurrentGlobal: 0,
+    comboBestGlobal: 0,
+    hitWindow: DEFAULT_HIT_WINDOW
+  };
+
+  let audioCtx = null;
+
+  function clamp(v, min, max) { return v < min ? min : (v > max ? max : v); }
+  function perfNow() { return performance.now(); }
+  function getHitWindowMs() { return HIT_WINDOWS[state.hitWindow] || HIT_WINDOWS[DEFAULT_HIT_WINDOW]; }
+
+  function ensureAudio() {
+    if (!audioCtx) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      audioCtx = new Ctx();
+    }
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  }
+  function closeAudio() {
+    if (audioCtx) { try { audioCtx.close(); } catch (_) {} audioCtx = null; }
+  }
+  function msToAudioTime(whenMs) {
+    ensureAudio();
+    const deltaMs = Math.max(0, whenMs - perfNow());
+    return audioCtx.currentTime + deltaMs / 1000;
+  }
+  function playBellAt(bell, whenMs) {
+    ensureAudio();
+    const t = msToAudioTime(whenMs);
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(245 + bell * 44, t);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.16, t + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(t);
+    osc.stop(t + 0.32);
+  }
+  function playTickAt(whenMs) {
+    ensureAudio();
+    const t = msToAudioTime(whenMs);
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(1400, t);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.08, t + 0.005);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(t);
+    osc.stop(t + 0.07);
+  }
+
+  function fitCanvas(el, ctx) {
+    const rect = el.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.max(2, Math.floor(rect.width * dpr));
+    const h = Math.max(2, Math.floor(rect.height * dpr));
+    if (el.width !== w || el.height !== h) { el.width = w; el.height = h; }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { W: rect.width, H: rect.height };
+  }
+  function roundRect(ctx, x, y, w, h, r) {
+    const rr = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + rr, y);
+    ctx.arcTo(x + w, y, x + w, y + h, rr);
+    ctx.arcTo(x + w, y + h, x, y + h, rr);
+    ctx.arcTo(x, y + h, x, y, rr);
+    ctx.arcTo(x, y, x + w, y, rr);
+    ctx.closePath();
+  }
+
+  // Methods
+  function applyX(row, stage) {
+    const next = row.slice();
+    for (let i = 0; i < stage - 1; i += 2) { const tmp = next[i]; next[i] = next[i+1]; next[i+1] = tmp; }
+    return next;
+  }
+  function applyY(row, stage) {
+    const next = row.slice();
+    for (let i = 1; i < stage - 1; i += 2) { const tmp = next[i]; next[i] = next[i+1]; next[i+1] = tmp; }
+    return next;
+  }
+  function makePlainHunt(stage, leads) {
+    const rows = [];
+    let current = [];
+    for (let i = 1; i <= stage; i++) current.push(i);
+    rows.push(current.slice());
+    let useX = true;
+    const steps = stage * 2 * leads;
+    for (let i = 0; i < steps; i++) {
+      current = useX ? applyX(current, stage) : applyY(current, stage);
+      rows.push(current.slice());
+      useX = !useX;
+    }
+    return rows;
+  }
+  function rotateRow(row, k) {
+    const n = row.length;
+    const off = ((k % n) + n) % n;
+    return row.slice(off).concat(row.slice(0, off));
+  }
+  function makeLibraryRows(name, stage) {
+    const base = makePlainHunt(stage, 5);
+    if (name === 'plainbob') return base.map((r, i) => rotateRow(r, i % stage));
+    if (name === 'grandsire') return base.map((r, i) => rotateRow(r, (i * 2) % stage));
+    return base;
+  }
+  function parseCustom(text) {
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const rows = [];
+    let stage = null;
+    for (const line of lines) {
+      if (!/^[1-9]+$/.test(line)) continue;
+      const nums = line.split('').map(c => parseInt(c, 10));
+      if (stage == null) stage = nums.length;
+      if (nums.length !== stage) throw new Error('All rows must have the same number of bells.');
+      rows.push(nums);
+    }
+    if (!rows.length) throw new Error('No valid rows found in file.');
+    if (stage < 2 || stage > 12) throw new Error('Unsupported bell count in file.');
+    return { rows, stage };
+  }
+  function computeRows() {
+    if (state.method === 'custom' && state.customRows) state.rows = state.customRows.slice();
+    else state.rows = makeLibraryRows(state.method, state.stage);
+  }
+
+  // Selection
+  function ensureLiveBells() {
+    const max = state.liveCount;
+    const chosen = [];
+    for (const b of state.liveBells) {
+      if (b >= 1 && b <= state.stage && !chosen.includes(b)) {
+        chosen.push(b);
+        if (chosen.length >= max) break;
+      }
+    }
+    if (!chosen.length) for (let b = 1; b <= state.stage && chosen.length < max; b++) chosen.push(b);
+    state.liveBells = chosen;
+  }
+  function rebuildLiveCountOptions() {
+    liveCountSelect.innerHTML = '';
+    for (let n = 1; n <= state.stage; n++) {
+      const opt = document.createElement('option');
+      opt.value = String(n);
+      opt.textContent = String(n);
+      liveCountSelect.appendChild(opt);
+    }
+    state.liveCount = clamp(state.liveCount, 1, state.stage);
+    liveCountSelect.value = String(state.liveCount);
+  }
+  function rebuildBellPicker() {
+    ensureLiveBells();
+    bellPicker.innerHTML = '';
+    for (let b = 1; b <= state.stage; b++) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = String(b);
+      btn.addEventListener('click', () => {
+        if (state.phase !== 'idle') return;
+        const max = state.liveCount;
+        const list = state.liveBells.slice();
+        const idx = list.indexOf(b);
+        if (idx >= 0) list.splice(idx, 1);
+        else {
+          if (list.length >= max) {
+            if (max === 1) list.splice(0, 1, b);
+            else return;
+          } else list.push(b);
+        }
+        state.liveBells = list;
+        rebuildBellPicker();
+        rebuildBellPads();
+        resetStats();
+      });
+      if (state.liveBells.includes(b)) btn.classList.add('selected');
+      bellPicker.appendChild(btn);
+    }
+  }
+
+  function ensurePathBells() {
+    const keep = [];
+    for (const b of state.pathBells) if (b >= 1 && b <= state.stage && !keep.includes(b)) keep.push(b);
+    state.pathBells = keep;
+  }
+  function updatePathButtons() {
+    const none = state.pathBells.length === 0;
+    const all = state.pathBells.length === state.stage && state.pathBells.every(b => b>=1 && b<=state.stage);
+    pathNoneBtn.classList.toggle('active', none);
+    pathAllBtn.classList.toggle('active', all);
+  }
+  function rebuildPathPicker() {
+    ensurePathBells();
+    pathPicker.innerHTML = '';
+    for (let b = 1; b <= state.stage; b++) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = String(b);
+      btn.addEventListener('click', () => {
+        const list = state.pathBells.slice();
+        const idx = list.indexOf(b);
+        if (idx >= 0) list.splice(idx, 1);
+        else list.push(b);
+        state.pathBells = list;
+        rebuildPathPicker();
+      });
+      if (state.pathBells.includes(b)) btn.classList.add('selected');
+      pathPicker.appendChild(btn);
+    }
+    updatePathButtons();
+  }
+  function setPathNone() { state.pathBells = []; rebuildPathPicker(); }
+  function setPathAll() { state.pathBells = []; for (let b=1; b<=state.stage; b++) state.pathBells.push(b); rebuildPathPicker(); }
+
+  function syncViewLayout() {
+    spotlightPane.classList.toggle('hidden', !viewSpotlight.checked);
+    notationPane.classList.toggle('hidden', !viewNotation.checked);
+    statsPane.classList.toggle('hidden', !viewStats.checked);
+
+    const s = viewSpotlight.checked, n = viewNotation.checked;
+    main.classList.remove('layout-sn', 'layout-s', 'layout-n', 'layout-none');
+    if (s && n) main.classList.add('layout-sn');
+    else if (s && !n) main.classList.add('layout-s');
+    else if (!s && n) main.classList.add('layout-n');
+    else main.classList.add('layout-none');
+  }
+
+  function applyCustomRows(rows, stage) {
+    state.method = 'custom';
+    methodSelect.value = 'custom';
+    state.customRows = rows.slice();
+    state.stage = stage;
+    bellCountSelect.value = String(stage);
+    rebuildLiveCountOptions();
+    ensureLiveBells();
+    rebuildBellPicker();
+    rebuildBellPads();
+    ensurePathBells();
+    rebuildPathPicker();
+    computeRows();
+    resetStats();
+  }
+
+  // Touch-friendly pads
+  function ringBell(bell) {
+    const now = perfNow();
+    playBellAt(bell, now);
+    if (state.phase === 'running') scoreHit(bell, now);
+  }
+  function rebuildBellPads() {
+    bellPads.innerHTML = '';
+    for (let b = 1; b <= state.stage; b++) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = String(b);
+      if (state.liveBells.includes(b)) btn.classList.add('live');
+      btn.addEventListener('pointerdown', (e) => { e.preventDefault(); ringBell(b); });
+      bellPads.appendChild(btn);
+    }
+  }
+
+  // Stats and scoring
+  function resetStats() {
+    state.statsByBell = {};
+    for (let b = 1; b <= state.stage; b++) {
+      state.statsByBell[b] = { bell: b, hits: 0, misses: 0, sumAbsDelta: 0, sumSignedDelta: 0, score: 0, comboCurrent: 0, comboBest: 0 };
+    }
+    state.targets.length = 0;
+    state.globalScore = 0;
+    state.comboCurrentGlobal = 0;
+    state.comboBestGlobal = 0;
+  }
+
+  function getBellForStrikeIndex(i) {
+    const stage = state.stage;
+    const rowIdx = Math.floor(i / stage);
+    const pos = i % stage;
+    const row = state.rows[rowIdx];
+    return row ? row[pos] : 1;
+  }
+
+  function recordTarget(bell, timeMs) { state.targets.push({ bell, timeMs, judged: false, hit: false }); }
+
+  function updateMisses(nowMs) {
+    const live = new Set(state.liveBells);
+    const windowMs = getHitWindowMs();
+    for (const t of state.targets) {
+      if (t.judged) continue;
+      if (nowMs > t.timeMs + windowMs) {
+        t.judged = true;
+        if (live.has(t.bell)) {
+          const s = state.statsByBell[t.bell];
+          s.misses += 1;
+          s.comboCurrent = 0;
+          state.comboCurrentGlobal = 0;
+        }
+      }
+    }
+    const cutoff = nowMs - 8000;
+    while (state.targets.length && state.targets[0].timeMs < cutoff && state.targets[0].judged) state.targets.shift();
+  }
+
+  function scoreHit(bell, timeMs) {
+    if (state.phase !== 'running') return;
+    if (!state.liveBells.includes(bell)) return;
+
+    const windowMs = getHitWindowMs();
+
+    let bestIndex = -1;
+    let bestAbs = null;
+    for (let i = 0; i < state.targets.length; i++) {
+      const t = state.targets[i];
+      if (t.judged || t.bell !== bell) continue;
+      const abs = Math.abs(timeMs - t.timeMs);
+      if (abs <= windowMs && (bestAbs == null || abs < bestAbs)) { bestAbs = abs; bestIndex = i; }
+    }
+    if (bestIndex === -1) return;
+
+    const t = state.targets[bestIndex];
+    t.judged = true; t.hit = true;
+
+    const deltaMs = timeMs - t.timeMs;
+    const absDelta = Math.abs(deltaMs);
+    const s = state.statsByBell[bell];
+
+    s.hits += 1;
+    s.sumAbsDelta += absDelta;
+    s.sumSignedDelta += deltaMs;
+
+    const tight = windowMs * 0.4;
+    const med = windowMs * 0.75;
+    const points = (absDelta <= tight) ? 12 : (absDelta <= med ? 11 : 10);
+
+    s.score += points;
+    state.globalScore += points;
+
+    s.comboCurrent += 1;
+    if (s.comboCurrent > s.comboBest) s.comboBest = s.comboCurrent;
+
+    state.comboCurrentGlobal += 1;
+    if (state.comboCurrentGlobal > state.comboBestGlobal) state.comboBestGlobal = state.comboCurrentGlobal;
+  }
+
+  function getElapsedSeconds(nowMs) {
+    if (state.phase === 'running') return (state.elapsedMs + (nowMs - state.runStartPerfMs)) / 1000;
+    return state.elapsedMs / 1000;
+  }
+
+  function countdownDisplay(nowMs) {
+    if (state.phase !== 'countdown') return null;
+    const remaining = Math.max(0, COUNTDOWN_BEATS - state.countExec);
+    if (remaining === 0) { if (nowMs < state.methodStartMs + 120) return 'GO'; return null; }
+    return String(remaining);
+  }
+
+  // Spotlight
+  function drawSpotlight(nowMs) {
+    const { W, H } = fitCanvas(spotlightCanvas, sctx);
+    sctx.clearRect(0, 0, W, H);
+
+    const cd = countdownDisplay(nowMs);
+    if (cd) {
+      sctx.save();
+      sctx.fillStyle = 'rgba(255,255,255,0.05)';
+      sctx.strokeStyle = 'rgba(255,255,255,0.10)';
+      roundRect(sctx, 14, 12, W - 28, H - 24, 16);
+      sctx.fill(); sctx.stroke();
+      sctx.font = '76px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
+      sctx.textAlign = 'center';
+      sctx.textBaseline = 'middle';
+      sctx.fillStyle = (cd === 'GO') ? '#06d6a0' : '#f9c74f';
+      sctx.fillText(cd, W / 2, H / 2);
+      sctx.restore();
+      return;
+    }
+
+    if (!state.rows.length) return;
+
+    const stage = state.stage;
+    const totalBeats = state.rows.length * stage;
+    const strikeIdx = clamp(state.execBeatIndex - 1, 0, Math.max(0, totalBeats - 1));
+    const rowIdx = Math.floor(strikeIdx / stage);
+    const pos = strikeIdx % stage;
+    const currentRow = state.rows[rowIdx] || state.rows[0];
+    const nextRow = state.rows[Math.min(rowIdx + 1, state.rows.length - 1)] || currentRow;
+
+    const padX = 14, padY = 12, gapY = 10;
+    const rowBlockH = (H - padY * 2 - gapY) / 2;
+    const cellW = (W - padX * 2) / stage;
+
+    function drawRow(row, yTop, highlightPos, faded) {
+      sctx.save();
+      sctx.translate(padX, yTop);
+      sctx.fillStyle = faded ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.05)';
+      sctx.strokeStyle = 'rgba(255,255,255,0.08)';
+      roundRect(sctx, 0, 0, W - padX * 2, rowBlockH, 12);
+      sctx.fill(); sctx.stroke();
+
+      const fontSize = Math.max(20, Math.min(34, Math.floor(rowBlockH * 0.58)));
+      sctx.font = fontSize + 'px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
+      sctx.textAlign = 'center';
+      sctx.textBaseline = 'middle';
+
+      for (let i = 0; i < stage; i++) {
+        const x = i * cellW + cellW / 2;
+        const y = rowBlockH / 2;
+        const bell = row[i];
+        const isLive = state.liveBells.includes(bell);
+
+        if (!faded && i === highlightPos) {
+          sctx.fillStyle = '#f9c74f';
+          roundRect(sctx, i * cellW + 4, 6, cellW - 8, rowBlockH - 12, 10);
+          sctx.fill();
+          sctx.fillStyle = '#10162c';
+        } else sctx.fillStyle = isLive ? '#e8eeff' : '#9aa2bb';
+
+        sctx.fillText(String(bell), x, y);
+      }
+      sctx.restore();
+    }
+
+    drawRow(currentRow, padY, pos, false);
+    drawRow(nextRow, padY + rowBlockH + gapY, -1, true);
+  }
+
+  function spotlightHighlightedBell() {
+    if (state.phase !== 'running') return null;
+    if (!state.rows.length) return null;
+    const stage = state.stage;
+    const totalBeats = state.rows.length * stage;
+    const strikeIdx = clamp(state.execBeatIndex - 1, 0, Math.max(0, totalBeats - 1));
+    const rowIdx = Math.floor(strikeIdx / stage);
+    const pos = strikeIdx % stage;
+    const row = state.rows[rowIdx] || state.rows[0];
+    return { bell: row[pos], pos };
+  }
+
+  function spotlightHitTest(clientX, clientY) {
+    if (state.phase !== 'running') return null;
+    const info = spotlightHighlightedBell();
+    if (!info) return null;
+
+    const rect = spotlightCanvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    if (x < 0 || y < 0 || x > rect.width || y > rect.height) return null;
+
+    const stage = state.stage;
+    const W = rect.width, H = rect.height;
+    const padX = 14, padY = 12, gapY = 10;
+    const rowBlockH = (H - padY * 2 - gapY) / 2;
+    const cellW = (W - padX * 2) / stage;
+
+    const cellLeft = padX + info.pos * cellW + 4;
+    const cellTop = padY + 6;
+    const cellW2 = cellW - 8;
+    const cellH2 = rowBlockH - 12;
+
+    const inside = x >= cellLeft && x <= cellLeft + cellW2 && y >= cellTop && y <= cellTop + cellH2;
+    return inside ? info.bell : null;
+  }
+
+  // Notation readability improvements
+  const PATH_STYLES = [[ ], [8,4], [2,6], [10,4,2,4], [4,4], [1,3], [12,5,3,5]];
+
+  function drawNotation() {
+    const { W, H } = fitCanvas(notationCanvas, nctx);
+    nctx.clearRect(0, 0, W, H);
+    if (!state.rows.length) return;
+
+    const stage = state.stage;
+    const rows = state.rows;
+    const totalBeats = rows.length * stage;
+    const strikeIdx = clamp(state.execBeatIndex - 1, 0, Math.max(0, totalBeats - 1));
+    const activeRowIdx = Math.floor(strikeIdx / stage);
+
+    const pad = 14, gap = 14;
+    const pageW = (W - pad * 2 - gap) / 2;
+    const pageH = H - pad * 2;
+    const titleH = 18;
+
+    const lineH = 24;
+    const fontSize = 20;
+    const usable = pageH - titleH - 18;
+    const pageSize = clamp(Math.floor(usable / lineH), 10, 24);
+
+    const pageStart = Math.floor(activeRowIdx / pageSize) * pageSize;
+    const pageAStart = pageStart;
+    const pageBStart = pageStart + pageSize;
+
+    const bellsForPath = state.pathBells.slice().sort((a,b)=>a-b);
+
+    function drawPage(pageStartRow, x0, y0, label, isCurrent) {
+      const w0 = pageW, h0 = pageH;
+      nctx.save();
+      nctx.fillStyle = 'rgba(255,255,255,0.03)';
+      nctx.strokeStyle = 'rgba(255,255,255,0.08)';
+      roundRect(nctx, x0, y0, w0, h0, 16);
+      nctx.fill(); nctx.stroke();
+
+      nctx.font = '11px system-ui, -apple-system, "Segoe UI", sans-serif';
+      nctx.fillStyle = isCurrent ? 'rgba(249,199,79,0.92)' : 'rgba(200,210,235,0.75)';
+      nctx.textAlign = 'left';
+      nctx.textBaseline = 'top';
+      nctx.fillText(label, x0 + 10, y0 + 8);
+
+      const contentTop = y0 + titleH + 12;
+      const contentBottom = y0 + h0 - 12;
+      const contentH = contentBottom - contentTop;
+
+      const maxColW = 60;
+      const baseColW = w0 / stage;
+      const colW = Math.min(baseColW, maxColW);
+      const gridW = colW * stage;
+      const left = x0 + (w0 - gridW) / 2;
+      const rowsToShow = pageSize;
+
+      nctx.strokeStyle = 'rgba(255,255,255,0.06)';
+      nctx.setLineDash([4,5]);
+      for (let j = 0; j <= stage; j++) {
+        const x = left + j * colW;
+        nctx.beginPath(); nctx.moveTo(x, contentTop); nctx.lineTo(x, contentBottom); nctx.stroke();
+      }
+      nctx.setLineDash([]);
+
+      nctx.save();
+      nctx.beginPath(); nctx.rect(x0 + 2, contentTop, w0 - 4, contentH); nctx.clip();
+
+      bellsForPath.forEach((bell, bi) => {
+        nctx.strokeStyle = '#f9c74f';
+        nctx.lineWidth = 2;
+        nctx.setLineDash(PATH_STYLES[bi % PATH_STYLES.length]);
+        let prev = null;
+        for (let i = 0; i < rowsToShow; i++) {
+          const rowIdx = pageStartRow + i;
+          if (rowIdx >= rows.length) break;
+          const row = rows[rowIdx];
+          const pos = row.indexOf(bell);
+          if (pos < 0) continue;
+          const x = left + pos * colW + colW / 2;
+          const y = contentTop + i * lineH + lineH / 2;
+          if (prev) { nctx.beginPath(); nctx.moveTo(prev.x, prev.y); nctx.lineTo(x, y); nctx.stroke(); }
+          prev = { x, y };
+        }
+        nctx.setLineDash([]);
+      });
+
+      nctx.font = fontSize + 'px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
+      nctx.textAlign = 'center';
+      nctx.textBaseline = 'middle';
+
+      for (let i = 0; i < rowsToShow; i++) {
+        const rowIdx = pageStartRow + i;
+        if (rowIdx >= rows.length) break;
+        const row = rows[rowIdx];
+        const y = contentTop + i * lineH + lineH / 2;
+        const isActive = isCurrent && (rowIdx === activeRowIdx);
+
+        if (isActive) {
+          nctx.fillStyle = 'rgba(249,199,79,0.14)';
+          roundRect(nctx, x0 + 8, y - lineH / 2 + 2, w0 - 16, lineH - 4, 10);
+          nctx.fill();
+        }
+
+        for (let p = 0; p < stage; p++) {
+          const bell = row[p];
+          const isLive = state.liveBells.includes(bell);
+          const x = left + p * colW + colW / 2;
+          nctx.fillStyle = isActive ? (isLive ? '#ffffff' : '#c6cbe0') : (isLive ? '#dde8ff' : '#9aa2bb');
+          nctx.fillText(String(bell), x, y);
+        }
+      }
+
+      nctx.restore();
+      nctx.restore();
+    }
+
+    drawPage(pageAStart, pad, pad, 'CURRENT PAGE', true);
+    drawPage(pageBStart, pad + pageW + gap, pad, 'NEXT PAGE', false);
+  }
+
+  // Stats render (math-safe)
+  function fmtMs(ms, signed) {
+    if (ms == null || isNaN(ms)) return '&ndash;';
+    const v = Math.round(ms);
+    if (signed) {
+      if (v === 0) return '0';
+      const sign = v > 0 ? '+' : '−';
+      return sign + Math.abs(v);
+    }
+    return String(v);
+  }
+
+  function renderStats(nowMs) {
+    if (!viewStats.checked) return;
+    const live = state.liveBells.slice().sort((a,b)=>a-b);
+    if (!live.length) { statsDiv.textContent = 'No live bells selected.'; return; }
+
+    let totalHits = 0, totalMisses = 0, sumAbs = 0, sumSigned = 0;
+    live.forEach(b => {
+      const s = state.statsByBell[b];
+      totalHits += s.hits;
+      totalMisses += s.misses;
+      sumAbs += s.sumAbsDelta;
+      sumSigned += s.sumSignedDelta;
+    });
+
+    const totalTargets = totalHits + totalMisses;
+    const rowsCompleted = Math.min(Math.floor(state.execBeatIndex / state.stage), state.rows.length);
+    const totalRows = state.rows.length;
+
+    const accOverall = totalTargets > 0 ? (totalHits / totalTargets) * 100 : null;
+    const meanAbsOverall = totalHits > 0 ? Math.round(sumAbs / totalHits) : null;
+    const meanSignedOverall = totalHits > 0 ? Math.round(sumSigned / totalHits) : null;
+    const elapsed = getElapsedSeconds(nowMs);
+
+    let html = '';
+    html += '<div class="summary">';
+    html += 'Rows: ' + rowsCompleted + ' / ' + totalRows + ' &nbsp; ';
+    html += 'Acc%: ' + (accOverall == null ? '&ndash;' : accOverall.toFixed(0)) + ' &nbsp; ';
+    html += 'Combo: ' + state.comboCurrentGlobal + ' (best ' + state.comboBestGlobal + ') &nbsp; ';
+    html += 'Mean |Δ|: ' + (meanAbsOverall == null ? '&ndash;' : meanAbsOverall + ' ms') + ' &nbsp; ';
+    html += 'Mean Δ: ' + (meanSignedOverall == null ? '&ndash;' : fmtMs(meanSignedOverall, true) + ' ms') + ' &nbsp; ';
+    html += 'Time: ' + elapsed.toFixed(1) + ' s';
+    html += '</div>';
+
+    html += '<table><thead><tr>';
+    html += '<th>Bell</th><th>Targets</th><th>Hits</th><th>Misses</th><th>Acc%</th><th>Cur combo</th><th>Best combo</th><th>Mean |Δ|</th><th>Mean Δ</th><th>Score</th>';
+    html += '</tr></thead><tbody>';
+
+    live.forEach(bell => {
+      const s = state.statsByBell[bell];
+      const targets = s.hits + s.misses;
+      const acc = targets > 0 ? (s.hits / targets) * 100 : null;
+      const meanAbs = s.hits > 0 ? Math.round(s.sumAbsDelta / s.hits) : null;
+      const meanSigned = s.hits > 0 ? Math.round(s.sumSignedDelta / s.hits) : null;
+
+      html += '<tr>';
+      html += '<td>' + bell + '</td>';
+      html += '<td>' + targets + '</td>';
+      html += '<td>' + s.hits + '</td>';
+      html += '<td>' + s.misses + '</td>';
+      html += '<td>' + (acc == null ? '&ndash;' : acc.toFixed(0)) + '</td>';
+      html += '<td>' + s.comboCurrent + '</td>';
+      html += '<td>' + s.comboBest + '</td>';
+      html += '<td>' + fmtMs(meanAbs, false) + '</td>';
+      html += '<td>' + fmtMs(meanSigned, true) + '</td>';
+      html += '<td>' + Math.round(s.score) + '</td>';
+      html += '</tr>';
+    });
+
+    html += '</tbody></table>';
+
+    const windowMs = getHitWindowMs();
+    const tightThresh = Math.round(windowMs * 0.4);
+    const medThresh = Math.round(windowMs * 0.75);
+    const label = state.hitWindow === 'tight' ? 'Tight (±120 ms)' : (state.hitWindow === 'medium' ? 'Medium (±180 ms)' : 'Loose (±240 ms)');
+
+    html += '<div class="stats-info">';
+    html += 'Scoring: hit window ' + label + '. ';
+    html += 'Every hit scores at least 10 points: |Δ| ≤ ' + tightThresh + ' ms → 12 pts; ';
+    html += '≤ ' + medThresh + ' ms → 11 pts; ';
+    html += '≤ ' + windowMs + ' ms → 10 pts; outside the window → miss. ';
+    html += 'Δ is signed timing error (negative = early, positive = late).';
+    html += '</div>';
+
+    statsDiv.innerHTML = html;
+  }
+
+  // Engine
+  function startPressed() {
+    if (!state.rows.length) { alert('No rows loaded.'); return; }
+    ensureAudio();
+    state.bpm = clamp(parseInt(bpmInput.value, 10) || 80, 30, 240);
+    bpmInput.value = String(state.bpm);
+
+    const now = perfNow();
+    const beatMs = 60000 / state.bpm;
+
+    state.phase = 'countdown';
+    state.elapsedMs = 0;
+    state.runStartPerfMs = 0;
+    state.schedBeatIndex = 0;
+    state.execBeatIndex = 0;
+    state.targets.length = 0;
+    resetStats();
+
+    state.countFirstBeatMs = now + beatMs;
+    state.countExec = 0;
+    state.countSched = 0;
+    state.methodStartMs = state.countFirstBeatMs + COUNTDOWN_BEATS * beatMs;
+
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
+  }
+
+  function stopPressed() {
+    if (state.phase === 'running') state.elapsedMs += (perfNow() - state.runStartPerfMs);
+    state.phase = 'idle';
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+    closeAudio();
+  }
+
+  function scheduleCountdown(nowMs) {
+    if (state.phase !== 'countdown') return;
+    const beatMs = 60000 / state.bpm;
+
+    while (state.countSched < COUNTDOWN_BEATS) {
+      const tMs = state.countFirstBeatMs + state.countSched * beatMs;
+      if (tMs <= nowMs + LOOKAHEAD_MS) { playTickAt(tMs); state.countSched += 1; }
+      else break;
+    }
+    while (state.countExec < COUNTDOWN_BEATS) {
+      const tMs = state.countFirstBeatMs + state.countExec * beatMs;
+      if (nowMs >= tMs) state.countExec += 1; else break;
+    }
+    if (state.countExec >= COUNTDOWN_BEATS && nowMs >= state.methodStartMs) {
+      state.phase = 'running';
+      state.runStartPerfMs = state.methodStartMs;
+    }
+  }
+
+  function scheduleMethod(nowMs) {
+    if (state.phase !== 'running') return;
+    const beatMs = 60000 / state.bpm;
+    const totalBeats = state.rows.length * state.stage;
+    const liveSet = new Set(state.liveBells);
+
+    while (state.schedBeatIndex < totalBeats) {
+      const tMs = state.methodStartMs + state.schedBeatIndex * beatMs;
+      if (tMs <= nowMs + LOOKAHEAD_MS) {
+        const bell = getBellForStrikeIndex(state.schedBeatIndex);
+        recordTarget(bell, tMs);
+        if (!liveSet.has(bell)) playBellAt(bell, tMs);
+        state.schedBeatIndex += 1;
+      } else break;
+    }
+
+    while (state.execBeatIndex < totalBeats) {
+      const tMs = state.methodStartMs + state.execBeatIndex * beatMs;
+      if (nowMs >= tMs) state.execBeatIndex += 1; else break;
+    }
+
+    if (state.execBeatIndex >= totalBeats) stopPressed();
+  }
+
+  function loop() {
+    const nowMs = perfNow();
+    syncViewLayout();
+    scheduleCountdown(nowMs);
+    scheduleMethod(nowMs);
+    if (state.phase === 'running') updateMisses(nowMs);
+
+    if (viewSpotlight.checked) drawSpotlight(nowMs);
+    if (viewNotation.checked) drawNotation();
+    if (viewStats.checked) renderStats(nowMs);
+
+    window.requestAnimationFrame(loop);
+  }
+
+  // Inputs
+  document.addEventListener('keydown', (e) => {
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
+
+    const k = e.key;
+    if (k >= '1' && k <= '9') {
+      const bell = k.charCodeAt(0) - 48;
+      if (bell >= 1 && bell <= state.stage) ringBell(bell);
+    }
+  });
+
+  spotlightCanvas.addEventListener('pointerdown', (e) => {
+    const bell = spotlightHitTest(e.clientX, e.clientY);
+    if (bell != null) { e.preventDefault(); ringBell(bell); }
+  });
+
+  methodSelect.addEventListener('change', () => {
+    if (state.phase !== 'idle') return;
+    state.method = methodSelect.value;
+    if (state.method !== 'custom') state.customRows = null;
+    computeRows(); resetStats();
+  });
+
+  bellCountSelect.addEventListener('change', () => {
+    if (state.phase !== 'idle') return;
+    state.stage = clamp(parseInt(bellCountSelect.value,10)||6, 4, 6);
+    if (state.method === 'custom') { state.method = 'plainhunt'; methodSelect.value='plainhunt'; state.customRows=null; }
+    rebuildLiveCountOptions(); ensureLiveBells(); rebuildBellPicker(); rebuildBellPads();
+    ensurePathBells(); rebuildPathPicker(); computeRows(); resetStats();
+  });
+
+  liveCountSelect.addEventListener('change', () => {
+    if (state.phase !== 'idle') return;
+    state.liveCount = clamp(parseInt(liveCountSelect.value,10)||1, 1, state.stage);
+    ensureLiveBells(); rebuildBellPicker(); rebuildBellPads(); resetStats();
+  });
+
+  bpmInput.addEventListener('change', () => {
+    if (state.phase !== 'idle') return;
+    state.bpm = clamp(parseInt(bpmInput.value,10)||80, 30, 240);
+    bpmInput.value = String(state.bpm);
+  });
+
+  [viewSpotlight, viewNotation, viewStats].forEach(cb => cb.addEventListener('change', syncViewLayout));
+
+  pathNoneBtn.addEventListener('click', setPathNone);
+  pathAllBtn.addEventListener('click', setPathAll);
+
+  hitWindowSelect.addEventListener('change', () => {
+    if (state.phase !== 'idle') { hitWindowSelect.value = state.hitWindow; return; }
+    state.hitWindow = hitWindowSelect.value;
+  });
+
+  fileInput.addEventListener('change', () => {
+    if (state.phase !== 'idle') return;
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const parsed = parseCustom(String(ev.target.result));
+        applyCustomRows(parsed.rows, parsed.stage);
+        alert('Custom method loaded: ' + parsed.rows.length + ' rows on ' + parsed.stage + ' bells.');
+      } catch (err) {
+        alert('Could not load custom method: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+  });
+
+  startBtn.addEventListener('click', startPressed);
+  stopBtn.addEventListener('click', stopPressed);
+
+  function boot() {
+    state.stage = clamp(parseInt(bellCountSelect.value,10)||6, 4, 6);
+    state.liveCount = Math.min(2, state.stage);
+    rebuildLiveCountOptions();
+    ensureLiveBells();
+    rebuildBellPicker();
+    rebuildBellPads();
+    state.pathBells = [];
+    rebuildPathPicker();
+    state.hitWindow = hitWindowSelect.value || DEFAULT_HIT_WINDOW;
+    computeRows();
+    resetStats();
+    syncViewLayout();
+    window.requestAnimationFrame(loop);
+  }
+  boot();
+})();
+    </script>
+  </body>
+</html>
