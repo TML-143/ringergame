@@ -182,6 +182,17 @@ select option { background-color: #0b1026; color: #e8eeff; }
   color:rgba(232,238,255,0.90);
 }
 
+
+/* Pane inline settings toggles */
+.pane-actions{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px;
+  flex-wrap:wrap;
+}
+.pane-actions .toggle{ padding:4px 8px; font-size:12px; }
+.toggles--mini{ gap:6px; }
 .pane canvas{
   display:block;
   width:100%;
@@ -313,6 +324,34 @@ select option { background-color: #0b1026; color: #e8eeff; }
 .menu-hidden #controls{ padding-top:46px; }
 
 .count-overlay .num.ready{ font-size:40px; letter-spacing:0.02em; }
+
+/* Keybindings */
+.keybind-panel{display:flex;flex-direction:column;gap:6px;min-width:180px}
+.keybind-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.keybind-bell{font-size:12px;color:rgba(232,238,255,0.75);font-weight:700;min-width:60px}
+.keybind-key{
+  font:700 12px/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  padding:6px 10px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,0.12);
+  background:rgba(255,255,255,0.05);
+  min-width:92px;
+  text-align:center
+}
+.keybind-actions{margin-top:6px;display:flex;gap:10px;flex-wrap:wrap}
+.keybind-bind-btn{padding:6px 10px;font-size:12px}
+.keybind-row.capture .keybind-key{
+  border-color:rgba(249,199,79,0.55);
+  box-shadow:0 0 0 3px rgba(249,199,79,0.12) inset;
+  background:rgba(249,199,79,0.10);
+  color:#10162c
+}
+.keybind-row.conflict .keybind-key{
+  border-color:rgba(239,71,111,0.55);
+  box-shadow:0 0 0 3px rgba(239,71,111,0.10) inset
+}
+.keybind-note{font-size:11px;color:rgba(232,238,255,0.70);margin-top:4px;line-height:1.3}
+
 </style>
   </head>
   <body>
@@ -365,6 +404,15 @@ select option { background-color: #0b1026; color: #e8eeff; }
           </div>
 
           <div class="control">
+            <label>Keybindings</label>
+            <div id="keybindPanel" class="keybind-panel" aria-label="Keybindings"></div>
+            <div class="keybind-actions">
+              <button id="keybindResetBtn" class="pill" type="button">Reset to defaults</button>
+            </div>
+            <div id="keybindNote" class="keybind-note"></div>
+          </div>
+
+          <div class="control">
             <label for="bpmInput">Tempo (BPM)</label>
             <input id="bpmInput" type="number" min="30" max="240" value="80" />
           </div>
@@ -376,6 +424,33 @@ select option { background-color: #0b1026; color: #e8eeff; }
               <label class="toggle"><input id="viewSpotlight" type="checkbox" checked /> Spotlight</label>
               <label class="toggle"><input id="viewNotation" type="checkbox" checked /> Notation</label>
               <label class="toggle"><input id="viewStats" type="checkbox" checked /> Stats</label>
+            </div>
+          </div>
+
+         
+          <div class="control">
+            <label>Display</label>
+            <div class="toggles toggles--mini" role="group" aria-label="Display toggles">
+              <label class="toggle"><input id="displayLiveOnly" type="checkbox" /> Display live bell(s) only</label>
+            </div>
+          </div>
+
+          <div class="control">
+            <label>Spotlight swaps</label>
+            <div class="toggles toggles--mini" role="group" aria-label="Spotlight swaps toggles">
+              <label class="toggle"><input id="spotlightSwapsView" type="checkbox" /> Swaps view</label>
+              <span id="spotlightSwapRows" class="toggles toggles--mini hidden" role="group" aria-label="Spotlight swap rows">
+                <label class="toggle"><input id="spotlightShowN" type="checkbox" /> N</label>
+                <label class="toggle"><input id="spotlightShowN1" type="checkbox" /> N+1</label>
+                <label class="toggle"><input id="spotlightShowN2" type="checkbox" /> N+2</label>
+              </span>
+            </div>
+          </div>
+
+          <div class="control">
+            <label>Notation swaps</label>
+            <div class="toggles toggles--mini" role="group" aria-label="Notation swaps toggles">
+              <label class="toggle"><input id="notationSwapsOverlay" type="checkbox" /> Notation swaps overlay</label>
             </div>
           </div>
 
@@ -421,21 +496,13 @@ select option { background-color: #0b1026; color: #e8eeff; }
         <section id="statsPane" class="pane pane-span">
           <div class="pane-title">
             <span>Stats</span>
-            <div class="hit-window-control">
-              <label for="hitWindowSelect">Hit window</label>
-              <select id="hitWindowSelect">
-                <option value="tight">Tight (±120 ms)</option>
-                <option value="medium" selected>Medium (±180 ms)</option>
-                <option value="loose">Loose (±240 ms)</option>
-              </select>
-            </div>
           </div>
           <div id="stats"></div>
         </section>
       </main>
 
       <footer class="footer">
-        <p id="hint">Keys 1–8 ring bells. Tap/click bells in the Display. Non-live bells are rung by bots. Only your selected live bells are scored.</p>
+        <p id="hint">Keys 1–8 ring bells by default. Use Keybindings to rebind live bells (and Space/Enter when you have a single live bell). Tap/click bells in the Display. Non-live bells are rung by bots. Only your selected live bells are scored.</p>
       </footer>
     </div>
 
@@ -446,8 +513,8 @@ select option { background-color: #0b1026; color: #e8eeff; }
   const LOOKAHEAD_MS = 160;
   const COUNTDOWN_BEATS = 3;
 
-  const HIT_WINDOWS = { tight: 120, medium: 180, loose: 240 };
-  const DEFAULT_HIT_WINDOW = 'medium';
+  // Row-based scoring: each bell has one beat-wide window per row, split into three equal thirds.
+  // Middle third = 10 points, outer thirds = 9 points, miss = 0.
 
   // === Analytics (GA4) ===
   const GA_ID = 'G-7TEG531231';
@@ -456,6 +523,16 @@ select option { background-color: #0b1026; color: #e8eeff; }
   function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
   function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
   function safeSetLS(key, val) { try { localStorage.setItem(key, val); } catch (_) {} }
+
+  function safeGetBoolLS(key, def) {
+    const v = safeGetLS(key);
+    if (v == null) return def;
+    if (v === '1' || v === 'true' || v === 'on') return true;
+    if (v === '0' || v === 'false' || v === 'off') return false;
+    return def;
+  }
+  function safeSetBoolLS(key, val) { safeSetLS(key, val ? '1' : '0'); }
+
 
   function rid(prefix) {
     try {
@@ -555,6 +632,9 @@ select option { background-color: #0b1026; color: #e8eeff; }
 
   const liveCountSelect = document.getElementById('liveCount');
   const bellPicker = document.getElementById('bellPicker');
+  const keybindPanel = document.getElementById('keybindPanel');
+  const keybindResetBtn = document.getElementById('keybindResetBtn');
+  const keybindNote = document.getElementById('keybindNote');
   const bpmInput = document.getElementById('bpmInput');
   const fileInput = document.getElementById('fileInput');
   const startBtn = document.getElementById('startBtn');
@@ -571,12 +651,36 @@ select option { background-color: #0b1026; color: #e8eeff; }
   const viewSpotlight = document.getElementById('viewSpotlight');
   const viewNotation = document.getElementById('viewNotation');
   const viewStats = document.getElementById('viewStats');
+  const displayLiveOnly = document.getElementById('displayLiveOnly');
+
+
+  // swaps view controls
+  const spotlightSwapsView = document.getElementById('spotlightSwapsView');
+  const spotlightSwapRows = document.getElementById('spotlightSwapRows');
+  const spotlightShowN = document.getElementById('spotlightShowN');
+  const spotlightShowN1 = document.getElementById('spotlightShowN1');
+  const spotlightShowN2 = document.getElementById('spotlightShowN2');
+  const notationSwapsOverlay = document.getElementById('notationSwapsOverlay');
+
 
   const pathNoneBtn = document.getElementById('pathNoneBtn');
   const pathAllBtn = document.getElementById('pathAllBtn');
   const pathPicker = document.getElementById('pathPicker');
 
-  const hitWindowSelect = document.getElementById('hitWindowSelect');
+  // swaps view localStorage keys
+  const LS_SPOTLIGHT_SWAPS_VIEW = 'spotlight_swaps_view';
+  const LS_SPOTLIGHT_SHOW_N = 'spotlight_show_N';
+  const LS_SPOTLIGHT_SHOW_N1 = 'spotlight_show_N1';
+  const LS_SPOTLIGHT_SHOW_N2 = 'spotlight_show_N2';
+  const LS_NOTATION_SWAPS_OVERLAY = 'notation_swaps_overlay';
+  const LS_DISPLAY_LIVE_BELLS_ONLY = 'display_live_bells_only';
+
+
+  function syncSpotlightSwapRowTogglesUI() {
+    if (!spotlightSwapRows || !spotlightSwapsView) return;
+    spotlightSwapRows.classList.toggle('hidden', !spotlightSwapsView.checked);
+  }
+
 
   // === Musical scales (8 tones incl octave) ===
   // Intervals are semitones ascending from root to octave.
@@ -652,18 +756,28 @@ select option { background-color: #0b1026; color: #e8eeff; }
     statsByBell: {},
     comboCurrentGlobal: 0,
     comboBestGlobal: 0,
-    hitWindow: DEFAULT_HIT_WINDOW,
 
     currentPlay: null, // { playId, began }
 
     lastRingAtMs: {}, // bell -> ms (intended beat time or actual key time)
+
+    // keybindings
+    keyBindings: {}, // bell -> normalized key name
+    keybindCaptureBell: null,
+
+    // swaps view settings
+    spotlightSwapsView: true,
+    spotlightShowN: true,
+    spotlightShowN1: true,
+    spotlightShowN2: true,
+    notationSwapsOverlay: false,
+    displayLiveBellsOnly: false,
   };
 
   let audioCtx = null;
 
   function clamp(v, min, max) { return v < min ? min : (v > max ? max : v); }
   function perfNow() { return performance.now(); }
-  function getHitWindowMs() { return HIT_WINDOWS[state.hitWindow] || HIT_WINDOWS[DEFAULT_HIT_WINDOW]; }
 
   // === Audio ===
   function ensureAudio() {
@@ -888,7 +1002,144 @@ select option { background-color: #0b1026; color: #e8eeff; }
       if (state.liveBells.includes(b)) btn.classList.add('selected');
       bellPicker.appendChild(btn);
     }
+    rebuildKeybindPanel();
   }
+
+
+  // === Keybindings ===
+  const LS_KEYBINDS = 'rg_keybindings_v1';
+
+  function normalizeBindKey(k) {
+    if (k === ' ') return 'Space';
+    if (k === 'Spacebar') return 'Space';
+    if (!k) return '';
+    if (k.length === 1) return k.toUpperCase();
+    return k;
+  }
+
+  function formatBindKey(k) {
+    const kk = normalizeBindKey(k);
+    return kk ? kk : 'Unbound';
+  }
+
+  function isAllowedBindKey(k) {
+    const kk = normalizeBindKey(k);
+    return (kk.length === 1) || kk === 'Enter' || kk === 'Space';
+  }
+
+  function defaultBindKeyForBell(bell) {
+    if (bell >= 1 && bell <= 8) return String(bell);
+    return '';
+  }
+
+  function loadKeyBindings() {
+    state.keyBindings = {};
+    const raw = safeGetLS(LS_KEYBINDS);
+    const parsed = raw ? safeJsonParse(raw) : null;
+    if (parsed && typeof parsed === 'object') {
+      for (const k in parsed) {
+        if (!Object.prototype.hasOwnProperty.call(parsed, k)) continue;
+        const bell = parseInt(k, 10);
+        if (!isFinite(bell)) continue;
+        const val = parsed[k];
+        if (typeof val === 'string') state.keyBindings[bell] = normalizeBindKey(val);
+      }
+    }
+  }
+
+  function saveKeyBindings() {
+    safeSetLS(LS_KEYBINDS, JSON.stringify(state.keyBindings));
+  }
+
+  function ensureKeyBindings() {
+    for (let b = 1; b <= state.stage; b++) {
+      if (!Object.prototype.hasOwnProperty.call(state.keyBindings, b)) {
+        state.keyBindings[b] = defaultBindKeyForBell(b);
+      }
+    }
+  }
+
+  function resetKeyBindingsToDefaults() {
+    for (let b = 1; b <= 8; b++) state.keyBindings[b] = String(b);
+    saveKeyBindings();
+  }
+
+  function getLiveKeyConflicts() {
+    const live = state.liveBells.slice();
+    const usage = {};
+    for (const b of live) {
+      const k = state.keyBindings[b];
+      if (!k) continue;
+      if (!usage[k]) usage[k] = [];
+      usage[k].push(b);
+    }
+    const conflicts = new Set();
+    for (const k in usage) {
+      if (usage[k].length > 1) usage[k].forEach(b => conflicts.add(b));
+    }
+    return conflicts;
+  }
+
+  function rebuildKeybindPanel() {
+    if (!keybindPanel) return;
+    ensureKeyBindings();
+
+    const live = state.liveBells.slice().sort((a,b)=>a-b);
+    keybindPanel.innerHTML = '';
+
+    if (!live.length) {
+      keybindPanel.textContent = 'No live bells selected.';
+      if (keybindNote) keybindNote.textContent = '';
+      return;
+    }
+
+    const conflicts = getLiveKeyConflicts();
+
+    live.forEach(b => {
+      const row = document.createElement('div');
+      row.className = 'keybind-row';
+      if (conflicts.has(b)) row.classList.add('conflict');
+      if (state.keybindCaptureBell === b) row.classList.add('capture');
+
+      const bellLabel = document.createElement('span');
+      bellLabel.className = 'keybind-bell';
+      bellLabel.textContent = 'Bell ' + b;
+
+      const keyLabel = document.createElement('span');
+      keyLabel.className = 'keybind-key';
+      keyLabel.textContent = (state.keybindCaptureBell === b) ? 'Press key…' : formatBindKey(state.keyBindings[b]);
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'pill keybind-bind-btn';
+      btn.textContent = (state.keybindCaptureBell === b) ? 'Cancel' : 'Bind key';
+      btn.disabled = state.phase !== 'idle';
+      btn.addEventListener('click', () => {
+        if (state.phase !== 'idle') return;
+        state.keybindCaptureBell = (state.keybindCaptureBell === b) ? null : b;
+        rebuildKeybindPanel();
+      });
+
+      row.appendChild(bellLabel);
+      row.appendChild(keyLabel);
+      row.appendChild(btn);
+
+      keybindPanel.appendChild(row);
+    });
+
+    if (keybindResetBtn) keybindResetBtn.disabled = state.phase !== 'idle';
+
+    if (keybindNote) {
+      if (state.keybindCaptureBell != null) {
+        keybindNote.textContent = 'Press a letter/number key, Space, or Enter (Esc to cancel).';
+      } else if (live.length === 1) {
+        keybindNote.textContent = 'Tip: Space and Enter also ring the only live bell.';
+      } else if (conflicts.size) {
+        keybindNote.textContent = 'Fix conflicts: each key can be bound to only one live bell.';
+      } else keybindNote.textContent = '';
+    }
+  }
+
 
   function ensurePathBells() {
     const keep = [];
@@ -973,20 +1224,28 @@ select option { background-color: #0b1026; color: #e8eeff; }
     return row ? row[pos] : 1;
   }
 
-  function recordTarget(bell, timeMs) { state.targets.push({ bell, timeMs, judged: false, hit: false }); }
+  function recordTarget(bell, timeMs) {
+    state.targets.push({ bell, timeMs, judged: false, hit: false });
+  }
 
-  function getHitWindowPoints(absDelta, windowMs) {
-    const tight = windowMs * 0.4;
-    const med = windowMs * 0.75;
-    return (absDelta <= tight) ? 12 : (absDelta <= med ? 11 : 10);
+  function buildAllTargets(beatMs) {
+    state.targets.length = 0;
+    const stage = state.stage;
+    const totalBeats = state.rows.length * stage;
+    for (let i = 0; i < totalBeats; i++) {
+      const bell = getBellForStrikeIndex(i);
+      const tMs = state.methodStartMs + i * beatMs;
+      recordTarget(bell, tMs);
+    }
   }
 
   function updateMisses(nowMs) {
     const live = new Set(state.liveBells);
-    const windowMs = getHitWindowMs();
+    const beatMs = 60000 / state.bpm;
+    const halfBeat = beatMs / 2;
     for (const t of state.targets) {
       if (t.judged) continue;
-      if (nowMs > t.timeMs + windowMs) {
+      if (nowMs > t.timeMs + halfBeat) {
         t.judged = true;
         if (live.has(t.bell)) {
           const s = state.statsByBell[t.bell];
@@ -1019,22 +1278,59 @@ select option { background-color: #0b1026; color: #e8eeff; }
     if (state.phase !== 'running') return;
     if (!state.liveBells.includes(bell)) return;
 
-    const windowMs = getHitWindowMs();
+    const beatMs = 60000 / state.bpm;
+    const halfBeat = beatMs / 2;
 
-    let bestIndex = -1;
-    let bestAbs = null;
+    // Only the first ring for this bell within the current row counts (hit or miss).
+    const rel = timeMs - (state.methodStartMs - halfBeat);
+    if (rel < 0) return;
+
+    const beatIndex = Math.floor(rel / beatMs);
+    if (beatIndex < 0) return;
+
+    const rowIdx = Math.floor(beatIndex / state.stage);
+    if (rowIdx < 0 || rowIdx >= state.rows.length) return;
+
+    const row = state.rows[rowIdx];
+    if (!row) return;
+
+    const posInRow = row.indexOf(bell);
+    if (posInRow < 0) return;
+
+    const targetTimeMs = state.methodStartMs + (rowIdx * state.stage + posInRow) * beatMs;
+
+    let t = null;
+    let bestAbs = Infinity;
     for (let i = 0; i < state.targets.length; i++) {
-      const t = state.targets[i];
-      if (t.judged || t.bell !== bell) continue;
-      const abs = Math.abs(timeMs - t.timeMs);
-      if (abs <= windowMs && (bestAbs == null || abs < bestAbs)) { bestAbs = abs; bestIndex = i; }
+      const cand = state.targets[i];
+      if (cand.bell !== bell) continue;
+      const abs = Math.abs(cand.timeMs - targetTimeMs);
+      if (abs < bestAbs) { bestAbs = abs; t = cand; }
     }
-    if (bestIndex === -1) return;
+    if (!t) return;
+    if (bestAbs > halfBeat) return; // target already expired/trimmed
+    if (t.judged) return;
 
-    const t = state.targets[bestIndex];
-    t.judged = true; t.hit = true;
+    const windowStart = targetTimeMs - halfBeat;
+    const windowEnd = targetTimeMs + halfBeat;
 
-    const deltaMs = timeMs - t.timeMs;
+    // Miss if the first ring in the row is outside the bell's own window.
+    if (timeMs < windowStart || timeMs >= windowEnd) {
+      t.judged = true;
+      t.hit = false;
+
+      const s = state.statsByBell[bell];
+      s.misses += 1;
+      s.comboCurrent = 0;
+      state.comboCurrentGlobal = 0;
+      return;
+    }
+
+    // Hit: score within the bell window (middle third = 10, outer thirds = 9).
+    t.judged = true;
+    t.hit = true;
+
+    const deltaMs = timeMs - targetTimeMs;
     const absDelta = Math.abs(deltaMs);
     const s = state.statsByBell[bell];
 
@@ -1042,7 +1338,10 @@ select option { background-color: #0b1026; color: #e8eeff; }
     s.sumAbsDelta += absDelta;
     s.sumSignedDelta += deltaMs;
 
-    const points = getHitWindowPoints(absDelta, windowMs);
+    const offset = clamp(timeMs - windowStart, 0, beatMs);
+    const third = beatMs / 3;
+    let points = 9;
+    if (offset >= third && offset < 2 * third) points = 10;
 
     s.score += points;
 
@@ -1090,61 +1389,178 @@ select option { background-color: #0b1026; color: #e8eeff; }
 
 
   // === Spotlight (cue only; not clickable) ===
-  function drawSpotlight(nowMs) {
-    const { W, H } = fitCanvas(spotlightCanvas, sctx);
-    sctx.clearRect(0, 0, W, H);
+    function drawSpotlight(nowMs) {
+      const { W, H } = fitCanvas(spotlightCanvas, sctx);
+      sctx.clearRect(0, 0, W, H);
 
-    const cd = countdownDisplay(nowMs);
-    if (!state.rows.length) return;
+      const cd = countdownDisplay(nowMs);
+      if (!state.rows.length) return;
 
-    // countdown badge intentionally omitted (overlay handles count-in)
+      // countdown badge intentionally omitted (overlay handles count-in)
 
-    const stage = state.stage;
-    const totalBeats = state.rows.length * stage;
-    const strikeIdx = clamp(state.execBeatIndex - 1, 0, Math.max(0, totalBeats - 1));
-    const rowIdx = Math.floor(strikeIdx / stage);
-    const pos = strikeIdx % stage;
-    const currentRow = state.rows[rowIdx] || state.rows[0];
-    const nextRow = state.rows[Math.min(rowIdx + 1, state.rows.length - 1)] || currentRow;
+      const stage = state.stage;
+      const totalBeats = state.rows.length * stage;
+      const strikeIdx = clamp(state.execBeatIndex - 1, 0, Math.max(0, totalBeats - 1));
+      const rowIdx = Math.floor(strikeIdx / stage);
+      const pos = strikeIdx % stage;
 
-    const padX = 14, padY = 12, gapY = 10;
-    const rowBlockH = (H - padY * 2 - gapY) / 2;
-    const cellW = (W - padX * 2) / stage;
+      // Default Spotlight (exactly as before)
+      if (!state.spotlightSwapsView) {
+        const currentRow = state.rows[rowIdx] || state.rows[0];
+        const nextRow = state.rows[Math.min(rowIdx + 1, state.rows.length - 1)] || currentRow;
 
-    function drawRow(row, yTop, highlightPos, faded) {
-      sctx.save();
-      sctx.translate(padX, yTop);
-      sctx.fillStyle = faded ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.05)';
-      sctx.strokeStyle = 'rgba(255,255,255,0.08)';
-      roundRect(sctx, 0, 0, W - padX * 2, rowBlockH, 12);
-      sctx.fill(); sctx.stroke();
+        const padX = 14, padY = 12, gapY = 10;
+        const rowBlockH = (H - padY * 2 - gapY) / 2;
+        const cellW = (W - padX * 2) / stage;
 
-      const fontSize = Math.max(20, Math.min(34, Math.floor(rowBlockH * 0.58)));
-      sctx.font = fontSize + 'px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
-      sctx.textAlign = 'center';
-      sctx.textBaseline = 'middle';
+        function drawRow(row, yTop, highlightPos, faded) {
+          sctx.save();
+          sctx.translate(padX, yTop);
+          sctx.fillStyle = faded ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.05)';
+          sctx.strokeStyle = 'rgba(255,255,255,0.08)';
+          roundRect(sctx, 0, 0, W - padX * 2, rowBlockH, 12);
+          sctx.fill(); sctx.stroke();
 
-      for (let i = 0; i < stage; i++) {
-        const x = i * cellW + cellW / 2;
-        const y = rowBlockH / 2;
-        const bell = row[i];
-        const isLive = state.liveBells.includes(bell);
+          const fontSize = Math.max(20, Math.min(34, Math.floor(rowBlockH * 0.58)));
+          sctx.font = fontSize + 'px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
+          sctx.textAlign = 'center';
+          sctx.textBaseline = 'middle';
 
-        if (!faded && i === highlightPos) {
-          sctx.fillStyle = (cd === 'Ready') ? 'rgba(232,238,255,0.86)' : '#f9c74f';
-          roundRect(sctx, i * cellW + 4, 6, cellW - 8, rowBlockH - 12, 10);
-          sctx.fill();
-          sctx.fillStyle = '#10162c';
-        } else sctx.fillStyle = isLive ? '#e8eeff' : '#9aa2bb';
+          for (let i = 0; i < stage; i++) {
+            const x = i * cellW + cellW / 2;
+            const y = rowBlockH / 2;
+            const bell = row[i];
+            const isLive = state.liveBells.includes(bell);
 
-        sctx.fillText(String(bell), x, y);
+            if (!faded && i === highlightPos) {
+              sctx.fillStyle = (cd === 'Ready') ? 'rgba(232,238,255,0.86)' : '#f9c74f';
+              roundRect(sctx, i * cellW + 4, 6, cellW - 8, rowBlockH - 12, 10);
+              sctx.fill();
+              sctx.fillStyle = '#10162c';
+            } else sctx.fillStyle = isLive ? '#e8eeff' : '#9aa2bb';
+
+            sctx.fillText(String(bell), x, y);
+          }
+          sctx.restore();
+        }
+
+        drawRow(currentRow, padY, pos, false);
+        drawRow(nextRow, padY + rowBlockH + gapY, -1, true);
+        return;
       }
-      sctx.restore();
-    }
 
-    drawRow(currentRow, padY, pos, false);
-    drawRow(nextRow, padY + rowBlockH + gapY, -1, true);
-  }
+      // === Swaps View ===
+      const rows = state.rows;
+      const padX = 14, padY = 12;
+      const gapY = 8;
+      const diagramH = 18;
+
+      const show0 = !!state.spotlightShowN;
+      const show1 = !!state.spotlightShowN1 && (rowIdx + 1 < rows.length);
+      const show2 = !!state.spotlightShowN2 && (rowIdx + 2 < rows.length);
+
+      const row0 = rows[rowIdx] || rows[0];
+      const row1 = show1 ? rows[rowIdx + 1] : null;
+      const row2 = show2 ? rows[rowIdx + 2] : null;
+
+      const items = [];
+      if (show0) items.push({ type: 'row', row: row0, highlightPos: pos, faded: false, offset: 0 });
+      if (show0 && show1) items.push({ type: 'diagram', before: row0, after: row1 });
+      if (show1) items.push({ type: 'row', row: row1, highlightPos: -1, faded: true, offset: 1 });
+      if (show1 && show2) items.push({ type: 'diagram', before: row1, after: row2 });
+      if (show2) items.push({ type: 'row', row: row2, highlightPos: -1, faded: true, offset: 2 });
+
+      const rowCount = items.reduce((n, it) => n + (it.type === 'row' ? 1 : 0), 0);
+      if (!rowCount) return;
+
+      // If row N is hidden, avoid a permanently "faded" first row.
+      if (!show0) {
+        for (let i = 0; i < items.length; i++) {
+          if (items[i].type === 'row') { items[i].faded = false; break; }
+        }
+      }
+
+      const diagramCount = items.length - rowCount;
+      const availH = H - padY * 2;
+      const gapsH = Math.max(0, (items.length - 1) * gapY);
+      let rowBlockH = (availH - diagramCount * diagramH - gapsH) / rowCount;
+      if (!isFinite(rowBlockH) || rowBlockH <= 0) rowBlockH = Math.max(34, (availH - diagramCount * diagramH) / rowCount);
+
+      const cellW = (W - padX * 2) / stage;
+      const liveSet = new Set(state.liveBells);
+
+      function drawRowBlock(row, yTop, highlightPos, faded) {
+        sctx.save();
+        sctx.translate(padX, yTop);
+        sctx.fillStyle = faded ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.05)';
+        sctx.strokeStyle = 'rgba(255,255,255,0.08)';
+        roundRect(sctx, 0, 0, W - padX * 2, rowBlockH, 12);
+        sctx.fill(); sctx.stroke();
+
+        const fontSize = Math.max(16, Math.min(34, Math.floor(rowBlockH * 0.58)));
+        sctx.font = fontSize + 'px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
+        sctx.textAlign = 'center';
+        sctx.textBaseline = 'middle';
+
+        for (let i = 0; i < stage; i++) {
+          const x = i * cellW + cellW / 2;
+          const y = rowBlockH / 2;
+          const bell = row[i];
+          const isLive = liveSet.has(bell);
+
+          if (!faded && i === highlightPos) {
+            sctx.fillStyle = (cd === 'Ready') ? 'rgba(232,238,255,0.86)' : '#f9c74f';
+            roundRect(sctx, i * cellW + 4, 6, cellW - 8, rowBlockH - 12, 10);
+            sctx.fill();
+            sctx.fillStyle = '#10162c';
+          } else sctx.fillStyle = isLive ? '#e8eeff' : '#9aa2bb';
+
+          sctx.fillText(String(bell), x, y);
+        }
+
+        sctx.restore();
+      }
+
+      function drawSwapDiagram(before, after, yTop) {
+        if (!before || !after) return;
+        sctx.save();
+        sctx.translate(padX, yTop);
+
+        const y1 = 2;
+        const y2 = diagramH - 2;
+
+        for (let i = 0; i < stage; i++) {
+          const bell = before[i];
+          const j = after.indexOf(bell);
+          if (j < 0) continue;
+
+          const x1 = i * cellW + cellW / 2;
+          const x2 = j * cellW + cellW / 2;
+          const isLive = liveSet.has(bell);
+
+          sctx.strokeStyle = isLive ? 'rgba(232,238,255,0.60)' : 'rgba(154,162,187,0.20)';
+          sctx.lineWidth = isLive ? 1.5 : 1;
+          sctx.beginPath();
+          sctx.moveTo(x1, y1);
+          sctx.lineTo(x2, y2);
+          sctx.stroke();
+        }
+        sctx.restore();
+      }
+
+      let y = padY;
+      for (let k = 0; k < items.length; k++) {
+        const it = items[k];
+        if (it.type === 'row') {
+          drawRowBlock(it.row, y, it.highlightPos, it.faded);
+          y += rowBlockH;
+        } else {
+          drawSwapDiagram(it.before, it.after, y);
+          y += diagramH;
+        }
+        if (k < items.length - 1) y += gapY;
+      }
+    }
 
   // === Display (polygon; primary touch control) ===
   function computeDisplayPoints(W, H) {
@@ -1159,6 +1575,112 @@ select option { background-color: #0b1026; color: #e8eeff; }
     return { cx, cy, r, pts };
   }
 
+
+  function getSortedLiveBells() {
+    return state.liveBells.slice().filter(b => b >= 1 && b <= state.stage).sort((a,b)=>a-b);
+  }
+
+  function computeDisplayLiveOnlyLayout(W, H, bellsSorted) {
+    const padX = 14;
+    const padY = 12;
+    const x0 = padX, y0 = padY;
+    const w0 = W - padX * 2;
+    const h0 = H - padY * 2;
+
+    const n = bellsSorted.length;
+
+    let rows = 1, cols = Math.max(1, n);
+    if (n <= 3) { rows = 1; cols = Math.max(1, n); }
+    else if (n === 4) { rows = 2; cols = 2; }
+    else if (n <= 6) { rows = 2; cols = 3; }
+    else if (n <= 8) { rows = 2; cols = 4; }
+    else {
+      cols = Math.ceil(Math.sqrt(n));
+      rows = Math.ceil(n / cols);
+    }
+
+    const cellW = w0 / cols;
+    const cellH = h0 / rows;
+
+    return { x0, y0, w0, h0, rows, cols, cellW, cellH, bells: bellsSorted };
+  }
+
+  function drawDisplayLiveOnly(nowMs, W, H, bellsSorted) {
+    const layout = computeDisplayLiveOnlyLayout(W, H, bellsSorted);
+    const n = bellsSorted.length;
+    const totalCells = layout.rows * layout.cols;
+
+    let inset = Math.floor(Math.min(layout.cellW, layout.cellH) * 0.08);
+    inset = Math.max(6, Math.min(14, inset));
+    inset = Math.max(4, Math.min(inset, Math.floor(layout.cellW / 2 - 10), Math.floor(layout.cellH / 2 - 10)));
+
+    for (let idx = 0; idx < totalCells; idx++) {
+      const row = Math.floor(idx / layout.cols);
+      const col = idx % layout.cols;
+      const x = layout.x0 + col * layout.cellW;
+      const y = layout.y0 + row * layout.cellH;
+
+      const tx = x + inset;
+      const ty = y + inset;
+      const tw = layout.cellW - inset * 2;
+      const th = layout.cellH - inset * 2;
+      if (tw <= 0 || th <= 0) continue;
+
+      const rr = Math.min(16, tw / 2, th / 2);
+
+      dctx.save();
+      dctx.fillStyle = 'rgba(255,255,255,0.04)';
+      dctx.strokeStyle = 'rgba(255,255,255,0.08)';
+      roundRect(dctx, tx, ty, tw, th, rr);
+      dctx.fill(); dctx.stroke();
+      dctx.restore();
+
+      if (idx >= n) continue;
+
+      const bell = bellsSorted[idx];
+      const cx = x + layout.cellW / 2;
+      const cy = y + layout.cellH / 2;
+
+      const t = state.lastRingAtMs[bell] || -1e9;
+      const age = nowMs - t;
+
+      let glow = 0;
+      if (age >= 0 && age <= 260) glow = 1 - (age / 260);
+      if (age < 0 && age >= -60) glow = 0.25;
+
+      const minDim = Math.max(10, Math.min(tw, th));
+      let ringRadius = minDim * (n === 1 ? 0.42 : 0.36);
+      ringRadius = Math.max(18, Math.min(ringRadius, minDim / 2 - 10));
+      const fontSize = Math.max(16, Math.min(96, Math.floor(ringRadius * 0.9)));
+      const lineW = Math.max(2, Math.min(6, ringRadius * 0.06));
+      const glowExtra = Math.max(6, Math.min(18, ringRadius * 0.18));
+
+      dctx.save();
+      dctx.fillStyle = 'rgba(255,255,255,0.05)';
+      dctx.strokeStyle = 'rgba(249,199,79,0.50)';
+      dctx.lineWidth = lineW;
+      dctx.beginPath();
+      dctx.arc(cx, cy, ringRadius, 0, Math.PI * 2);
+      dctx.fill();
+      dctx.stroke();
+
+      if (glow > 0) {
+        dctx.fillStyle = `rgba(249,199,79,${0.18 + glow * 0.30})`;
+        dctx.beginPath();
+        dctx.arc(cx, cy, ringRadius + glowExtra, 0, Math.PI * 2);
+        dctx.fill();
+      }
+
+      dctx.font = fontSize + 'px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
+      dctx.textAlign = 'center';
+      dctx.textBaseline = 'middle';
+      dctx.fillStyle = glow > 0.2 ? '#10162c' : '#e8eeff';
+      dctx.fillText(String(bell), cx, cy);
+      dctx.restore();
+    }
+  }
+
+
   function drawDisplay(nowMs) {
     const { W, H } = fitCanvas(displayCanvas, dctx);
     dctx.clearRect(0, 0, W, H);
@@ -1169,6 +1691,14 @@ select option { background-color: #0b1026; color: #e8eeff; }
     roundRect(dctx, 14, 12, W - 28, H - 24, 16);
     dctx.fill(); dctx.stroke();
     dctx.restore();
+
+    if (state.displayLiveBellsOnly) {
+      const liveSorted = getSortedLiveBells();
+      if (liveSorted.length) {
+        drawDisplayLiveOnly(nowMs, W, H, liveSorted);
+        return;
+      }
+    }
 
     const geom = computeDisplayPoints(W, H);
 
@@ -1226,6 +1756,19 @@ select option { background-color: #0b1026; color: #e8eeff; }
     const y = clientY - rect.top;
     if (x < 0 || y < 0 || x > rect.width || y > rect.height) return null;
 
+    const liveSorted = getSortedLiveBells();
+    if (state.displayLiveBellsOnly && liveSorted.length) {
+      const layout = computeDisplayLiveOnlyLayout(rect.width, rect.height, liveSorted);
+      if (x < layout.x0 || y < layout.y0 || x > layout.x0 + layout.w0 || y > layout.y0 + layout.h0) return null;
+
+      const col = Math.floor((x - layout.x0) / layout.cellW);
+      const row = Math.floor((y - layout.y0) / layout.cellH);
+      if (col < 0 || row < 0 || col >= layout.cols || row >= layout.rows) return null;
+
+      const idx = row * layout.cols + col;
+      return (idx >= 0 && idx < liveSorted.length) ? liveSorted[idx] : null;
+    }
+
     const geom = computeDisplayPoints(rect.width, rect.height);
     const ringRadius = Math.max(18, Math.min(34, Math.floor(Math.min(rect.width, rect.height) * 0.06)));
 
@@ -1270,6 +1813,7 @@ select option { background-color: #0b1026; color: #e8eeff; }
     const pageBStart = pageStart + pageSize;
 
     const bellsForPath = state.pathBells.slice().sort((a,b)=>a-b);
+    const liveSet = new Set(state.liveBells);
 
     function drawPage(pageStartRow, x0, y0, label, isCurrent) {
       const w0 = pageW, h0 = pageH;
@@ -1309,6 +1853,66 @@ select option { background-color: #0b1026; color: #e8eeff; }
       nctx.beginPath();
       nctx.rect(x0 + 2, contentTop, w0 - 4, contentH);
       nctx.clip();
+
+
+      // swaps overlay (optional)
+      if (state.notationSwapsOverlay) {
+        nctx.save();
+
+        // non-live swaps (very light)
+        nctx.lineWidth = 1;
+        nctx.strokeStyle = 'rgba(255,255,255,0.06)';
+        nctx.beginPath();
+        for (let i = 0; i < rowsToShow - 1; i++) {
+          const beforeIdx = pageStartRow + i;
+          const afterIdx = beforeIdx + 1;
+          if (afterIdx >= rows.length) break;
+          const before = rows[beforeIdx];
+          const after = rows[afterIdx];
+          const y1 = contentTop + i * lineH + lineH / 2;
+          const y2 = contentTop + (i + 1) * lineH + lineH / 2;
+
+          for (let p = 0; p < stage; p++) {
+            const bell = before[p];
+            if (liveSet.has(bell)) continue;
+            const j = after.indexOf(bell);
+            if (j < 0) continue;
+            const x1 = left + p * colW + colW / 2;
+            const x2 = left + j * colW + colW / 2;
+            nctx.moveTo(x1, y1);
+            nctx.lineTo(x2, y2);
+          }
+        }
+        nctx.stroke();
+
+        // live swaps (slightly stronger tint)
+        nctx.lineWidth = 1.25;
+        nctx.strokeStyle = 'rgba(249,199,79,0.16)';
+        nctx.beginPath();
+        for (let i = 0; i < rowsToShow - 1; i++) {
+          const beforeIdx = pageStartRow + i;
+          const afterIdx = beforeIdx + 1;
+          if (afterIdx >= rows.length) break;
+          const before = rows[beforeIdx];
+          const after = rows[afterIdx];
+          const y1 = contentTop + i * lineH + lineH / 2;
+          const y2 = contentTop + (i + 1) * lineH + lineH / 2;
+
+          for (let p = 0; p < stage; p++) {
+            const bell = before[p];
+            if (!liveSet.has(bell)) continue;
+            const j = after.indexOf(bell);
+            if (j < 0) continue;
+            const x1 = left + p * colW + colW / 2;
+            const x2 = left + j * colW + colW / 2;
+            nctx.moveTo(x1, y1);
+            nctx.lineTo(x2, y2);
+          }
+        }
+        nctx.stroke();
+
+        nctx.restore();
+      }
 
       // paths terminate per page
       bellsForPath.forEach((bell, bi) => {
@@ -1404,7 +2008,8 @@ select option { background-color: #0b1026; color: #e8eeff; }
     const accOverall = totalTargets > 0 ? (totalHits / totalTargets) * 100 : null;
     const meanSignedOverall = totalHits > 0 ? Math.round(sumSigned / totalHits) : null;
     const elapsed = getElapsedSeconds(nowMs);
-    let html = '';html += '<div class="summary">';
+    let html = '';
+    html += '<div class="summary">';
     html += 'Rows: ' + rowsCompleted + ' / ' + totalRows + ' &nbsp; ';
     html += 'Acc%: ' + (accOverall == null ? '&ndash;' : accOverall.toFixed(0)) + ' &nbsp; ';
     html += 'Combo: ' + state.comboCurrentGlobal + ' (best ' + state.comboBestGlobal + ') &nbsp; ';
@@ -1438,17 +2043,13 @@ select option { background-color: #0b1026; color: #e8eeff; }
 
     html += '</tbody></table>';
 
-    const windowMs = getHitWindowMs();
-    const tightThresh = Math.round(windowMs * 0.4);
-    const medThresh = Math.round(windowMs * 0.75);
-    const label = state.hitWindow === 'tight' ? 'Tight (±120 ms)' : (state.hitWindow === 'medium' ? 'Medium (±180 ms)' : 'Loose (±240 ms)');
-
     html += '<div class="stats-info">';
-    html += 'Scoring: hit window ' + label + '. ';
-    html += 'Every hit scores at least 10 points: |Δ| ≤ ' + tightThresh + ' ms → 12 pts; ';
-    html += '≤ ' + medThresh + ' ms → 11 pts; ';
-    html += '≤ ' + windowMs + ' ms → 10 pts; outside the window → miss. ';
-    html += 'Δ is signed timing error (negative = early, positive = late).';
+    html += 'Scoring: each row is divided into ' + state.stage + ' bell windows. ';
+    html += 'For each live bell and row, you get one scoring chance. ';
+    html += 'Within a bell window, hits in the middle third earn 10 points, ';
+    html += 'hits in either outer third earn 9 points. ';
+    html += 'If your first ring for that bell in the row is outside its window, it scores 0. Extra rings still sound but only the first ring for a bell in a row counts for scoring. ';
+    html += 'Δ is the signed timing error relative to the beat (negative = early, positive = late).';
     html += '</div>';
 
     statsDiv.innerHTML = html;
@@ -1458,12 +2059,16 @@ select option { background-color: #0b1026; color: #e8eeff; }
   function startPressed() {
     if (!state.rows.length) { alert('No rows loaded.'); return; }
 
+    state.keybindCaptureBell = null;
+    rebuildKeybindPanel();
+
     const playId = rid('p_');
     state.currentPlay = { playId, began: false };
 
     const tempoBpm = clamp(parseInt(bpmInput.value, 10) || 80, 30, 240);
     state.bpm = tempoBpm;
     bpmInput.value = String(state.bpm);
+    const beatMs = 60000 / state.bpm;
 
     const pathMode = getPathMode();
     const pathBellsStr = (pathMode === 'custom')
@@ -1481,7 +2086,7 @@ select option { background-color: #0b1026; color: #e8eeff; }
       live_count: state.liveCount,
       live_bells: state.liveBells.slice().sort((a,b)=>a-b).join(','),
       tempo_bpm: tempoBpm,
-      hit_window_ms: getHitWindowMs(),
+      hit_window_ms: Math.round(beatMs / 2),
       view_display: viewDisplay.checked ? 1 : 0,
       view_spotlight: viewSpotlight.checked ? 1 : 0,
       view_notation: viewNotation.checked ? 1 : 0,
@@ -1495,7 +2100,6 @@ select option { background-color: #0b1026; color: #e8eeff; }
     ensureAudio();
 
     const now = perfNow();
-    const beatMs = 60000 / state.bpm;
 
     state.phase = 'countdown';
     state.elapsedMs = 0;
@@ -1510,6 +2114,9 @@ select option { background-color: #0b1026; color: #e8eeff; }
     state.countSched = 0;
     state.countdownBeats = state.stage; // rounds: 1..stage
     state.methodStartMs = state.countFirstBeatMs + state.countdownBeats * beatMs;
+
+    // Build all scoring targets upfront for row-based scoring.
+    buildAllTargets(beatMs);
 
     startBtn.disabled = true;
     stopBtn.disabled = false;
@@ -1671,7 +2278,6 @@ select option { background-color: #0b1026; color: #e8eeff; }
       const tMs = state.methodStartMs + state.schedBeatIndex * beatMs;
       if (tMs <= nowMs + LOOKAHEAD_MS) {
         const bell = getBellForStrikeIndex(state.schedBeatIndex);
-        recordTarget(bell, tMs);
         if (!liveSet.has(bell)) playBellAt(bell, tMs);
         state.schedBeatIndex += 1;
       } else break;
@@ -1708,13 +2314,56 @@ select option { background-color: #0b1026; color: #e8eeff; }
   // === Inputs ===
   document.addEventListener('keydown', (e) => {
     if (e.altKey || e.ctrlKey || e.metaKey) return;
-    const t = e.target;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
 
-    const k = e.key;
-    if (k >= '1' && k <= '9') {
-      const bell = k.charCodeAt(0) - 48;
-      if (bell >= 1 && bell <= state.stage) ringBell(bell);
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+
+    const k = normalizeBindKey(e.key);
+
+    // Capture mode: bind the next key pressed to the chosen bell.
+    if (state.keybindCaptureBell != null) {
+      e.preventDefault();
+      if (k === 'Escape') {
+        state.keybindCaptureBell = null;
+        rebuildKeybindPanel();
+        return;
+      }
+      if (!isAllowedBindKey(k)) return;
+
+      for (const b of state.liveBells) {
+        if (b === state.keybindCaptureBell) continue;
+        if (state.keyBindings[b] === k) {
+          alert('That key is already bound to bell ' + b + '. Choose a different key.');
+          return;
+        }
+      }
+
+      state.keyBindings[state.keybindCaptureBell] = k;
+      saveKeyBindings();
+      state.keybindCaptureBell = null;
+      rebuildKeybindPanel();
+      return;
+    }
+
+    // Default extra keys: if exactly one live bell is selected, Space and Enter also ring it.
+    if (state.liveBells.length === 1 && (k === 'Space' || k === 'Enter')) {
+      e.preventDefault();
+      ringBell(state.liveBells[0]);
+      return;
+    }
+
+    // Keybinding match for live bells (ignore conflicts).
+    let found = null;
+    for (const b of state.liveBells) {
+      if (state.keyBindings[b] === k) {
+        if (found != null) { found = null; break; }
+        found = b;
+      }
+    }
+    if (found != null) {
+      if (k === 'Space') e.preventDefault();
+      ringBell(found);
+      return;
     }
   });
 
@@ -1732,25 +2381,69 @@ select option { background-color: #0b1026; color: #e8eeff; }
     const y = e.clientY - rect.top;
     if (x < 0 || y < 0 || x > rect.width || y > rect.height) return;
 
-    // Mirror drawSpotlight's layout math (CSS pixels).
     const stage = state.stage;
-    const padX = 14, padY = 12, gapY = 10;
-    const rowBlockH = (rect.height - padY * 2 - gapY) / 2;
+
+    // Default Spotlight tap (unchanged): only the top row is tappable.
+    if (!state.spotlightSwapsView) {
+      // Mirror drawSpotlight's layout math (CSS pixels).
+      const padX = 14, padY = 12, gapY = 10;
+      const rowBlockH = (rect.height - padY * 2 - gapY) / 2;
+      const topRowY = padY;
+
+      // Only accept taps in the top row body (not the title area).
+      if (y < topRowY || y > topRowY + rowBlockH) return;
+      if (x < padX || x > rect.width - padX) return;
+
+      const cellW = (rect.width - padX * 2) / stage;
+      const idx = Math.max(0, Math.min(stage - 1, Math.floor((x - padX) / cellW)));
+
+      if (!state.rows.length) return;
+
+      const totalBeats = state.rows.length * stage;
+      const strikeIdx = clamp(state.execBeatIndex - 1, 0, Math.max(0, totalBeats - 1));
+      const rowIdx = Math.floor(strikeIdx / stage);
+      const currentRow = state.rows[rowIdx] || state.rows[0];
+      const bell = currentRow[idx];
+      if (bell != null) {
+        e.preventDefault();
+        ringBell(bell);
+      }
+      return;
+    }
+
+    // Swaps View: keep taps aligned with the current row (N) to avoid misleading input.
+    if (!state.spotlightShowN) return;
+    if (!state.rows.length) return;
+
+    const padX = 14, padY = 12;
+    const gapY = 8;
+    const diagramH = 18;
+
+    const totalBeats = state.rows.length * stage;
+    const strikeIdx = clamp(state.execBeatIndex - 1, 0, Math.max(0, totalBeats - 1));
+    const rowIdx = Math.floor(strikeIdx / stage);
+    const currentRow = state.rows[rowIdx] || state.rows[0];
+
+    const show1 = !!state.spotlightShowN1 && (rowIdx + 1 < state.rows.length);
+    const show2 = !!state.spotlightShowN2 && (rowIdx + 2 < state.rows.length);
+
+    const rowCount = 1 + (show1 ? 1 : 0) + (show2 ? 1 : 0);
+    const diagramCount = (show1 ? 1 : 0) + ((show1 && show2) ? 1 : 0);
+    const itemsLen = rowCount + diagramCount;
+
+    const availH = rect.height - padY * 2;
+    const gapsH = Math.max(0, (itemsLen - 1) * gapY);
+    let rowBlockH = (availH - diagramCount * diagramH - gapsH) / rowCount;
+    if (!isFinite(rowBlockH) || rowBlockH <= 0) rowBlockH = Math.max(34, (availH - diagramCount * diagramH) / rowCount);
+
     const topRowY = padY;
 
-    // Only accept taps in the top row body (not the title area).
     if (y < topRowY || y > topRowY + rowBlockH) return;
     if (x < padX || x > rect.width - padX) return;
 
     const cellW = (rect.width - padX * 2) / stage;
     const idx = Math.max(0, Math.min(stage - 1, Math.floor((x - padX) / cellW)));
 
-    if (!state.rows.length) return;
-
-    const totalBeats = state.rows.length * stage;
-    const strikeIdx = clamp(state.execBeatIndex - 1, 0, Math.max(0, totalBeats - 1));
-    const rowIdx = Math.floor(strikeIdx / stage);
-    const currentRow = state.rows[rowIdx] || state.rows[0];
     const bell = currentRow[idx];
     if (bell != null) {
       e.preventDefault();
@@ -1788,13 +2481,53 @@ select option { background-color: #0b1026; color: #e8eeff; }
 
   [viewDisplay, viewSpotlight, viewNotation, viewStats].forEach(cb => cb.addEventListener('change', syncViewLayout));
 
+  // Display live bells only toggle (persisted)
+  if (displayLiveOnly) {
+    displayLiveOnly.addEventListener('change', () => {
+      state.displayLiveBellsOnly = !!displayLiveOnly.checked;
+      safeSetBoolLS(LS_DISPLAY_LIVE_BELLS_ONLY, state.displayLiveBellsOnly);
+    });
+  }
+
+  // Spotlight swaps view + row controls
+  if (spotlightSwapsView) {
+    spotlightSwapsView.addEventListener('change', () => {
+      state.spotlightSwapsView = spotlightSwapsView.checked;
+      safeSetBoolLS(LS_SPOTLIGHT_SWAPS_VIEW, state.spotlightSwapsView);
+      syncSpotlightSwapRowTogglesUI();
+    });
+  }
+
+  function syncSpotlightRowPrefsFromUI() {
+    if (spotlightShowN) state.spotlightShowN = !!spotlightShowN.checked;
+    if (spotlightShowN1) state.spotlightShowN1 = !!spotlightShowN1.checked;
+    if (spotlightShowN2) state.spotlightShowN2 = !!spotlightShowN2.checked;
+
+    if (!state.spotlightShowN && !state.spotlightShowN1 && !state.spotlightShowN2) {
+      state.spotlightShowN = true;
+      if (spotlightShowN) spotlightShowN.checked = true;
+    }
+
+    safeSetBoolLS(LS_SPOTLIGHT_SHOW_N, state.spotlightShowN);
+    safeSetBoolLS(LS_SPOTLIGHT_SHOW_N1, state.spotlightShowN1);
+    safeSetBoolLS(LS_SPOTLIGHT_SHOW_N2, state.spotlightShowN2);
+  }
+
+  if (spotlightShowN) spotlightShowN.addEventListener('change', syncSpotlightRowPrefsFromUI);
+  if (spotlightShowN1) spotlightShowN1.addEventListener('change', syncSpotlightRowPrefsFromUI);
+  if (spotlightShowN2) spotlightShowN2.addEventListener('change', syncSpotlightRowPrefsFromUI);
+
+  // Notation swaps overlay
+  if (notationSwapsOverlay) {
+    notationSwapsOverlay.addEventListener('change', () => {
+      state.notationSwapsOverlay = notationSwapsOverlay.checked;
+      safeSetBoolLS(LS_NOTATION_SWAPS_OVERLAY, state.notationSwapsOverlay);
+    });
+  }
+
+
   pathNoneBtn.addEventListener('click', setPathNone);
   pathAllBtn.addEventListener('click', setPathAll);
-
-  hitWindowSelect.addEventListener('change', () => {
-    if (state.phase !== 'idle') { hitWindowSelect.value = state.hitWindow; return; }
-    state.hitWindow = hitWindowSelect.value;
-  });
 
   scaleSelect.addEventListener('change', () => {
     if (state.phase !== 'idle') return;
@@ -1843,10 +2576,44 @@ select option { background-color: #0b1026; color: #e8eeff; }
   startBtn.addEventListener('click', () => startPressed());
   stopBtn.addEventListener('click', () => stopPressed('stopped'));
 
+  if (keybindResetBtn) {
+    keybindResetBtn.addEventListener('click', () => {
+      if (state.phase !== 'idle') return;
+      state.keybindCaptureBell = null;
+      resetKeyBindingsToDefaults();
+      rebuildKeybindPanel();
+    });
+  }
+
+
   // === Boot ===
   function boot() {
     state.stage = clamp(parseInt(bellCountSelect.value,10)||6, 4, 8);
     state.liveCount = Math.min(2, state.stage);
+
+    loadKeyBindings();
+
+    // swaps view settings (persisted)
+    state.spotlightSwapsView = safeGetBoolLS(LS_SPOTLIGHT_SWAPS_VIEW, true);
+    state.spotlightShowN = safeGetBoolLS(LS_SPOTLIGHT_SHOW_N, true);
+    state.spotlightShowN1 = safeGetBoolLS(LS_SPOTLIGHT_SHOW_N1, true);
+    state.spotlightShowN2 = safeGetBoolLS(LS_SPOTLIGHT_SHOW_N2, true);
+    state.notationSwapsOverlay = safeGetBoolLS(LS_NOTATION_SWAPS_OVERLAY, false);
+    state.displayLiveBellsOnly = safeGetBoolLS(LS_DISPLAY_LIVE_BELLS_ONLY, false);
+
+
+    if (!state.spotlightShowN && !state.spotlightShowN1 && !state.spotlightShowN2) state.spotlightShowN = true;
+
+    if (spotlightSwapsView) spotlightSwapsView.checked = state.spotlightSwapsView;
+    if (spotlightShowN) spotlightShowN.checked = state.spotlightShowN;
+    if (spotlightShowN1) spotlightShowN1.checked = state.spotlightShowN1;
+    if (spotlightShowN2) spotlightShowN2.checked = state.spotlightShowN2;
+    if (notationSwapsOverlay) notationSwapsOverlay.checked = state.notationSwapsOverlay;
+    if (displayLiveOnly) displayLiveOnly.checked = state.displayLiveBellsOnly;
+
+
+    syncSpotlightSwapRowTogglesUI();
+    syncSpotlightRowPrefsFromUI();
 
     scaleSelect.innerHTML = '';
     for (const s of SCALE_LIBRARY) {
@@ -1874,8 +2641,6 @@ select option { background-color: #0b1026; color: #e8eeff; }
 
     state.pathBells = [];
     rebuildPathPicker();
-
-    state.hitWindow = hitWindowSelect.value || DEFAULT_HIT_WINDOW;
 
     computeRows();
     resetStats();
