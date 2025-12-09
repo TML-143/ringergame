@@ -461,15 +461,10 @@ select option { background-color: #0b1026; color: #e8eeff; }
             <label>Mic</label>
             <div class="path-row">
               <button id="micToggleBtn" class="pill" type="button" aria-pressed="false">Mic OFF</button>
+              <button id="micCalibrateBtn" class="pill" type="button">Calibrate</button>
+              <span id="micCalibrateStatus" class="mic-status"></span>
               <span id="micStatus" class="mic-status"></span>
             </div>
-            <div id="micBellsWrap" class="toggles toggles--mini hidden" role="group" aria-label="Mic-controlled bells"></div>
-          </div>
-
-          <div class="control">
-            <label for="micThreshold">Mic threshold (dB)</label>
-            <input id="micThreshold" type="range" min="-72" max="0" step="1" value="-30" />
-            <div id="micThresholdVal" class="mic-status"></div>
           </div>
 
           <div class="control">
@@ -713,14 +708,14 @@ select option { background-color: #0b1026; color: #e8eeff; }
 
   // Mic controls (top menu)
   const micToggleBtn = document.getElementById('micToggleBtn');
+  const micCalibrateBtn = document.getElementById('micCalibrateBtn');
+  const micCalibrateStatus = document.getElementById('micCalibrateStatus');
   const micStatus = document.getElementById('micStatus');
-  const micBellsWrap = document.getElementById('micBellsWrap');
-  const micThreshold = document.getElementById('micThreshold');
-  const micThresholdVal = document.getElementById('micThresholdVal');
   const micCooldown = document.getElementById('micCooldown');
   const micCooldownVal = document.getElementById('micCooldownVal');
 
-  // Mic pane
+
+// Mic pane
   const micMeterFill = document.getElementById('micMeterFill');
   const micDbReadout = document.getElementById('micDbReadout');
   const micPaneStatus = document.getElementById('micPaneStatus');
@@ -768,7 +763,8 @@ select option { background-color: #0b1026; color: #e8eeff; }
   // mic localStorage keys
   const LS_MIC_ENABLED = 'rg_mic_enabled';
   const LS_MIC_BELLS = 'rg_mic_bells_v1';
-  const LS_MIC_THRESHOLD_DB = 'rg_mic_threshold_db';
+  const LS_MIC_THRESHOLD = 'rg.mic.threshold';
+  const OLD_LS_MIC_THRESHOLD_DB = 'rg_mic_threshold_db'; // v1 (dB slider)
   const LS_MIC_COOLDOWN_MS = 'rg_mic_cooldown_ms';
 
 
@@ -881,13 +877,16 @@ select option { background-color: #0b1026; color: #e8eeff; }
     micDb: -Infinity,
     micWasAbove: false,
     micLastFireTimeMs: -1e9,
-    micThresholdDb: -30,
     micCooldownMs: 200,
     micBells: [],
     micError: '',
   };
 
   let audioCtx = null;
+
+  // Mic v2 threshold (linear RMS)
+  const DEFAULT_MIC_THRESHOLD = 0.06;
+  if (!Number.isFinite(window.micThreshold)) window.micThreshold = DEFAULT_MIC_THRESHOLD;
 
   function clamp(v, min, max) { return v < min ? min : (v > max ? max : v); }
   function perfNow() { return performance.now(); }
@@ -1242,9 +1241,29 @@ select option { background-color: #0b1026; color: #e8eeff; }
         rebuildKeybindPanel();
       });
 
+      const micBtn = document.createElement('button');
+      micBtn.type = 'button';
+      micBtn.className = 'pill keybind-bind-btn keybind-mic-btn';
+      micBtn.textContent = 'Mic';
+      micBtn.setAttribute('data-mic-bell', String(b));
+      micBtn.title = 'Toggle mic input for this bell';
+      const micOn = (state.micBells || []).includes(b);
+      micBtn.classList.toggle('mic-on', micOn);
+      micBtn.setAttribute('aria-pressed', micOn ? 'true' : 'false');
+      micBtn.setAttribute('aria-label', micOn ? `Mic on for bell ${b}` : `Mic off for bell ${b}`);
+      micBtn.addEventListener('click', () => {
+        const set = new Set(state.micBells || []);
+        if (set.has(b)) set.delete(b);
+        else set.add(b);
+        state.micBells = Array.from(set).sort((x, y) => x - y);
+        rebuildMicBellControls();
+        syncMicToggleUI();
+      });
+
       row.appendChild(bellLabel);
       row.appendChild(keyLabel);
       row.appendChild(btn);
+      row.appendChild(micBtn);
 
       keybindPanel.appendChild(row);
     });
@@ -1348,8 +1367,8 @@ select option { background-color: #0b1026; color: #e8eeff; }
 
     const live = (state.liveBells || []).length;
     const chosen = getMicControlledBells().length;
-    if (live > 1 && chosen === 0) {
-      setMicUiStatus('Select mic bell(s)');
+    if (live >= 1 && chosen === 0) {
+      setMicUiStatus('Select mic bell(s) below');
       return;
     }
 
@@ -1364,22 +1383,143 @@ select option { background-color: #0b1026; color: #e8eeff; }
   }
 
   function syncMicSlidersUI() {
-    if (micThreshold) micThreshold.value = String(state.micThresholdDb);
-    if (micThresholdVal) micThresholdVal.textContent = `${Math.round(state.micThresholdDb)} dB`;
     if (micCooldown) micCooldown.value = String(state.micCooldownMs);
     if (micCooldownVal) micCooldownVal.textContent = `${Math.round(state.micCooldownMs)} ms`;
   }
 
+  let micCalibrateTimer = null;
+  let micCalibrating = false;
+
+  function setMicCalibrateStatus(msg, isError = false, autoClearMs = 2500) {
+    if (!micCalibrateStatus) return;
+    micCalibrateStatus.textContent = msg || '';
+    micCalibrateStatus.style.color = isError ? 'rgba(255, 107, 107, 0.95)' : '';
+    if (micCalibrateTimer) {
+      clearTimeout(micCalibrateTimer);
+      micCalibrateTimer = null;
+    }
+    if (msg && autoClearMs > 0) {
+      micCalibrateTimer = setTimeout(() => {
+        if (!micCalibrateStatus) return;
+        micCalibrateStatus.textContent = '';
+        micCalibrateStatus.style.color = '';
+        micCalibrateTimer = null;
+      }, autoClearMs);
+    }
+  }
+
+  function rmsFromByteTimeDomain(bytes) {
+    let sum = 0;
+    for (let i = 0; i < bytes.length; i++) {
+      const v = (bytes[i] - 128) / 128;
+      sum += v * v;
+    }
+    return Math.sqrt(sum / bytes.length);
+  }
+
+  async function calibrateMicThreshold() {
+    if (micCalibrating) return;
+    micCalibrating = true;
+    if (micCalibrateBtn) micCalibrateBtn.disabled = true;
+
+    const durationMs = 1200;
+    const headroom = 1.8;
+
+    let tmpStream = null;
+    let tmpSource = null;
+    let tmpAnalyser = null;
+    let tmpSink = null;
+    let usingExisting = false;
+
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('getUserMedia not supported');
+
+      setMicCalibrateStatus('listening…', false, 0);
+
+      let analyser = null;
+      if (state.micActive && state.micAnalyser) {
+        analyser = state.micAnalyser;
+        usingExisting = true;
+      } else {
+        ensureAudio();
+        try { if (audioCtx && audioCtx.state === 'suspended') await audioCtx.resume(); } catch (_) {}
+
+        tmpStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+          }
+        });
+        tmpSource = audioCtx.createMediaStreamSource(tmpStream);
+        tmpAnalyser = audioCtx.createAnalyser();
+        tmpAnalyser.fftSize = 2048;
+        tmpSink = audioCtx.createMediaStreamDestination();
+        tmpSource.connect(tmpAnalyser);
+        tmpAnalyser.connect(tmpSink);
+        analyser = tmpAnalyser;
+      }
+
+      const buf = new Uint8Array(analyser.fftSize);
+      const samples = [];
+      const startMs = perfNow();
+
+      await new Promise(resolve => {
+        const tick = () => {
+          analyser.getByteTimeDomainData(buf);
+          samples.push(rmsFromByteTimeDomain(buf));
+          if (perfNow() - startMs < durationMs) requestAnimationFrame(tick);
+          else resolve();
+        };
+        tick();
+      });
+
+      if (!samples.length) throw new Error('no samples');
+      samples.sort((a, b) => a - b);
+      const mid = Math.floor(samples.length / 2);
+      const median = (samples.length % 2) ? samples[mid] : (samples[mid - 1] + samples[mid]) / 2;
+
+      const next = clamp(median * headroom, 0.01, 0.25);
+      window.micThreshold = next;
+      safeSetLS(LS_MIC_THRESHOLD, String(next));
+
+      setMicCalibrateStatus(`threshold: ${next.toFixed(3)}`, false, 2500);
+    } catch (err) {
+      console.error('Mic calibration failed', err);
+      const denied = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError');
+      setMicCalibrateStatus(denied ? 'mic denied' : 'calibration failed', true, 2500);
+    } finally {
+      // cleanup
+      try {
+        if (!usingExisting && tmpSource) tmpSource.disconnect();
+      } catch (_) {}
+      try {
+        if (!usingExisting && tmpAnalyser) tmpAnalyser.disconnect();
+      } catch (_) {}
+      if (tmpStream) {
+        try { tmpStream.getTracks().forEach(t => t.stop()); } catch (_) {}
+      }
+
+      if (micCalibrateBtn) micCalibrateBtn.disabled = false;
+      micCalibrating = false;
+    }
+  }
+
   function parseBellList(s) {
     if (!s) return [];
-    return String(s).split(',')
-      .map(x => parseInt(x, 10))
-      .filter(n => Number.isFinite(n));
+    const out = [];
+    String(s).split(',').forEach(x => {
+      const n = parseInt(String(x).trim(), 10);
+      if (!Number.isFinite(n)) return;
+      if (n < 1 || n > 12) return;
+      out.push(n);
+    });
+    return Array.from(new Set(out)).sort((a, b) => a - b);
   }
+
 
   function getMicControlledBells() {
     const live = (state.liveBells || []).slice().sort((a, b) => a - b);
-    if (live.length === 1) return live;
     const liveSet = new Set(live);
     const chosen = (state.micBells || []).filter(b => liveSet.has(b));
     // dedupe + sort
@@ -1387,60 +1527,51 @@ select option { background-color: #0b1026; color: #e8eeff; }
   }
 
   function rebuildMicBellControls() {
-    if (!micBellsWrap) return;
-    const live = (state.liveBells || []).slice().sort((a, b) => a - b);
-    const liveSet = new Set(live);
+    // Mic v2: per-bell mic toggles live next to "Bind key" in the Keybindings panel.
+    safeSetLS(LS_MIC_BELLS, (state.micBells || []).join(','));
 
-    // Drop any mic selections that no longer exist in live bells
-    state.micBells = (state.micBells || []).filter(b => liveSet.has(b));
-    safeSetLS(LS_MIC_BELLS, state.micBells.join(','));
-
-    micBellsWrap.innerHTML = '';
-    if (live.length <= 1) {
-      micBellsWrap.classList.add('hidden');
-      return;
-    }
-    micBellsWrap.classList.remove('hidden');
-
-    const lead = document.createElement('span');
-    lead.className = 'mic-status';
-    lead.textContent = 'Mic bells:';
-    micBellsWrap.appendChild(lead);
-
-    live.forEach(bell => {
-      const lbl = document.createElement('label');
-      lbl.className = 'toggle';
-      const cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.checked = state.micBells.includes(bell);
-      cb.addEventListener('change', () => {
-        const next = new Set(state.micBells || []);
-        if (cb.checked) next.add(bell); else next.delete(bell);
-        state.micBells = Array.from(next).sort((a, b) => a - b);
-        safeSetLS(LS_MIC_BELLS, state.micBells.join(','));
-        syncMicToggleUI();
+    // Update any visible per-bell Mic buttons without forcing a full rebuild.
+    try {
+      const btns = document.querySelectorAll('[data-mic-bell]');
+      btns.forEach(btn => {
+        const bell = parseInt(btn.getAttribute('data-mic-bell') || '', 10);
+        const on = Number.isFinite(bell) && (state.micBells || []).includes(bell);
+        btn.classList.toggle('mic-on', on);
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+        btn.setAttribute('aria-label', on ? `Mic on for bell ${bell}` : `Mic off for bell ${bell}`);
       });
-      lbl.appendChild(cb);
-      lbl.appendChild(document.createTextNode(' ' + bell));
-      micBellsWrap.appendChild(lbl);
-    });
+    } catch (_) {}
   }
+
 
   function loadMicPrefs() {
     state.micEnabled = safeGetBoolLS(LS_MIC_ENABLED, false);
 
-    const th = parseFloat(safeGetLS(LS_MIC_THRESHOLD_DB, ''));
-    if (Number.isFinite(th)) state.micThresholdDb = clamp(th, -72, 0);
+    // Mic threshold (linear RMS)
+    let th = parseFloat(safeGetLS(LS_MIC_THRESHOLD) || '');
+    if (!Number.isFinite(th)) {
+      // Migrate legacy dB slider value if present.
+      const oldDb = parseFloat(safeGetLS(OLD_LS_MIC_THRESHOLD_DB) || '');
+      if (Number.isFinite(oldDb)) th = dbToLin(clamp(oldDb, -72, 0));
+    }
+    if (Number.isFinite(th)) window.micThreshold = clamp(th, 0.01, 0.25);
+    else window.micThreshold = DEFAULT_MIC_THRESHOLD;
 
-    const cd = parseFloat(safeGetLS(LS_MIC_COOLDOWN_MS, ''));
+    // Persist to the new key so it sticks going forward.
+    safeSetLS(LS_MIC_THRESHOLD, String(window.micThreshold));
+
+    const cd = parseFloat(safeGetLS(LS_MIC_COOLDOWN_MS) || '');
     if (Number.isFinite(cd)) state.micCooldownMs = clamp(cd, 100, 400);
 
-    state.micBells = parseBellList(safeGetLS(LS_MIC_BELLS, ''));
+    const bellsRaw = safeGetLS(LS_MIC_BELLS);
+    state.micBells = (bellsRaw == null) ? (state.liveBells || []).slice() : parseBellList(bellsRaw);
+    if (bellsRaw == null) safeSetLS(LS_MIC_BELLS, state.micBells.join(','));
 
     syncMicSlidersUI();
     rebuildMicBellControls();
     syncMicToggleUI();
   }
+
 
   function setMicEnabled(on, opts = {}) {
     const next = !!on;
@@ -1575,7 +1706,7 @@ select option { background-color: #0b1026; color: #e8eeff; }
     const rms = Math.sqrt(sum / buf.length);
     updateMicMeter(rms);
 
-    const thresholdLin = dbToLin(state.micThresholdDb);
+    const thresholdLin = clamp(Number(window.micThreshold) || DEFAULT_MIC_THRESHOLD, 0.01, 0.25);
     const above = rms >= thresholdLin;
     const rising = above && !state.micWasAbove;
 
@@ -2891,11 +3022,9 @@ select option { background-color: #0b1026; color: #e8eeff; }
       }
     });
   }
-  if (micThreshold) {
-    micThreshold.addEventListener('input', () => {
-      state.micThresholdDb = clamp(parseFloat(micThreshold.value), -72, 0);
-      safeSetLS(LS_MIC_THRESHOLD_DB, String(state.micThresholdDb));
-      syncMicSlidersUI();
+  if (micCalibrateBtn) {
+    micCalibrateBtn.addEventListener('click', () => {
+      calibrateMicThreshold();
     });
   }
   if (micCooldown) {
