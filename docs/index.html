@@ -434,6 +434,38 @@ select option { background-color: #0b1026; color: #e8eeff; }
           </div>
 
           <div class="control">
+            <label for="bellVolume">Bell volume</label>
+            <input id="bellVolume" type="range" min="0" max="100" value="100" />
+          </div>
+
+          <div class="control">
+            <label for="droneTypeSelect">Drone type</label>
+            <select id="droneTypeSelect">
+              <option value="off" selected>Off</option>
+              <option value="single">Single tone</option>
+              <option value="fifth">Root + 5th + Octave</option>
+              <option value="seventh">Root + 3rd + 5th + 7th</option>
+              <option value="shepard">Shepard</option>
+              <option value="noise">Noise drone</option>
+            </select>
+          </div>
+
+          <div class="control">
+            <label for="droneScaleSelect">Drone scale</label>
+            <select id="droneScaleSelect"></select>
+          </div>
+
+          <div class="control">
+            <label for="droneOctaveSelect">Drone octave</label>
+            <select id="droneOctaveSelect"></select>
+          </div>
+
+          <div class="control">
+            <label for="droneVolume">Drone volume</label>
+            <input id="droneVolume" type="range" min="0" max="100" value="50" />
+          </div>
+
+          <div class="control">
             <label for="liveCount">Live bells</label>
             <select id="liveCount"></select>
           </div>
@@ -698,6 +730,12 @@ select option { background-color: #0b1026; color: #e8eeff; }
   const bellCountSelect = document.getElementById('bellCount');
   const scaleSelect = document.getElementById('scaleSelect');
   const octaveSelect = document.getElementById('octaveSelect');
+  const bellVolume = document.getElementById('bellVolume');
+
+  const droneTypeSelect = document.getElementById('droneTypeSelect');
+  const droneScaleSelect = document.getElementById('droneScaleSelect');
+  const droneOctaveSelect = document.getElementById('droneOctaveSelect');
+  const droneVolume = document.getElementById('droneVolume');
 
   const liveCountSelect = document.getElementById('liveCount');
   const bellPicker = document.getElementById('bellPicker');
@@ -825,6 +863,14 @@ select option { background-color: #0b1026; color: #e8eeff; }
     // musical settings
     scaleKey: 'C_major',
     octaveC: 3, // UI shows C1..C6
+
+    // audio settings
+    bellVolume: 100, // 0..100 master bell volume
+    droneType: 'off',
+    droneScaleKey: 'C_major',
+    droneOctaveC: 3,
+    droneVolume: 50, // 0..100
+
     bellFreq: [],
 
     pathBells: [],
@@ -883,6 +929,11 @@ select option { background-color: #0b1026; color: #e8eeff; }
   };
 
   let audioCtx = null;
+  let bellMasterGain = null;
+  let droneMasterGain = null;
+  let droneCurrent = null;
+  let noiseBuffer = null;
+  let noiseBufferSampleRate = 0;
 
   // Mic v2 threshold (linear RMS)
   const DEFAULT_MIC_THRESHOLD = 0.06;
@@ -892,19 +943,50 @@ select option { background-color: #0b1026; color: #e8eeff; }
   function perfNow() { return performance.now(); }
 
   // === Audio ===
-  function ensureAudio() {
+    function ensureAudio() {
     if (!audioCtx) {
       const Ctx = window.AudioContext || window.webkitAudioContext;
       audioCtx = new Ctx();
+
+      // Master gain for bell sounds (global bell volume slider)
+      bellMasterGain = audioCtx.createGain();
+      bellMasterGain.gain.value = clamp((Number(state.bellVolume) || 100) / 100, 0, 1);
+      bellMasterGain.connect(audioCtx.destination);
+
+      // Master gain for the drone (separate from bell volume)
+      droneMasterGain = audioCtx.createGain();
+      droneMasterGain.gain.value = clamp((Number(state.droneVolume) || 50) / 100, 0, 1);
+      droneMasterGain.connect(audioCtx.destination);
+
+      noiseBuffer = null;
+      noiseBufferSampleRate = 0;
+    } else {
+      // Recreate master gains if needed (e.g., after an AudioContext restart)
+      if (!bellMasterGain) {
+        bellMasterGain = audioCtx.createGain();
+        bellMasterGain.gain.value = clamp((Number(state.bellVolume) || 100) / 100, 0, 1);
+        bellMasterGain.connect(audioCtx.destination);
+      }
+      if (!droneMasterGain) {
+        droneMasterGain = audioCtx.createGain();
+        droneMasterGain.gain.value = clamp((Number(state.droneVolume) || 50) / 100, 0, 1);
+        droneMasterGain.connect(audioCtx.destination);
+      }
     }
     if (audioCtx.state === 'suspended') audioCtx.resume();
   }
   function closeAudio() {
     if (audioCtx) {
-      // Keep the shared AudioContext alive while mic capture is active.
+      // Keep the shared AudioContext alive while mic capture or drone is active.
       if (state.micActive) return;
+      if (state.droneType && state.droneType !== 'off') return;
       try { audioCtx.close(); } catch (_) {}
       audioCtx = null;
+      bellMasterGain = null;
+      droneMasterGain = null;
+      droneCurrent = null;
+      noiseBuffer = null;
+      noiseBufferSampleRate = 0;
     }
   }
   function msToAudioTime(whenMs) {
@@ -931,7 +1013,7 @@ select option { background-color: #0b1026; color: #e8eeff; }
     gain.gain.exponentialRampToValueAtTime(0.16, t + 0.01);
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
 
-    osc.connect(gain).connect(audioCtx.destination);
+    osc.connect(gain).connect(bellMasterGain || audioCtx.destination);
     osc.start(t);
     osc.stop(t + 0.32);
   }
@@ -946,10 +1028,191 @@ select option { background-color: #0b1026; color: #e8eeff; }
     gain.gain.setValueAtTime(0.0001, t);
     gain.gain.exponentialRampToValueAtTime(0.08, t + 0.005);
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
-    osc.connect(gain).connect(audioCtx.destination);
+    osc.connect(gain).connect(bellMasterGain || audioCtx.destination);
     osc.start(t);
     osc.stop(t + 0.07);
   }
+  // === Bell master volume + Drone (background) ===
+  const DRONE_FADE_SEC = 0.12;
+  const DRONE_TONAL_LEVEL = 0.10;
+  const DRONE_NOISE_LEVEL = 0.06;
+
+  function applyBellMasterGain() {
+    if (!audioCtx || !bellMasterGain) return;
+    const g = clamp((Number(state.bellVolume) || 0) / 100, 0, 1);
+    const now = audioCtx.currentTime;
+    try {
+      bellMasterGain.gain.cancelScheduledValues(now);
+      bellMasterGain.gain.setTargetAtTime(g, now, 0.01);
+    } catch (_) {}
+  }
+
+  function applyDroneMasterGain() {
+    if (!audioCtx || !droneMasterGain) return;
+    const g = clamp((Number(state.droneVolume) || 0) / 100, 0, 1);
+    const now = audioCtx.currentTime;
+    try {
+      droneMasterGain.gain.cancelScheduledValues(now);
+      droneMasterGain.gain.setTargetAtTime(g, now, 0.02);
+    } catch (_) {}
+  }
+
+  function getScaleDefByKey(key) {
+    return SCALE_LIBRARY.find(s => s.key === key) || SCALE_LIBRARY[0];
+  }
+
+  function getDroneRootFrequency() {
+    const def = getScaleDefByKey(state.droneScaleKey);
+    const rootMidi = noteToMidi(def.root, state.droneOctaveC);
+    return midiToFreq(rootMidi);
+  }
+
+  function getNoiseBuffer() {
+    ensureAudio();
+    if (noiseBuffer && noiseBufferSampleRate === audioCtx.sampleRate) return noiseBuffer;
+
+    const seconds = 2.0;
+    const len = Math.max(1, Math.floor(audioCtx.sampleRate * seconds));
+    const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+
+    noiseBuffer = buf;
+    noiseBufferSampleRate = audioCtx.sampleRate;
+    return noiseBuffer;
+  }
+
+  function stopDrone() {
+    if (!droneCurrent) return;
+    const old = droneCurrent;
+    droneCurrent = null;
+
+    if (!audioCtx || !old.groupGain) {
+      try { (old.nodes || []).forEach(n => { try { n.disconnect(); } catch (_) {} }); } catch (_) {}
+      try { old.groupGain && old.groupGain.disconnect(); } catch (_) {}
+      return;
+    }
+
+    const now = audioCtx.currentTime;
+    const fade = DRONE_FADE_SEC;
+    const g = old.groupGain;
+    try {
+      g.gain.cancelScheduledValues(now);
+      const startVal = Math.max(0.0001, g.gain.value || 0.0001);
+      g.gain.setValueAtTime(startVal, now);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + fade);
+    } catch (_) {}
+
+    const stopAt = now + fade + 0.02;
+    (old.nodes || []).forEach(n => {
+      try { if (n && typeof n.stop === 'function') n.stop(stopAt); } catch (_) {}
+    });
+
+    setTimeout(() => {
+      try { (old.nodes || []).forEach(n => { try { n.disconnect(); } catch (_) {} }); } catch (_) {}
+      try { g.disconnect(); } catch (_) {}
+    }, Math.round((fade + 0.08) * 1000));
+  }
+
+  function startDrone() {
+    if (state.droneType === 'off') { stopDrone(); return; }
+
+    ensureAudio();
+    applyDroneMasterGain();
+
+    // Crossfade old -> new configuration
+    stopDrone();
+
+    const type = state.droneType;
+    const now = audioCtx.currentTime;
+
+    const groupGain = audioCtx.createGain();
+    groupGain.gain.setValueAtTime(0.0001, now);
+    groupGain.connect(droneMasterGain || audioCtx.destination);
+
+    const nodes = [groupGain];
+
+    function addOsc(freq, amp, detuneCents) {
+      const osc = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now);
+      if (Number.isFinite(detuneCents) && detuneCents !== 0) osc.detune.setValueAtTime(detuneCents, now);
+      g.gain.setValueAtTime(amp, now);
+      osc.connect(g).connect(groupGain);
+      osc.start(now);
+      nodes.push(osc, g);
+    }
+
+    const f = getDroneRootFrequency();
+
+    if (type === 'single') {
+      addOsc(f, DRONE_TONAL_LEVEL, 0);
+    } else if (type === 'fifth') {
+      const freqs = [f, f * Math.pow(2, 7/12), f * 2];
+      const detunes = [0, 2, -2];
+      const amp = DRONE_TONAL_LEVEL / freqs.length;
+      freqs.forEach((fr, i) => addOsc(fr, amp, detunes[i] || 0));
+    } else if (type === 'seventh') {
+      const freqs = [f, f * Math.pow(2, 4/12), f * Math.pow(2, 7/12), f * Math.pow(2, 11/12)];
+      const detunes = [0, -2, 1, 2];
+      const amp = DRONE_TONAL_LEVEL / freqs.length;
+      freqs.forEach((fr, i) => addOsc(fr, amp, detunes[i] || 0));
+    } else if (type === 'shepard') {
+      const MIN_F = 25;
+      const MAX_F = Math.min(12000, audioCtx.sampleRate * 0.45);
+      const freqs = [];
+      for (let k = -3; k <= 3; k++) {
+        const fr = f * Math.pow(2, k);
+        if (fr >= MIN_F && fr <= MAX_F) freqs.push(fr);
+      }
+      if (!freqs.length) freqs.push(clamp(f, MIN_F, MAX_F));
+
+      const sigma = 1.05; // in octaves
+      const weights = freqs.map(fr => {
+        const x = Math.log2(fr / f);
+        return Math.exp(-0.5 * (x / sigma) * (x / sigma));
+      });
+      const sum = weights.reduce((a, b) => a + b, 0) || 1;
+
+      freqs.forEach((fr, i) => {
+        const w = weights[i] / sum;
+        const det = (i - (freqs.length - 1) / 2) * 1.5; // subtle spread
+        addOsc(fr, DRONE_TONAL_LEVEL * w, det);
+      });
+    } else if (type === 'noise') {
+      const src = audioCtx.createBufferSource();
+      src.buffer = getNoiseBuffer();
+      src.loop = true;
+
+      const lp = audioCtx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(280, now);
+      lp.Q.setValueAtTime(0.8, now);
+
+      const ng = audioCtx.createGain();
+      ng.gain.setValueAtTime(DRONE_NOISE_LEVEL, now);
+
+      src.connect(lp).connect(ng).connect(groupGain);
+      src.start(now);
+      nodes.push(src, lp, ng);
+    } else {
+      // Fail-safe: unknown type
+      try { groupGain.disconnect(); } catch (_) {}
+      return;
+    }
+
+    // Fade in
+    try { groupGain.gain.exponentialRampToValueAtTime(1.0, now + DRONE_FADE_SEC); } catch (_) {}
+
+    droneCurrent = { type, groupGain, nodes };
+  }
+
+  function refreshDrone() {
+    if (state.droneType === 'off') return;
+    startDrone();
+  }
+
 
   // === Canvas helpers ===
   function fitCanvas(el, ctx) {
@@ -3097,6 +3360,35 @@ select option { background-color: #0b1026; color: #e8eeff; }
     rebuildBellFrequencies();
   });
 
+  bellVolume.addEventListener('input', () => {
+    state.bellVolume = clamp(parseInt(bellVolume.value, 10) || 0, 0, 100);
+    applyBellMasterGain();
+  });
+
+  droneTypeSelect.addEventListener('change', () => {
+    state.droneType = droneTypeSelect.value;
+    if (state.droneType === 'off') {
+      stopDrone();
+    } else {
+      startDrone();
+    }
+  });
+
+  droneScaleSelect.addEventListener('change', () => {
+    state.droneScaleKey = droneScaleSelect.value;
+    if (state.droneType !== 'off' && state.droneType !== 'noise') refreshDrone();
+  });
+
+  droneOctaveSelect.addEventListener('change', () => {
+    state.droneOctaveC = parseInt(droneOctaveSelect.value, 10) || 3;
+    if (state.droneType !== 'off' && state.droneType !== 'noise') refreshDrone();
+  });
+
+  droneVolume.addEventListener('input', () => {
+    state.droneVolume = clamp(parseInt(droneVolume.value, 10) || 0, 0, 100);
+    applyDroneMasterGain();
+  });
+
   fileInput.addEventListener('change', () => {
     if (state.phase !== 'idle') return;
     const file = fileInput.files && fileInput.files[0];
@@ -3182,6 +3474,17 @@ select option { background-color: #0b1026; color: #e8eeff; }
     state.scaleKey = SCALE_LIBRARY[0].key;
     scaleSelect.value = state.scaleKey;
 
+    // Drone scale (same option set as bells)
+    droneScaleSelect.innerHTML = '';
+    for (const s of SCALE_LIBRARY) {
+      const opt = document.createElement('option');
+      opt.value = s.key;
+      opt.textContent = s.label;
+      droneScaleSelect.appendChild(opt);
+    }
+    state.droneScaleKey = state.scaleKey;
+    droneScaleSelect.value = state.droneScaleKey;
+
     octaveSelect.innerHTML = '';
     for (let o = 1; o <= 6; o++) {
       const opt = document.createElement('option');
@@ -3191,6 +3494,22 @@ select option { background-color: #0b1026; color: #e8eeff; }
     }
     state.octaveC = 3;
     octaveSelect.value = String(state.octaveC);
+
+    // Drone octave (same option set as bells)
+    droneOctaveSelect.innerHTML = '';
+    for (let o = 1; o <= 6; o++) {
+      const opt = document.createElement('option');
+      opt.value = String(o);
+      opt.textContent = 'C' + String(o);
+      droneOctaveSelect.appendChild(opt);
+    }
+    state.droneOctaveC = state.octaveC;
+    droneOctaveSelect.value = String(state.droneOctaveC);
+
+    // Sliders/defaults
+    bellVolume.value = String(state.bellVolume);
+    droneTypeSelect.value = state.droneType;
+    droneVolume.value = String(state.droneVolume);
 
     rebuildLiveCountOptions();
     ensureLiveBells();
@@ -3218,6 +3537,8 @@ select option { background-color: #0b1026; color: #e8eeff; }
 
     window.addEventListener('pagehide', stopMicCapture);
     window.addEventListener('beforeunload', stopMicCapture);
+    window.addEventListener('pagehide', stopDrone);
+    window.addEventListener('beforeunload', stopDrone);
 
     window.requestAnimationFrame(loop);
   }
