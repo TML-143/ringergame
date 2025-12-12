@@ -581,6 +581,11 @@ select option { background-color: #0b1026; color: #e8eeff; }
             <input id="fileInput" type="file" accept=".txt" />
           </div>
 
+          <div class="control">
+            <label for="xmlInput">CCCBR XML / ZIP</label>
+            <input id="xmlInput" type="file" accept=".xml,.zip" multiple />
+          </div>
+
           <div class="control control-buttons">
             <button id="startBtn">Start</button>
             <button id="stopBtn" disabled>Stop</button>
@@ -624,6 +629,15 @@ select option { background-color: #0b1026; color: #e8eeff; }
           </div>
           <div id="stats"></div>
         </section>
+
+        <section id="methodLibrary" class="pane pane-span hidden">
+          <div class="pane-title">
+            <span>Method Library</span>
+          </div>
+          <div id="methodList"
+               style="padding:12px;display:flex;flex-wrap:wrap;gap:8px;">
+          </div>
+        </section>
       </main>
 
       <footer class="footer">
@@ -635,15 +649,28 @@ select option { background-color: #0b1026; color: #e8eeff; }
 (function () {
   'use strict';
 
+  // Global CCCBR method library
+  window.RG = window.RG || {};
+  window.RG.methods = window.RG.methods || [];
+  const RG = window.RG;
+
   const LOOKAHEAD_MS = 160;
+  const DEMO_VISIBLE_AHEAD_MS = 15 * 60 * 1000;          // 15 minutes
+  const DEMO_HIDDEN_AHEAD_MS  = 60 * 60 * 1000;          // 60 minutes
+  const DEMO_LOW_BPM_THRESHOLD = 12;
+  const DEMO_LOW_BPM_AHEAD_MS = 4 * 60 * 60 * 1000;      // 4 hours (only when BPM <= 12)
+  const DEMO_MAX_AHEAD_STRIKES = 8000;                   // hard cap on total strikes scheduled ahead
+  const DEMO_SCHED_MAX_PER_PASS = 400;                   // per-pass strike scheduling cap to avoid UI jank
   const COUNTDOWN_BEATS = 3;
+
+  let wakeLockSentinel = null;
 
   // Row-based scoring: each bell has one beat-wide window per row, split into three equal thirds.
   // Middle third = 10 points, outer thirds = 9 points, miss = 0.
 
   // === Analytics (GA4) ===
   const GA_ID = 'G-7TEG531231';
-  const SITE_VERSION = 'v10_display_scales';
+  const SITE_VERSION = 'v03_wakelock_demo_persist';
 
   function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
   function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
@@ -790,6 +817,7 @@ select option { background-color: #0b1026; color: #e8eeff; }
   const micPaneStatus = document.getElementById('micPaneStatus');
 
   const fileInput = document.getElementById('fileInput');
+  const xmlInput  = document.getElementById('xmlInput');
   const startBtn = document.getElementById('startBtn');
   const stopBtn = document.getElementById('stopBtn');
   const demoBtn = document.getElementById('demoBtn');
@@ -977,6 +1005,39 @@ select option { background-color: #0b1026; color: #e8eeff; }
   function clamp(v, min, max) { return v < min ? min : (v > max ? max : v); }
   function perfNow() { return performance.now(); }
 
+  async function requestWakeLock() {
+    try {
+      if (!navigator.wakeLock || typeof navigator.wakeLock.request !== 'function') return;
+      if (wakeLockSentinel) return;
+      wakeLockSentinel = await navigator.wakeLock.request('screen');
+      try {
+        if (wakeLockSentinel && typeof wakeLockSentinel.addEventListener === 'function') {
+          wakeLockSentinel.addEventListener('release', () => { wakeLockSentinel = null; });
+        }
+      } catch (_) {}
+    } catch (_) {}
+  }
+
+  async function releaseWakeLock() {
+    try {
+      if (wakeLockSentinel) await wakeLockSentinel.release();
+    } catch (_) {}
+    wakeLockSentinel = null;
+  }
+
+  function demoEffectiveHorizonMs() {
+    const bpm = Math.max(1, Number(state.bpm) || 1);
+    const beatMs = 60000 / bpm;
+    let baseHorizonMs;
+    if (document.hidden) {
+      baseHorizonMs = (bpm <= DEMO_LOW_BPM_THRESHOLD) ? DEMO_LOW_BPM_AHEAD_MS : DEMO_HIDDEN_AHEAD_MS;
+    } else {
+      baseHorizonMs = DEMO_VISIBLE_AHEAD_MS;
+    }
+    const capMs = beatMs * DEMO_MAX_AHEAD_STRIKES;
+    return Math.min(baseHorizonMs, capMs);
+  }
+
   // === Audio ===
     function ensureAudio() {
     if (!audioCtx) {
@@ -1012,7 +1073,8 @@ select option { background-color: #0b1026; color: #e8eeff; }
   }
   function closeAudio() {
     if (audioCtx) {
-      // Keep the shared AudioContext alive while mic capture or drone is active.
+      // Keep the shared AudioContext alive while mic capture, drone, or a demo run is active.
+      if (state.phase !== 'idle' && state.mode === 'demo') return;
       if (state.micActive) return;
       if (state.droneType && state.droneType !== 'off') return;
       try { audioCtx.close(); } catch (_) {}
@@ -1622,10 +1684,615 @@ select option { background-color: #0b1026; color: #e8eeff; }
     if (stage < 2 || stage > 12) throw new Error('Unsupported bell count in file.');
     return { rows, stage };
   }
-  function computeRows() {
+function computeRows() {
     if (state.method === 'custom' && state.customRows) state.rows = state.customRows.slice();
     else state.rows = makeLibraryRows(state.method, state.stage);
   }
+
+
+  function cccbGetElements(root, localName) {
+    if (!root || !localName) return [];
+    if (typeof root.getElementsByTagNameNS === 'function') {
+      try {
+        const els = root.getElementsByTagNameNS('*', localName);
+        if (els && els.length) return els;
+      } catch (_) {}
+    }
+    if (typeof root.getElementsByTagName === 'function') {
+      return root.getElementsByTagName(localName);
+    }
+    return [];
+  }
+
+  function cccbFirstText(root, names) {
+    if (!root) return '';
+    const arr = Array.isArray(names) ? names : [names];
+    for (let i = 0; i < arr.length; i++) {
+      const localName = arr[i];
+      const els = cccbGetElements(root, localName);
+      if (els && els[0] && els[0].textContent != null) {
+        const txt = String(els[0].textContent).trim();
+        if (txt) return txt;
+      }
+    }
+    return '';
+  }
+
+  function cccbFamilyFromFilename(filename) {
+    let name = (filename == null ? '' : String(filename)).trim();
+    if (!name) return '';
+    let lower = name.toLowerCase();
+    if (lower.endsWith('.zip')) {
+      name = name.slice(0, -4);
+      lower = name.toLowerCase();
+    }
+    if (lower.endsWith('.xml')) {
+      name = name.slice(0, -4);
+    }
+    return name;
+  }
+
+  function parseCCCBR(xmlText, filename) {
+    let text = xmlText == null ? '' : String(xmlText);
+    if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+
+    let doc;
+    try {
+      const parser = new DOMParser();
+      doc = parser.parseFromString(text, 'application/xml');
+    } catch (err) {
+      console.error('CCCBR XML parse error', filename, err);
+      alert('Could not parse XML in ' + (filename || 'file') + '.');
+      return 0;
+    }
+
+    if (!doc || !doc.documentElement) {
+      alert('Empty XML document in ' + (filename || 'file') + '.');
+      return 0;
+    }
+
+    const perr = doc.getElementsByTagName('parsererror');
+    if (perr && perr.length) {
+      console.error('CCCBR XML parsererror', filename, perr[0] && perr[0].textContent);
+      alert('Could not parse XML in ' + (filename || 'file') + '.');
+      return 0;
+    }
+
+    const family = cccbFamilyFromFilename(filename);
+    const methodEls = cccbGetElements(doc, 'method');
+    if (!methodEls || !methodEls.length) {
+      alert('No <method> entries found in ' + (filename || 'file') + '.');
+      return 0;
+    }
+
+    let added = 0;
+
+    for (let i = 0; i < methodEls.length; i++) {
+      const mEl = methodEls[i];
+
+      const title = cccbFirstText(mEl, ['title', 'name']) || 'Untitled';
+      const pnRaw = cccbFirstText(mEl, ['pn', 'notation', 'placeNotation']);
+      const lh = cccbFirstText(mEl, ['lh', 'leadHead']);
+
+      let stageText = cccbFirstText(mEl, 'stage');
+      let classText = cccbFirstText(mEl, ['class', 'classification']);
+
+      if (!stageText || !classText) {
+        let cur = mEl.parentElement;
+        while (cur && cur.nodeType === 1) {
+          const props = cccbGetElements(cur, 'properties');
+          for (let j = 0; j < props.length; j++) {
+            const p = props[j];
+            if (p.parentNode !== cur) continue;
+            if (!stageText) {
+              const st = cccbFirstText(p, 'stage');
+              if (st) stageText = st;
+            }
+            if (!classText) {
+              const cl = cccbFirstText(p, ['class', 'classification']);
+              if (cl) classText = cl;
+            }
+          }
+          if (stageText && classText) break;
+          cur = cur.parentElement;
+        }
+      }
+
+      let stageNum = parseInt(stageText, 10);
+      if (!isFinite(stageNum)) continue;
+      stageNum = clamp(stageNum, 1, 16);
+      if (stageNum < 4 || stageNum > 8) continue;
+
+      let pnNorm = pnRaw == null ? '' : String(pnRaw);
+      pnNorm = pnNorm.replace(/;/g, ' ').replace(/\s+/g, ' ').trim();
+      pnNorm = pnNorm.replace(/\s*,\s*/g, ',');
+
+      const methodObj = {
+        title: title,
+        class: classText || '',
+        stage: stageNum,
+        pn: pnNorm,
+        lh: lh || '',
+        family: family
+      };
+
+      RG.methods.push(methodObj);
+      added += 1;
+    }
+
+    if (!added) {
+      alert('No supported 4–8 bell methods found in ' + (filename || 'file') + '.');
+      return 0;
+    }
+
+    refreshMethodList();
+    return added;
+  }
+
+  function cccbParsePnTokens(pn) {
+    if (pn == null) return [];
+    let raw = String(pn);
+    raw = raw.replace(/;/g, ' ').replace(/[\r\n]+/g, ' ').trim();
+    if (!raw) return [];
+    const parts = raw.split(/[.,\s]+/);
+    const tokens = [];
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      if (!part) continue;
+      let buf = '';
+      for (let j = 0; j < part.length; j++) {
+        const ch = part[j];
+        if (ch === 'x' || ch === 'X' || ch === '-') {
+          if (buf) {
+            tokens.push(buf);
+            buf = '';
+          }
+          tokens.push('-');
+        } else if (/[0-9A-Za-z]/.test(ch)) {
+          buf += ch;
+        }
+      }
+      if (buf) tokens.push(buf);
+    }
+    return tokens;
+  }
+
+  function cccbPlacesFromToken(token, stage) {
+    const places = [];
+    if (!token || token === '-') return places;
+    const s = String(token);
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i];
+      let place = null;
+      if (ch >= '1' && ch <= '9') place = ch.charCodeAt(0) - '0'.charCodeAt(0);
+      else if (ch === '0') place = 10;
+      else if (ch === 'E' || ch === 'e') place = 11;
+      else if (ch === 'T' || ch === 't') place = 12;
+      if (place == null) continue;
+      if (stage && place > stage) continue;
+      if (places.indexOf(place) === -1) places.push(place);
+    }
+    places.sort(function(a, b) { return a - b; });
+    return places;
+  }
+
+  function cccbApplyPn(row, stage, token) {
+    const next = row.slice();
+    const n = stage || row.length;
+    if (token === '-') {
+      for (let i = 0; i + 1 < n; i += 2) {
+        const tmp = next[i];
+        next[i] = next[i + 1];
+        next[i + 1] = tmp;
+      }
+      return next;
+    }
+
+    const places = cccbPlacesFromToken(token, n);
+    const placeSet = {};
+    for (let i = 0; i < places.length; i++) placeSet[places[i]] = true;
+
+    let i = 0;
+    while (i < n) {
+      const pos = i + 1;
+      if (placeSet[pos]) {
+        i += 1;
+      } else {
+        const nextPos = pos + 1;
+        if (i + 1 < n && !placeSet[nextPos]) {
+          const tmp = next[i];
+          next[i] = next[i + 1];
+          next[i + 1] = tmp;
+          i += 2;
+        } else {
+          i += 1;
+        }
+      }
+    }
+    return next;
+  }
+
+  function cccbRowsFromPn(stage, pn, leads) {
+    let s = parseInt(stage, 10);
+    if (!isFinite(s) || s <= 1) return null;
+    s = clamp(s, 2, 12);
+    const tokens = cccbParsePnTokens(pn);
+    if (!tokens.length) return null;
+    let leadCount = parseInt(leads, 10);
+    if (!isFinite(leadCount) || leadCount <= 0) leadCount = 5;
+    leadCount = clamp(leadCount, 1, 20);
+
+    const rows = [];
+    let row = [];
+    for (let i = 1; i <= s; i++) row.push(i);
+    rows.push(row.slice());
+
+    for (let l = 0; l < leadCount; l++) {
+      for (let ti = 0; ti < tokens.length; ti++) {
+        const tok = tokens[ti];
+        row = cccbApplyPn(row, s, tok);
+        rows.push(row.slice());
+      }
+    }
+    return rows;
+  }
+
+  async function inflateZipDeflate(data) {
+    const bytes = data instanceof Uint8Array ? data : new Uint8Array(data || 0);
+    if (typeof DecompressionStream === 'undefined') {
+      throw new Error('DecompressionStream not supported');
+    }
+    const types = ['deflate-raw', 'deflate'];
+    let lastErr = null;
+    for (let i = 0; i < types.length; i++) {
+      try {
+        const ds = new DecompressionStream(types[i]);
+        const stream = new Blob([bytes]).stream().pipeThrough(ds);
+        const resp = new Response(stream);
+        const buf = await resp.arrayBuffer();
+        return new Uint8Array(buf);
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+    throw lastErr || new Error('Could not decompress deflate stream');
+  }
+
+  async function parseZipArchive(file) {
+    const name = file && file.name ? String(file.name) : '';
+    let arrayBuffer;
+    try {
+      arrayBuffer = await file.arrayBuffer();
+    } catch (err) {
+      console.error('ZIP read failed', err);
+      alert('Could not read ' + name + ': ' + (err && err.message ? err.message : err));
+      return;
+    }
+
+    const bytes = new Uint8Array(arrayBuffer);
+    const view = new DataView(arrayBuffer);
+    const len = bytes.length;
+    if (len < 22) {
+      alert('Not a valid ZIP archive: ' + name);
+      return;
+    }
+
+    const EOCD_SIG = 0x06054b50;
+    const CEN_SIG = 0x02014b50;
+    const maxComment = 65535;
+    let eocdOffset = -1;
+    const startSearch = Math.max(0, len - 22 - maxComment);
+    for (let i = len - 22; i >= startSearch; i--) {
+      if (view.getUint32(i, true) === EOCD_SIG) {
+        eocdOffset = i;
+        break;
+      }
+    }
+    if (eocdOffset < 0) {
+      alert('Not a valid ZIP archive: ' + name);
+      return;
+    }
+
+    const totalEntries = view.getUint16(eocdOffset + 10, true);
+    const cdSize = view.getUint32(eocdOffset + 12, true);
+    const cdOffset = view.getUint32(eocdOffset + 16, true);
+
+    const entries = [];
+    let ptr = cdOffset;
+    const decoder = new TextDecoder('utf-8');
+
+    for (let i = 0; i < totalEntries && ptr + 46 <= len; i++) {
+      const sig = view.getUint32(ptr, true);
+      if (sig !== CEN_SIG) break;
+
+      const compMethod = view.getUint16(ptr + 10, true);
+      const compSize = view.getUint32(ptr + 20, true);
+      const localOffset = view.getUint32(ptr + 42, true);
+      const fnameLen = view.getUint16(ptr + 28, true);
+      const extraLen = view.getUint16(ptr + 30, true);
+      const commentLen = view.getUint16(ptr + 32, true);
+
+      const nameStart = ptr + 46;
+      const nameEnd = nameStart + fnameLen;
+      if (nameEnd > len) break;
+
+      const fnameBytes = bytes.subarray(nameStart, nameEnd);
+      let fname = '';
+      try {
+        fname = decoder.decode(fnameBytes);
+      } catch (_) {}
+
+      entries.push({ fname: fname, compMethod: compMethod, compSize: compSize, localOffset: localOffset });
+
+      ptr = nameEnd + extraLen + commentLen;
+      if (ptr > cdOffset + cdSize) break;
+    }
+
+    if (!entries.length) {
+      alert('No files found in ' + name);
+      return;
+    }
+
+    let xmlCount = 0;
+    let methodsAddedTotal = 0;
+    let decompressionUnsupported = false;
+
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
+      const fname = entry.fname || '';
+      const lower = fname.toLowerCase();
+
+      if (!lower.endsWith('.xml')) continue;
+      xmlCount += 1;
+
+      try {
+        const localOffset = entry.localOffset;
+        if (localOffset + 30 > len) {
+          console.warn('Local header truncated for', fname);
+          alert('Could not read ' + fname + ' in ' + name + ' (truncated header).');
+          continue;
+        }
+
+        const localSig = view.getUint32(localOffset, true);
+        if (localSig !== 0x04034b50) {
+          console.warn('Bad local header sig for', fname);
+          alert('Could not read ' + fname + ' in ' + name + ' (invalid local header).');
+          continue;
+        }
+
+        const localNameLen = view.getUint16(localOffset + 26, true);
+        const localExtraLen = view.getUint16(localOffset + 28, true);
+        const dataStart = localOffset + 30 + localNameLen + localExtraLen;
+
+        const compSize = entry.compSize;
+        if (dataStart + compSize > len) {
+          console.warn('Data truncated for', fname);
+          alert('Could not read ' + fname + ' in ' + name + ' (truncated data).');
+          continue;
+        }
+
+        const compMethod = entry.compMethod;
+        const compBytes = bytes.subarray(dataStart, dataStart + compSize);
+
+        let plainBytes;
+        if (compMethod === 0) {
+          plainBytes = compBytes;
+        } else if (compMethod === 8) {
+          try {
+            plainBytes = await inflateZipDeflate(compBytes);
+          } catch (err) {
+            const msg = err && err.message ? String(err.message) : String(err);
+            if (msg && msg.toLowerCase().indexOf('decompressionstream not supported') >= 0) {
+              decompressionUnsupported = true;
+              break;
+            } else {
+              console.error('Deflate inflate failed for', fname, err);
+              alert('Could not decompress ' + fname + ' in ' + name + '.');
+              continue;
+            }
+          }
+        } else {
+          console.warn('Skipping entry with unsupported compression method', compMethod);
+          continue;
+        }
+
+        let xmlText = '';
+        try {
+          xmlText = decoder.decode(plainBytes);
+        } catch (err) {
+          console.error('UTF-8 decode failed for', fname, err);
+          alert('Could not decode ' + fname + ' in ' + name + '.');
+          continue;
+        }
+
+        const before = RG.methods.length;
+        parseCCCBR(xmlText, fname);
+        const added = RG.methods.length - before;
+        if (added > 0) methodsAddedTotal += added;
+      } catch (err) {
+        console.error('Error loading ZIP entry', fname, err);
+        alert('Could not load ' + fname + ' in ' + name + ': ' + (err && err.message ? err.message : err));
+      }
+    }
+
+    if (decompressionUnsupported) {
+      alert('This browser cannot open ZIP archives directly. Please unzip "' + name + '" and load the XML file(s) instead.');
+      return;
+    }
+
+    if (!xmlCount) {
+      alert('No XML files found in ' + name + '.');
+      return;
+    }
+
+    if (methodsAddedTotal > 0 && typeof analytics !== 'undefined' && analytics && typeof analytics.track === 'function') {
+      try {
+        analytics.track('cccbr_load', {
+          source: 'zip',
+          methods_added: methodsAddedTotal,
+          filename: cccbFamilyFromFilename(name).slice(0, 80)
+        });
+      } catch (_) {}
+    } else if (xmlCount && methodsAddedTotal === 0) {
+      alert('No supported 4–8 bell methods found in "' + name + '".');
+    }
+  }
+
+  function refreshMethodList() {
+    const lib = document.getElementById('methodLibrary');
+    const list = document.getElementById('methodList');
+    if (!lib || !list) return;
+
+    if (!RG.methods || !RG.methods.length) {
+      lib.classList.add('hidden');
+      list.innerHTML = '';
+      return;
+    }
+
+    lib.classList.remove('hidden');
+    list.innerHTML = '';
+
+    const methods = RG.methods.slice();
+
+    for (let i = 0; i < methods.length; i++) {
+      const m = methods[i];
+      const card = document.createElement('div');
+      card.style.padding = '8px 10px 10px';
+      card.style.borderRadius = '12px';
+      card.style.border = '1px solid rgba(255,255,255,0.14)';
+      card.style.background = 'rgba(255,255,255,0.04)';
+      card.style.display = 'flex';
+      card.style.flexDirection = 'column';
+      card.style.gap = '4px';
+      card.style.minWidth = '180px';
+      card.style.maxWidth = '240px';
+      card.style.fontSize = '13px';
+
+      const titleEl = document.createElement('div');
+      titleEl.style.fontWeight = '700';
+      titleEl.style.marginBottom = '2px';
+      titleEl.textContent = (m.title && String(m.title).trim()) || 'Untitled';
+      card.appendChild(titleEl);
+
+      const metaEl = document.createElement('div');
+      metaEl.style.color = 'rgba(232,238,255,0.80)';
+      const stage = parseInt(m.stage, 10) || 0;
+      const fam = (m.family && String(m.family).trim()) || '';
+      let meta = stage ? (stage + ' bell' + (stage === 1 ? '' : 's')) : '';
+      if (fam) meta = meta ? (meta + ' • ' + fam) : fam;
+      metaEl.textContent = meta;
+      card.appendChild(metaEl);
+
+      if (m.class && String(m.class).trim()) {
+        const clsEl = document.createElement('div');
+        clsEl.style.color = 'rgba(154,162,187,0.92)';
+        clsEl.textContent = String(m.class).trim();
+        card.appendChild(clsEl);
+      }
+
+      const pnText = (m.pn && String(m.pn).trim()) || '';
+      const pnEl = document.createElement('div');
+      pnEl.style.color = 'rgba(232,238,255,0.80)';
+      pnEl.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
+      pnEl.style.fontSize = '12px';
+      pnEl.style.marginTop = '4px';
+      const pnLabel = 'PN: ';
+      if (!pnText) {
+        pnEl.textContent = pnLabel + '(none)';
+      } else {
+        let short = pnText;
+        if (short.length > 64) short = short.slice(0, 61) + '…';
+        pnEl.textContent = pnLabel + short;
+      }
+      card.appendChild(pnEl);
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = 'Demo';
+      btn.style.marginTop = '6px';
+      btn.style.padding = '6px 10px';
+      btn.style.borderRadius = '10px';
+      btn.style.border = '1px solid rgba(255,255,255,0.18)';
+      btn.style.background = 'rgba(255,255,255,0.06)';
+      btn.style.color = '#e8eeff';
+      btn.style.cursor = 'pointer';
+      btn.style.fontWeight = '600';
+      btn.style.fontSize = '12px';
+      btn.style.alignSelf = 'stretch';
+      btn.addEventListener('click', function () {
+        loadCCCBRMethod(i);
+      });
+      card.appendChild(btn);
+
+      list.appendChild(card);
+    }
+  }
+
+  function loadCCCBRMethod(i) {
+    const methods = RG.methods || [];
+    const m = methods[i];
+    if (!m) {
+      alert('Invalid method.');
+      return;
+    }
+
+    if (state.phase !== 'idle') {
+      alert('Stop the current game first.');
+      return;
+    }
+
+    let stage = parseInt(m.stage, 10);
+    if (!isFinite(stage)) stage = 0;
+    stage = clamp(stage, 4, 8);
+    if (stage < 4 || stage > 8) {
+      alert('Only 4–8 bell methods are supported in this game.');
+      return;
+    }
+
+    state.method = 'custom';
+    if (methodSelect) methodSelect.value = 'custom';
+
+    state.stage = stage;
+    if (bellCountSelect) bellCountSelect.value = String(stage);
+
+    let rows = null;
+    if (m.pn && String(m.pn).trim()) {
+      try {
+        rows = cccbRowsFromPn(stage, m.pn, 5);
+      } catch (err) {
+        console.error('cccbRowsFromPn failed', m, err);
+      }
+    }
+    if (!rows || !rows.length) {
+      rows = makePlainHunt(stage, 5);
+    }
+
+    state.customRows = rows.slice();
+    computeRows();
+
+    rebuildLiveCountOptions();
+    ensureLiveBells();
+    rebuildBellPicker();
+    ensurePathBells();
+    rebuildPathPicker();
+    resetStats();
+    rebuildBellFrequencies();
+
+    try {
+      if (typeof analytics !== 'undefined' && analytics && typeof analytics.track === 'function') {
+        analytics.track('cccbr_demo_start', {
+          title: m.title || '',
+          stage: stage,
+          family: m.family || '',
+          pn_present: !!(m.pn && String(m.pn).trim())
+        });
+      }
+    } catch (_) {}
+
+    alert('Loaded CCCBR method: ' + (m.title || 'Untitled') + ' (' + stage + ' bells). Starting Demo.');
+    startPressed('demo');
+  }
+  window.loadCCCBRMethod = loadCCCBRMethod;
 
   function methodLabel() {
     if (state.method === 'custom') return 'Custom';
@@ -2329,6 +2996,7 @@ select option { background-color: #0b1026; color: #e8eeff; }
   // === Bell ring action (user) ===
   function ringBell(bell) {
     const now = perfNow();
+    releaseWakeLock();
     markRung(bell, now);
     playBellAt(bell, now);
     if (state.mode === 'play' && state.phase === 'running') scoreHit(bell, now);
@@ -3208,6 +3876,7 @@ select option { background-color: #0b1026; color: #e8eeff; }
     if (!state.rows.length) { alert('No rows loaded.'); return; }
     if (state.phase !== 'idle') return;
     state.mode = (mode === 'demo') ? 'demo' : 'play';
+    requestWakeLock();
 
     state.keybindCaptureBell = null;
     rebuildKeybindPanel();
@@ -3396,20 +4065,80 @@ select option { background-color: #0b1026; color: #e8eeff; }
     state.mode = 'play';
   }
 
-  function scheduleCountdown(nowMs) {
+  function resyncDemoToNow(nowMs) {
+    if (state.mode !== 'demo') return;
+    if (state.phase === 'idle') return;
+
+    const beatMs = 60000 / state.bpm;
+    const totalBeats = (state.rows && state.rows.length ? state.rows.length * state.stage : 0);
+    if (!totalBeats) return;
+
+    if (nowMs >= state.methodStartMs) {
+      if (state.phase !== 'running') {
+        state.phase = 'running';
+        state.runStartPerfMs = state.methodStartMs;
+
+        if (state.currentPlay && !state.currentPlay.began) {
+          state.currentPlay.began = true;
+          analytics.track('play_begin', {
+            mode: state.mode,
+            play_id: state.currentPlay.playId,
+            session_id: analytics.sessionId,
+            tempo_bpm: state.bpm,
+            treble_tone: currentTrebleToneLabel(),
+            octave: currentOctaveLabel(),
+            bell_root_type: state.scaleKey === 'custom_hz' ? 'custom' : 'scale',
+            bell_custom_hz: state.scaleKey === 'custom_hz' ? getBellRootFrequency() : null,
+            drone_root_type: state.droneScaleKey === 'custom_hz' ? 'custom' : 'scale',
+            drone_custom_hz: state.droneScaleKey === 'custom_hz' ? getDroneRootFrequency() : null
+          });
+        }
+      }
+
+      let elapsedBeats = Math.floor((nowMs - state.methodStartMs) / beatMs) + 1;
+      if (!Number.isFinite(elapsedBeats)) elapsedBeats = 0;
+      elapsedBeats = clamp(elapsedBeats, 0, totalBeats);
+
+      state.execBeatIndex = elapsedBeats;
+      state.schedBeatIndex = Math.max(state.schedBeatIndex, state.execBeatIndex);
+
+      if (state.execBeatIndex > 0) {
+        const lastStrike = clamp(state.execBeatIndex - 1, 0, Math.max(0, totalBeats - 1));
+        const bell = getBellForStrikeIndex(lastStrike);
+        const tMs = state.methodStartMs + lastStrike * beatMs;
+        markRung(bell, tMs);
+      }
+
+      if (state.execBeatIndex >= totalBeats) {
+        stopPressed('completed');
+        return;
+      }
+    }
+  }
+
+
+    function scheduleCountdown(nowMs) {
     if (state.phase !== 'countdown') return;
     const beatMs = 60000 / state.bpm;
     const total = state.countdownBeats || state.stage;
 
+    const isDemo = state.mode === 'demo';
+    const horizonMs = isDemo ? demoEffectiveHorizonMs() : LOOKAHEAD_MS;
+    let schedThisPass = 0;
+
     // Rounds: ring 1..stage on each beat.
     while (state.countSched < total) {
       const tMs = state.countFirstBeatMs + state.countSched * beatMs;
-      if (tMs <= nowMs + LOOKAHEAD_MS) {
+      if (tMs <= nowMs + horizonMs && (!isDemo || schedThisPass < DEMO_SCHED_MAX_PER_PASS)) {
         const bell = (state.countSched % state.stage) + 1; // 1..stage
         playBellAt(bell, tMs);
         state.countSched += 1;
+        if (isDemo) schedThisPass += 1;
       } else break;
     }
+
+    // Do not advance demo visuals/state while hidden (we resync on return).
+    if (isDemo && document.hidden) return;
 
     while (state.countExec < total) {
       const tMs = state.countFirstBeatMs + state.countExec * beatMs;
@@ -3438,20 +4167,31 @@ select option { background-color: #0b1026; color: #e8eeff; }
     }
   }
 
-  function scheduleMethod(nowMs) {
-    if (state.phase !== 'running') return;
+
+    function scheduleMethod(nowMs) {
+    if (state.phase !== 'running' && !(state.mode === 'demo' && state.phase === 'countdown')) return;
     const beatMs = 60000 / state.bpm;
     const totalBeats = state.rows.length * state.stage;
     const liveSet = new Set(state.liveBells);
 
+    const isDemo = state.mode === 'demo';
+    const horizonMs = isDemo ? demoEffectiveHorizonMs() : LOOKAHEAD_MS;
+    let schedThisPass = 0;
+
     while (state.schedBeatIndex < totalBeats) {
       const tMs = state.methodStartMs + state.schedBeatIndex * beatMs;
-      if (tMs <= nowMs + LOOKAHEAD_MS) {
+      if (tMs <= nowMs + horizonMs && (!isDemo || schedThisPass < DEMO_SCHED_MAX_PER_PASS)) {
         const bell = getBellForStrikeIndex(state.schedBeatIndex);
         if (state.mode === 'demo' || !liveSet.has(bell)) playBellAt(bell, tMs);
         state.schedBeatIndex += 1;
+        if (isDemo) schedThisPass += 1;
       } else break;
     }
+
+    if (state.phase !== 'running') return;
+
+    // Do not advance demo visuals/state while hidden (we resync on return).
+    if (isDemo && document.hidden) return;
 
     while (state.execBeatIndex < totalBeats) {
       const tMs = state.methodStartMs + state.execBeatIndex * beatMs;
@@ -3464,6 +4204,7 @@ select option { background-color: #0b1026; color: #e8eeff; }
 
     if (state.execBeatIndex >= totalBeats) stopPressed('completed');
   }
+
 
   function loop() {
     const nowMs = perfNow();
@@ -3848,6 +4589,42 @@ select option { background-color: #0b1026; color: #e8eeff; }
     reader.readAsText(file);
   });
 
+  if (xmlInput) {
+    xmlInput.addEventListener('change', async (e) => {
+      if (state.phase !== 'idle') return;
+
+      const files = e.target && e.target.files ? Array.from(e.target.files) : [];
+      for (const file of files) {
+        const name = file && file.name ? String(file.name) : '';
+        const lower = name.toLowerCase();
+        try {
+          if (lower.endsWith('.zip')) {
+            await parseZipArchive(file);
+          } else if (lower.endsWith('.xml')) {
+            const text = await file.text();
+            const before = RG.methods.length;
+            parseCCCBR(text, name);
+            const added = RG.methods.length - before;
+            if (added > 0 && typeof analytics !== 'undefined' && analytics && typeof analytics.track === 'function') {
+              try {
+                analytics.track('cccbr_load', {
+                  source: 'xml',
+                  methods_added: added,
+                  filename: name.slice(0, 80)
+                });
+              } catch (_) {}
+            }
+          }
+        } catch (err) {
+          console.error('CCCBR load failed', err);
+          alert('Could not load ' + name + ': ' + (err && err.message ? err.message : err));
+        }
+      }
+
+      try { e.target.value = ''; } catch (_) {}
+    });
+  }
+
   startBtn.addEventListener('click', () => startPressed('play'));
   if (demoBtn) demoBtn.addEventListener('click', () => startPressed('demo'));
   stopBtn.addEventListener('click', () => stopPressed('stopped'));
@@ -3983,6 +4760,49 @@ select option { background-color: #0b1026; color: #e8eeff; }
     window.addEventListener('beforeunload', stopMicCapture);
     window.addEventListener('pagehide', stopDrone);
     window.addEventListener('beforeunload', stopDrone);
+
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        releaseWakeLock();
+        if (state.phase !== 'idle') {
+          if (state.mode === 'play') {
+            stopPressed('sleep');
+          } else if (state.mode === 'demo') {
+            const nowMs = perfNow();
+            scheduleCountdown(nowMs);
+
+            const beatMs = 60000 / state.bpm;
+            const horizonMs = demoEffectiveHorizonMs();
+            const totalBeats = state.rows.length * state.stage;
+
+            let passes = 0;
+            const maxPasses = Math.ceil(DEMO_MAX_AHEAD_STRIKES / DEMO_SCHED_MAX_PER_PASS) + 4;
+            while (passes < maxPasses) {
+              const before = state.schedBeatIndex;
+              scheduleMethod(nowMs);
+              passes += 1;
+
+              if (state.schedBeatIndex === before) break;
+              if (state.schedBeatIndex >= totalBeats) break;
+
+              const nextT = state.methodStartMs + state.schedBeatIndex * beatMs;
+              if (nextT > nowMs + horizonMs) break;
+            }
+          }
+        }
+      } else {
+        if (state.phase !== 'idle') {
+          requestWakeLock();
+          if (state.mode === 'demo') {
+            const nowMs = perfNow();
+            resyncDemoToNow(nowMs);
+            scheduleCountdown(nowMs);
+            scheduleMethod(nowMs);
+          }
+        }
+      }
+    });
 
     window.requestAnimationFrame(loop);
   }
