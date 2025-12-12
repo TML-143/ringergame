@@ -665,12 +665,60 @@ select option { background-color: #0b1026; color: #e8eeff; }
 
   let wakeLockSentinel = null;
 
+  let needsRedraw = true;
+  let lastTickWasRAF = false;
+  let lastKnownDPR = window.devicePixelRatio || 1;
+
+  function markDirty() {
+    needsRedraw = true;
+  }
+
+  function getMaintenanceIntervalMs() {
+    const bpm = Math.max(1, Number(state.bpm) || 1);
+
+    if (state.phase === 'idle') return 1100;
+
+    if (bpm <= 12) return 500;
+    if (bpm <= 30) return 250;
+    if (bpm <= 90) return 100;
+    return 60;
+  }
+
+  function shouldUseRAFForRender() {
+    return ((state.phase !== 'idle' && state.bpm > 12) ||
+            (state.micActive && viewMic.checked === true));
+  }
+
+  let loopTimer = null;
+  let loopRAF = null;
+
+  function kickLoop() {
+    if (loopRAF != null) {
+      window.cancelAnimationFrame(loopRAF);
+      loopRAF = null;
+    }
+    if (loopTimer != null) {
+      window.clearTimeout(loopTimer);
+      loopTimer = null;
+    }
+
+    const useRAF = shouldUseRAFForRender();
+    if (useRAF) {
+      lastTickWasRAF = true;
+      loopRAF = window.requestAnimationFrame(loop);
+    } else {
+      lastTickWasRAF = false;
+      loopTimer = window.setTimeout(loop, 0);
+    }
+  }
+
+
   // Row-based scoring: each bell has one beat-wide window per row, split into three equal thirds.
   // Middle third = 10 points, outer thirds = 9 points, miss = 0.
 
   // === Analytics (GA4) ===
   const GA_ID = 'G-7TEG531231';
-  const SITE_VERSION = 'v03_wakelock_demo_persist';
+  const SITE_VERSION = 'v04_tempo_tiered_scheduler';
 
   function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
   function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
@@ -869,6 +917,8 @@ select option { background-color: #0b1026; color: #e8eeff; }
   function syncSpotlightSwapRowTogglesUI() {
     if (!spotlightSwapRows || !spotlightSwapsView) return;
     spotlightSwapRows.classList.toggle('hidden', !spotlightSwapsView.checked);
+    markDirty();
+    kickLoop();
   }
 
 
@@ -2577,6 +2627,7 @@ function computeRows() {
       pathPicker.appendChild(btn);
     }
     updatePathButtons();
+    markDirty();
   }
   function setPathNone() { state.pathBells = []; rebuildPathPicker(); }
   function setPathAll() { state.pathBells = []; for (let b=1; b<=state.stage; b++) state.pathBells.push(b); rebuildPathPicker(); }
@@ -2599,6 +2650,8 @@ function computeRows() {
 
     const rightVisible = viewNotation.checked;
     main.classList.toggle('onecol', !(leftVisible && rightVisible));
+    markDirty();
+    if (state.micActive && viewMic.checked) kickLoop();
   }
 
 
@@ -2873,6 +2926,8 @@ function computeRows() {
 
     // If mic was the only reason we kept audio alive while idle, restore old behavior.
     if (state.phase === 'idle') closeAudio();
+    markDirty();
+    kickLoop();
   }
 
   function startMicCapture() {
@@ -2913,6 +2968,8 @@ function computeRows() {
 
       setMicUiStatus('');
       syncMicToggleUI();
+      markDirty();
+      kickLoop();
     }).catch(err => {
       const name = err && err.name ? String(err.name) : '';
       state.micError = (name === 'NotAllowedError' || name === 'SecurityError') ? 'Mic blocked' : 'Mic error';
@@ -2991,7 +3048,7 @@ function computeRows() {
   }
 
   // === Visual ring flash ===
-  function markRung(bell, atMs) { state.lastRingAtMs[bell] = atMs; }
+  function markRung(bell, atMs) { state.lastRingAtMs[bell] = atMs; markDirty(); }
 
   // === Bell ring action (user) ===
   function ringBell(bell) {
@@ -3000,6 +3057,7 @@ function computeRows() {
     markRung(bell, now);
     playBellAt(bell, now);
     if (state.mode === 'play' && state.phase === 'running') scoreHit(bell, now);
+    if (state.phase === 'idle') kickLoop();
   }
 
   // === Stats ===
@@ -3011,6 +3069,7 @@ function computeRows() {
     state.targets.length = 0;
     state.comboCurrentGlobal = 0;
     state.comboBestGlobal = 0;
+    markDirty();
   }
 
   function getBellForStrikeIndex(i) {
@@ -3040,6 +3099,7 @@ function computeRows() {
     const live = new Set(state.liveBells);
     const beatMs = 60000 / state.bpm;
     const halfBeat = beatMs / 2;
+    let didChange = false;
     for (const t of state.targets) {
       if (t.judged) continue;
       if (nowMs > t.timeMs + halfBeat) {
@@ -3049,11 +3109,13 @@ function computeRows() {
           s.misses += 1;
           s.comboCurrent = 0;
           state.comboCurrentGlobal = 0;
+          didChange = true;
         }
       }
     }
     const cutoff = nowMs - 8000;
     while (state.targets.length && state.targets[0].timeMs < cutoff && state.targets[0].judged) state.targets.shift();
+    if (didChange) markDirty();
   }
 
   function finalizePendingAsMisses(nowMs) {
@@ -3946,6 +4008,8 @@ function computeRows() {
     startBtn.disabled = true;
     stopBtn.disabled = false;
     if (demoBtn) demoBtn.disabled = true;
+    markDirty();
+    kickLoop();
   }
 
   function buildPlayEndPayload(nowMs, endReason) {
@@ -4063,6 +4127,7 @@ function computeRows() {
 
     closeAudio();
     state.mode = 'play';
+    markDirty();
   }
 
   function resyncDemoToNow(nowMs) {
@@ -4123,7 +4188,7 @@ function computeRows() {
     const total = state.countdownBeats || state.stage;
 
     const isDemo = state.mode === 'demo';
-    const horizonMs = isDemo ? demoEffectiveHorizonMs() : LOOKAHEAD_MS;
+    const horizonMs = isDemo ? demoEffectiveHorizonMs() : Math.max(LOOKAHEAD_MS, getMaintenanceIntervalMs());
     let schedThisPass = 0;
 
     // Rounds: ring 1..stage on each beat.
@@ -4175,7 +4240,7 @@ function computeRows() {
     const liveSet = new Set(state.liveBells);
 
     const isDemo = state.mode === 'demo';
-    const horizonMs = isDemo ? demoEffectiveHorizonMs() : LOOKAHEAD_MS;
+    const horizonMs = isDemo ? demoEffectiveHorizonMs() : Math.max(LOOKAHEAD_MS, getMaintenanceIntervalMs());
     let schedThisPass = 0;
 
     while (state.schedBeatIndex < totalBeats) {
@@ -4208,19 +4273,52 @@ function computeRows() {
 
   function loop() {
     const nowMs = perfNow();
-    syncViewLayout();
+
+    // === Maintenance tick (logic + audio scheduling only) ===
+    const prevExecBeatIndex = state.execBeatIndex;
+    const prevCountExec = state.countExec;
+    const prevPhase = state.phase;
+
+    const dprNow = window.devicePixelRatio || 1;
+    if (dprNow !== lastKnownDPR) {
+      lastKnownDPR = dprNow;
+      markDirty();
+    }
+
     scheduleCountdown(nowMs);
     scheduleMethod(nowMs);
     updateMicAnalysis(nowMs);
     if (state.phase === 'running') updateMisses(nowMs);
-    renderCountdownOverlay(nowMs);
 
-    if (viewDisplay.checked) drawDisplay(nowMs);
-    if (viewSpotlight.checked) drawSpotlight(nowMs);
-    if (viewNotation.checked) drawNotation();
-    if (viewStats.checked) renderStats(nowMs);
+    // Beat-aligned / phase-aligned redraw triggers (esp. low BPM)
+    if (state.execBeatIndex !== prevExecBeatIndex) markDirty();
+    if (state.countExec !== prevCountExec) markDirty();
+    if (state.phase !== prevPhase) markDirty();
 
-    window.requestAnimationFrame(loop);
+    // === Rendering (only when needed) ===
+    const useRAF = shouldUseRAFForRender();
+
+    if (needsRedraw || useRAF) {
+      renderCountdownOverlay(nowMs);
+
+      if (viewDisplay.checked) drawDisplay(nowMs);
+      if (viewSpotlight.checked) drawSpotlight(nowMs);
+      if (viewNotation.checked) drawNotation();
+      if (viewStats.checked) renderStats(nowMs);
+
+      needsRedraw = false;
+    }
+
+    // === Scheduler (choose ONE mechanism per tick) ===
+    if (useRAF) {
+      lastTickWasRAF = true;
+      loopTimer = null;
+      loopRAF = window.requestAnimationFrame(loop);
+    } else {
+      lastTickWasRAF = false;
+      loopRAF = null;
+      loopTimer = window.setTimeout(loop, getMaintenanceIntervalMs());
+    }
   }
 
   // === Inputs ===
@@ -4449,6 +4547,7 @@ function computeRows() {
     safeSetBoolLS(LS_SPOTLIGHT_SHOW_N, state.spotlightShowN);
     safeSetBoolLS(LS_SPOTLIGHT_SHOW_N1, state.spotlightShowN1);
     safeSetBoolLS(LS_SPOTLIGHT_SHOW_N2, state.spotlightShowN2);
+    markDirty();
   }
 
   if (spotlightShowN) spotlightShowN.addEventListener('change', syncSpotlightRowPrefsFromUI);
@@ -4460,6 +4559,7 @@ function computeRows() {
     notationSwapsOverlay.addEventListener('change', () => {
       state.notationSwapsOverlay = notationSwapsOverlay.checked;
       safeSetBoolLS(LS_NOTATION_SWAPS_OVERLAY, state.notationSwapsOverlay);
+      markDirty();
     });
   }
 
@@ -4801,10 +4901,13 @@ function computeRows() {
             scheduleMethod(nowMs);
           }
         }
+        markDirty();
       }
     });
 
-    window.requestAnimationFrame(loop);
+    window.addEventListener('resize', () => { markDirty(); });
+
+    loop();
   }
 
   boot();
