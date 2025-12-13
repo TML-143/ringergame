@@ -4684,6 +4684,10 @@ select option { background-color: #0b1026; color: #e8eeff; }
     const now = perfNow();
     if (state.phase === 'running') state.elapsedMs += (now - state.runStartPerfMs);
 
+    // Stop any already-scheduled future bell/tick strikes immediately.
+    // (Important when the AudioContext stays alive for the drone / mic, especially in Demo where we may schedule far ahead.)
+    cancelScheduledBellAudioNow();
+
     const hadPlay = !!state.currentPlay;
     const runMode = (state.currentPlay && state.currentPlay.mode) || state.mode;
 
