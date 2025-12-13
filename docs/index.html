@@ -44,6 +44,32 @@ body{
 
 #app{max-width:1220px;margin:0 auto;padding:14px}
 
+
+
+    /* Screen scaffolding */
+    .rg-screen{display:none;}
+    .rg-screen.rg-active{display:block;}
+    .rg-screen .rg-screen-body{padding:14px;}
+    .rg-nav{display:flex;flex-wrap:wrap;gap:10px;align-items:center;}
+    .rg-muted{color:var(--muted);}
+    .rg-splash{max-width:760px;margin:0 auto;}
+
+    /* Home layout (Prompt 3) */
+    .rg-home{display:grid;grid-template-columns:1fr 1.15fr;gap:18px;align-items:center;}
+    .rg-home-left{display:flex;flex-direction:column;gap:12px;align-items:stretch;}
+    .rg-home-left .pill{width:100%;text-align:center;padding:10px 12px;}
+    .rg-home-right{display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center;}
+    .rg-home-title{font-size:34px;font-weight:800;letter-spacing:0.4px;}
+    .rg-home-logo{width:175px;max-width:65vw;height:auto;display:block;border-radius:22px;box-shadow:0 18px 40px rgba(0,0,0,0.35);}
+    .rg-home-bottom{grid-column:1 / -1;display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:6px;}
+    .rg-home-bottom .pill{padding:10px 16px;min-width:120px;text-align:center;}
+
+    @media (max-width: 720px){
+      .rg-home{grid-template-columns:1fr;}
+      .rg-home-left{max-width:360px;margin:0 auto;}
+      .rg-home-title{font-size:28px;}
+      .rg-home-logo{width:150px;}
+    }
 .top-bar{
   display:flex;
   align-items:flex-start;
@@ -64,12 +90,79 @@ h1{
 }
 
 
+/* Prompt 5: in-game header meta */
+.rg-game-head{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  min-width:160px;
+}
+.rg-game-meta{
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+  font-size:12px;
+  line-height:1.2;
+}
+.rg-game-meta-line{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  align-items:baseline;
+}
+#gameMetaMethod{
+  font-weight:700;
+  color:var(--text);
+}
+
+/* Prompt 5: in-game menu overlay */
+#rgMenuOverlay{
+  position:fixed;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:18px;
+  background:rgba(0,0,0,0.55);
+  z-index:120; /* higher than countdown overlay */
+}
+#rgMenuPanel{
+  width:min(420px, 92vw);
+  max-height:min(72vh, 560px);
+  overflow:auto;
+}
+#rgMenuPanel .rg-menu-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-bottom:10px;
+}
+#rgMenuPanel .rg-menu-buttons{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+#rgMenuPanel .rg-menu-buttons button{
+  width:100%;
+}
+
+
 #controls{
   display:flex;
   flex-wrap:wrap;
   gap:10px 14px;
   align-items:flex-end;
   justify-content:flex-end;
+  padding-right:54px; /* reserve space for absolute-positioned menu toggle */
+}
+
+.rg-controls{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px 14px;
+  align-items:flex-end;
+  justify-content:flex-start;
 }
 
 .control{display:flex;flex-direction:column;gap:6px;min-width:120px}
@@ -93,7 +186,7 @@ select option { background-color: #0b1026; color: #e8eeff; }
 
 .control input:disabled,.control select:disabled{opacity:0.45;cursor:not-allowed}
 
-.control-buttons{flex-direction:row;gap:10px;min-width:auto}
+.control-buttons{flex-direction:row;gap:10px;min-width:auto;flex-wrap:wrap}
 .control-buttons button{
   border:1px solid rgba(255,255,255,0.14);
   background:rgba(255,255,255,0.06);
@@ -398,10 +491,89 @@ select option { background-color: #0b1026; color: #e8eeff; }
   </head>
   <body>
     <div id="app">
+      <div id="screenHome" class="rg-screen rg-active" aria-hidden="false">
+        <section class="pane rg-splash">
+          <div class="pane-title"><span>Ringer Game</span></div>
+          <div class="rg-screen-body">
+            <div class="rg-home" aria-label="Home">
+              <div class="rg-home-left" aria-label="Home navigation">
+                <button id="homeBtnPlay" class="pill" type="button">Play</button>
+                <button id="homeBtnView" class="pill" type="button">View</button>
+                <button id="homeBtnSound" class="pill" type="button">Sound</button>
+              </div>
+              <div class="rg-home-right" aria-label="Title">
+                <div class="rg-home-title">Ringer Game</div>
+                <img class="rg-home-logo" src="ringer_game_icon.png" alt="Ringer Game logo" />
+              </div>
+              <div class="rg-home-bottom" aria-label="Quick start">
+                <button id="homeBtnDemo" class="pill" type="button">Demo</button>
+                <button id="homeBtnBegin" class="pill" type="button">Begin</button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div id="screenPlay" class="rg-screen" aria-hidden="true">
+        <section class="pane rg-splash">
+          <div class="pane-title"><span>Play</span></div>
+          <div class="rg-screen-body">
+            <div id="playMenuControls" class="rg-controls" aria-label="Play controls"></div>
+            <div class="stats-info">
+              Scoring: each scored bell gets one chance per row. Ring in its window: middle third = 10, outer thirds = 9. Outside window = 0. Only the first ring per bell per row counts.
+            </div>
+            <div class="rg-nav">
+              <button id="playBtnBack" class="pill" type="button">Back</button>
+              <button id="playBtnEnterGame" class="pill" type="button">Go to Game</button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div id="screenView" class="rg-screen" aria-hidden="true">
+        <section class="pane rg-splash">
+          <div class="pane-title"><span>View</span></div>
+          <div class="rg-screen-body">
+            <div id="viewMenuControls" class="rg-controls" aria-label="View controls"></div>
+            <div class="rg-nav">
+              <button id="viewBtnBack" class="pill" type="button">Back</button>
+              <button id="viewBtnEnterGame" class="pill" type="button">Go to Game</button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div id="screenSound" class="rg-screen" aria-hidden="true">
+        <section class="pane rg-splash">
+          <div class="pane-title"><span>Sound</span></div>
+          <div class="rg-screen-body">
+            <div id="soundMenuControls" class="rg-controls" aria-label="Sound controls"></div>
+            <div class="rg-nav">
+              <button id="soundBtnBack" class="pill" type="button">Back</button>
+              <button id="soundBtnEnterGame" class="pill" type="button">Go to Game</button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div id="screenGame" class="rg-screen" aria-hidden="true">
+
       <div id="countOverlay" class="count-overlay" aria-hidden="true"></div>
       <header class="top-bar">
-        <h1>Ringer Game</h1>
-        <button id="menuToggle" class="menu-toggle" type="button" aria-label="Toggle menu" title="Hide menu">▾</button>
+        <div class="rg-game-head">
+          <h1>Ringer Game</h1>
+          <div class="rg-game-meta" aria-label="Method and tempo">
+            <div class="rg-game-meta-line">
+              <span id="gameMetaMethod"></span>
+              <span id="gameMetaSource" class="rg-muted"></span>
+            </div>
+            <div class="rg-game-meta-line">
+              <span id="gameMetaAttr" class="rg-muted hidden"></span>
+              <span id="gameMetaBpm" class="rg-muted"></span>
+            </div>
+          </div>
+        </div>
+        <button id="menuToggle" class="menu-toggle" type="button" aria-label="Menu" title="Menu">▾</button>
 
         <div id="controls">
           <div class="control">
@@ -415,23 +587,27 @@ select option { background-color: #0b1026; color: #e8eeff; }
           </div>
 
           <div class="control">
-            <label for="bellCount">Bells</label>
+            <label for="bellCount" title="Stage = number of bells (4–12).">Bells (stage)</label>
             <select id="bellCount">
-              <option value="4">4</option>
-              <option value="5">5</option>
-              <option value="6" selected>6</option>
-              <option value="7">7</option>
-              <option value="8">8</option>
+              <option value="4">4 (Minimus)</option>
+              <option value="5">5 (Doubles)</option>
+              <option value="6" selected>6 (Minor)</option>
+              <option value="7">7 (Triples)</option>
+              <option value="8">8 (Major)</option>
+              <option value="9">9 (Caters)</option>
+              <option value="10">10 (Royal)</option>
+              <option value="11">11 (Cinques)</option>
+              <option value="12">12 (Maximus)</option>
             </select>
           </div>
 
           <div class="control">
-            <label for="scaleSelect">Scale</label>
+            <label for="scaleSelect" title="Musical key used to tune bells (or choose Custom (Hz)).">Bell key</label>
             <select id="scaleSelect"></select>
           </div>
 
           <div class="control">
-            <label for="octaveSelect">Octave</label>
+            <label for="octaveSelect" title="C-octave register used for tuning (C1–C6).">Register (C octave)</label>
             <select id="octaveSelect"></select>
           </div>
 
@@ -469,12 +645,12 @@ select option { background-color: #0b1026; color: #e8eeff; }
           </div>
 
           <div class="control">
-            <label for="droneScaleSelect">Drone scale</label>
+            <label for="droneScaleSelect" title="Musical key used to tune the drone (or choose Custom (Hz)).">Drone key</label>
             <select id="droneScaleSelect"></select>
           </div>
 
           <div class="control">
-            <label for="droneOctaveSelect">Drone octave</label>
+            <label for="droneOctaveSelect" title="C-octave register used for the drone (C1–C6).">Drone register</label>
             <select id="droneOctaveSelect"></select>
           </div>
 
@@ -490,13 +666,13 @@ select option { background-color: #0b1026; color: #e8eeff; }
           </div>
 
           <div class="control">
-            <label for="liveCount">Live bells</label>
+            <label for="liveCount">Scored bells</label>
             <select id="liveCount"></select>
           </div>
 
           <div class="control">
-            <label>Pick bells</label>
-            <div id="bellPicker" class="bell-picker" aria-label="Pick bells"></div>
+            <label>Pick scored bells</label>
+            <div id="bellPicker" class="bell-picker" aria-label="Pick scored bells"></div>
           </div>
 
           <div class="control">
@@ -510,7 +686,7 @@ select option { background-color: #0b1026; color: #e8eeff; }
 
           <div class="control">
             <label for="bpmInput">Tempo (BPM)</label>
-            <input id="bpmInput" type="number" min="1" max="240" value="80" />
+            <input id="bpmInput" type="number" min="1" max="240" value="120" />
           </div>
 
           <div class="control mic-control">
@@ -544,7 +720,7 @@ select option { background-color: #0b1026; color: #e8eeff; }
           <div class="control">
             <label>Display</label>
             <div class="toggles toggles--mini" role="group" aria-label="Display toggles">
-              <label class="toggle"><input id="displayLiveOnly" type="checkbox" /> Display live bell(s) only</label>
+              <label class="toggle"><input id="displayLiveOnly" type="checkbox" /> Display scored bell(s) only</label>
             </div>
           </div>
 
@@ -568,11 +744,11 @@ select option { background-color: #0b1026; color: #e8eeff; }
           </div>
 
           <div class="control path-control">
-            <label>Path</label>
+            <label>Line (blue line)</label>
             <div class="path-row">
               <button id="pathNoneBtn" class="pill active" type="button">None</button>
               <button id="pathAllBtn" class="pill" type="button">All</button>
-              <div id="pathPicker" class="bell-picker bell-picker--small" aria-label="Path bells"></div>
+              <div id="pathPicker" class="bell-picker bell-picker--small" aria-label="Line (blue line) bells"></div>
             </div>
           </div>
 
@@ -588,11 +764,28 @@ select option { background-color: #0b1026; color: #e8eeff; }
 
           <div class="control control-buttons">
             <button id="startBtn">Start</button>
+            <button id="pauseBtn" disabled>Pause</button>
             <button id="stopBtn" disabled>Stop</button>
             <button id="demoBtn">Demo</button>
+            <button id="dronePauseBtn" class="hidden" disabled>Pause Drone</button>
           </div>
         </div>
       </header>
+
+
+      <div id="rgMenuOverlay" class="hidden" aria-hidden="true">
+        <div id="rgMenuPanel" class="pane" role="dialog" aria-modal="true" aria-label="Menu">
+          <div class="rg-menu-head">
+            <div class="pane-title"><span>Menu</span></div>
+            <button id="rgMenuClose" type="button">Close</button>
+          </div>
+          <div class="rg-menu-buttons">
+            <button id="rgMenuGoPlay" type="button">Play</button>
+            <button id="rgMenuGoView" type="button">View</button>
+            <button id="rgMenuGoSound" type="button">Sound</button>
+          </div>
+        </div>
+      </div>
 
       <main id="main" class="main">
         <div id="leftStack">
@@ -641,9 +834,11 @@ select option { background-color: #0b1026; color: #e8eeff; }
       </main>
 
       <footer class="footer">
-        <p id="hint">Keys 1–8 ring bells by default. Use Keybindings to rebind live bells (and Space/Enter when you have a single live bell). Tap/click bells in the Display. Non-live bells are rung by bots. Only your selected live bells are scored.</p>
+        <p id="hint">Keys 1–9 (and 0/E/T for 10/11/12) ring bells by default. Use Keybindings to rebind scored bells (and Space/Enter when you have a single scored bell). Tap/click bells in the Display. Non-scored bells are rung by bots. Only your selected scored bells count toward your score.</p>
       </footer>
-    </div>
+    
+      </div>
+</div>
 
     <script>
 (function () {
@@ -676,7 +871,7 @@ select option { background-color: #0b1026; color: #e8eeff; }
   function getMaintenanceIntervalMs() {
     const bpm = Math.max(1, Number(state.bpm) || 1);
 
-    if (state.phase === 'idle') return 1100;
+    if (state.phase === 'idle' || state.phase === 'paused') return 1100;
 
     if (bpm <= 12) return 500;
     if (bpm <= 30) return 250;
@@ -685,7 +880,7 @@ select option { background-color: #0b1026; color: #e8eeff; }
   }
 
   function shouldUseRAFForRender() {
-    return ((state.phase !== 'idle' && state.bpm > 12) ||
+    return ((((state.phase === 'running' || state.phase === 'countdown') && state.bpm > 12)) ||
             (state.micActive && viewMic.checked === true));
   }
 
@@ -718,7 +913,7 @@ select option { background-color: #0b1026; color: #e8eeff; }
 
   // === Analytics (GA4) ===
   const GA_ID = 'G-7TEG531231';
-  const SITE_VERSION = 'v04_tempo_tiered_scheduler';
+  const SITE_VERSION = 'v05_p7_drone_pause';
 
   function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
   function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
@@ -867,15 +1062,200 @@ select option { background-color: #0b1026; color: #e8eeff; }
   const fileInput = document.getElementById('fileInput');
   const xmlInput  = document.getElementById('xmlInput');
   const startBtn = document.getElementById('startBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
   const stopBtn = document.getElementById('stopBtn');
   const demoBtn = document.getElementById('demoBtn');
+  const dronePauseBtn = document.getElementById('dronePauseBtn');
   const menuToggle = document.getElementById('menuToggle');
+
+  // Prompt 5: in-game header meta elements
+  const gameMetaMethod = document.getElementById('gameMetaMethod');
+  const gameMetaSource = document.getElementById('gameMetaSource');
+  const gameMetaAttr   = document.getElementById('gameMetaAttr');
+  const gameMetaBpm    = document.getElementById('gameMetaBpm');
+
+  // Prompt 5: in-game menu overlay
+  const rgMenuOverlay = document.getElementById('rgMenuOverlay');
+  const rgMenuPanel   = document.getElementById('rgMenuPanel');
+  const rgMenuGoPlay  = document.getElementById('rgMenuGoPlay');
+  const rgMenuGoView  = document.getElementById('rgMenuGoView');
+  const rgMenuGoSound = document.getElementById('rgMenuGoSound');
+  const rgMenuClose   = document.getElementById('rgMenuClose');
+
+  function rgMenuIsOpen() {
+    return !!(rgMenuOverlay && !rgMenuOverlay.classList.contains('hidden'));
+  }
+  function openRgMenuOverlay() {
+    if (!rgMenuOverlay) return;
+    rgMenuOverlay.classList.remove('hidden');
+    rgMenuOverlay.setAttribute('aria-hidden', 'false');
+    try { if (rgMenuClose) rgMenuClose.focus({ preventScroll: true }); } catch (_) {}
+  }
+  function closeRgMenuOverlay() {
+    if (!rgMenuOverlay) return;
+    rgMenuOverlay.classList.add('hidden');
+    rgMenuOverlay.setAttribute('aria-hidden', 'true');
+    try { if (menuToggle && ui && ui.screen === 'game') menuToggle.focus({ preventScroll: true }); } catch (_) {}
+  }
+
   if (menuToggle) {
+    menuToggle.setAttribute('aria-label', 'Menu');
+    menuToggle.setAttribute('title', 'Menu');
     menuToggle.addEventListener('click', () => {
-      document.body.classList.toggle('menu-hidden');
+      openRgMenuOverlay();
     });
   }
+
+  if (rgMenuClose) rgMenuClose.addEventListener('click', closeRgMenuOverlay);
+  if (rgMenuOverlay) {
+    rgMenuOverlay.addEventListener('click', (e) => {
+      if (e.target === rgMenuOverlay) closeRgMenuOverlay();
+    });
+  }
+
+  if (rgMenuGoPlay) rgMenuGoPlay.addEventListener('click', () => { setScreen('play'); closeRgMenuOverlay(); });
+  if (rgMenuGoView) rgMenuGoView.addEventListener('click', () => { setScreen('view'); closeRgMenuOverlay(); });
+  if (rgMenuGoSound) rgMenuGoSound.addEventListener('click', () => { setScreen('sound'); closeRgMenuOverlay(); });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && rgMenuIsOpen()) {
+      e.preventDefault();
+      e.stopPropagation();
+      closeRgMenuOverlay();
+    }
+  }, true);
+
   const statsDiv = document.getElementById('stats');
+
+  // === Screen scaffolding ===
+  const screenHome = document.getElementById('screenHome');
+  const screenPlay = document.getElementById('screenPlay');
+  const screenView = document.getElementById('screenView');
+  const screenSound = document.getElementById('screenSound');
+  const screenGame = document.getElementById('screenGame');
+
+  const ui = { screen: 'home' };
+
+  function setScreen(name) {
+    const n = String(name || '').toLowerCase();
+    const next = (n === 'home' || n === 'play' || n === 'view' || n === 'sound' || n === 'game') ? n : 'home';
+
+    const screens = { home: screenHome, play: screenPlay, view: screenView, sound: screenSound, game: screenGame };
+    for (const k in screens) {
+      const el = screens[k];
+      if (!el) continue;
+      el.classList.toggle('rg-active', k === next);
+      el.setAttribute('aria-hidden', k === next ? 'false' : 'true');
+    }
+
+    ui.screen = next;
+
+    if (next === 'game') {
+      markDirty();
+      kickLoop();
+      syncDronePauseBtnUI();
+    }
+  }
+
+  // Prompt 4: mount header controls into Play/View/Sound menus (move existing nodes; preserve IDs)
+  function moveControlByChildId(childId, destEl) {
+    if (!destEl) return;
+    const el = document.getElementById(childId);
+    if (!el) return;
+    const controlEl = el.closest('.control');
+    if (!controlEl) return;
+    destEl.appendChild(controlEl);
+  }
+
+  function mountMenuControls() {
+    const playDest = document.getElementById('playMenuControls');
+    const viewDest = document.getElementById('viewMenuControls');
+    const soundDest = document.getElementById('soundMenuControls');
+
+    if (!playDest && !viewDest && !soundDest) return;
+
+    // PLAY
+    moveControlByChildId('methodSelect', playDest);
+    moveControlByChildId('bellCount', playDest);
+    moveControlByChildId('bpmInput', playDest);
+    moveControlByChildId('liveCount', playDest);
+    moveControlByChildId('bellPicker', playDest);
+    moveControlByChildId('keybindPanel', playDest);
+    moveControlByChildId('micToggleBtn', playDest);
+    moveControlByChildId('micCooldown', playDest);
+    moveControlByChildId('fileInput', playDest);
+    moveControlByChildId('xmlInput', playDest);
+
+    // Move Method Library pane into Play screen (below controls)
+    const playScreen = document.getElementById('screenPlay');
+    const lib = document.getElementById('methodLibrary');
+    if (playScreen && lib) {
+      playScreen.appendChild(lib);
+      lib.classList.add('rg-splash');
+      lib.style.marginTop = '12px';
+    }
+
+    // VIEW
+    moveControlByChildId('viewDisplay', viewDest);
+    moveControlByChildId('displayLiveOnly', viewDest);
+    moveControlByChildId('spotlightSwapsView', viewDest);
+    moveControlByChildId('notationSwapsOverlay', viewDest);
+    moveControlByChildId('pathNoneBtn', viewDest);
+
+    // SOUND
+    moveControlByChildId('scaleSelect', soundDest);
+    moveControlByChildId('octaveSelect', soundDest);
+    moveControlByChildId('bellCustomHzInput', soundDest);
+    moveControlByChildId('bellVolume', soundDest);
+    moveControlByChildId('droneTypeSelect', soundDest);
+    moveControlByChildId('droneScaleSelect', soundDest);
+    moveControlByChildId('droneOctaveSelect', soundDest);
+    moveControlByChildId('droneCustomHzInput', soundDest);
+    moveControlByChildId('droneVolume', soundDest);
+  }
+
+  // Home / placeholder navigation buttons
+  const homeBtnPlay = document.getElementById('homeBtnPlay');
+  const homeBtnView = document.getElementById('homeBtnView');
+  const homeBtnSound = document.getElementById('homeBtnSound');
+  const homeBtnDemo = document.getElementById('homeBtnDemo');
+  const homeBtnBegin = document.getElementById('homeBtnBegin');
+
+  const playBtnBack = document.getElementById('playBtnBack');
+  const playBtnEnterGame = document.getElementById('playBtnEnterGame');
+
+  const viewBtnBack = document.getElementById('viewBtnBack');
+  const viewBtnEnterGame = document.getElementById('viewBtnEnterGame');
+
+  const soundBtnBack = document.getElementById('soundBtnBack');
+  const soundBtnEnterGame = document.getElementById('soundBtnEnterGame');
+
+  if (homeBtnPlay) homeBtnPlay.addEventListener('click', () => setScreen('play'));
+  if (homeBtnView) homeBtnView.addEventListener('click', () => setScreen('view'));
+  if (homeBtnSound) homeBtnSound.addEventListener('click', () => setScreen('sound'));
+  if (homeBtnBegin) homeBtnBegin.addEventListener('click', () => {
+    setScreen('game');
+    requestAnimationFrame(() => {
+      try { if (startBtn) startBtn.focus(); } catch (_) {}
+    });
+  });
+  if (homeBtnDemo) homeBtnDemo.addEventListener('click', () => {
+    if (state.phase !== 'idle') {
+      alert('Stop the current game first.');
+      return;
+    }
+    setScreen('game');
+    requestAnimationFrame(() => startPressed('demo'));
+  });
+
+  if (playBtnBack) playBtnBack.addEventListener('click', () => setScreen('home'));
+  if (playBtnEnterGame) playBtnEnterGame.addEventListener('click', () => setScreen('game'));
+
+  if (viewBtnBack) viewBtnBack.addEventListener('click', () => setScreen('home'));
+  if (viewBtnEnterGame) viewBtnEnterGame.addEventListener('click', () => setScreen('game'));
+
+  if (soundBtnBack) soundBtnBack.addEventListener('click', () => setScreen('home'));
+  if (soundBtnEnterGame) soundBtnEnterGame.addEventListener('click', () => setScreen('game'));
 
   const viewDisplay = document.getElementById('viewDisplay');
   const viewSpotlight = document.getElementById('viewSpotlight');
@@ -965,31 +1345,39 @@ select option { background-color: #0b1026; color: #e8eeff; }
   // === Game state ===
   const state = {
     method: 'plainhunt',
+    methodSource: 'built_in',
+    methodMeta: null,
     stage: 6,
-    liveCount: 2,
-    liveBells: [1, 2],
-    bpm: 80,
+    liveCount: 1,
+    liveBells: [1],
+    bpm: 120,
 
     // musical settings
-    scaleKey: 'C_major',
-    octaveC: 3,
+    scaleKey: 'Fs_major',
+    octaveC: 4,
     bellCustomHz: 440, // used when scaleKey === 'custom_hz' // UI shows C1..C6
 
     // audio settings
     bellVolume: 100, // 0..100 master bell volume
     droneType: 'off',
-    droneScaleKey: 'C_major',
-    droneOctaveC: 3,
+    droneScaleKey: 'Fs_major',
+    droneOctaveC: 4,
     droneCustomHz: 440, // used when droneScaleKey === 'custom_hz'
     droneVolume: 50, // 0..100
+    dronePaused: false, // Prompt 7: mute/unmute drone without stopping
+
 
     bellFreq: [],
 
-    pathBells: [],
+    pathBells: [1],
     rows: [],
     customRows: null,
     mode: 'play', // 'play' | 'demo'
-    phase: 'idle',
+    phase: 'idle', // 'idle' | 'countdown' | 'running' | 'paused'
+
+    // pause bookkeeping
+    pausePrevPhase: '',
+    pauseAtMs: 0,
 
     countFirstBeatMs: 0,
     countExec: 0,
@@ -1019,9 +1407,9 @@ select option { background-color: #0b1026; color: #e8eeff; }
     // swaps view settings
     spotlightSwapsView: true,
     spotlightShowN: true,
-    spotlightShowN1: true,
+    spotlightShowN1: false,
     spotlightShowN2: true,
-    notationSwapsOverlay: false,
+    notationSwapsOverlay: true,
     displayLiveBellsOnly: false,
 
     // mic input
@@ -1048,12 +1436,23 @@ select option { background-color: #0b1026; color: #e8eeff; }
   let noiseBuffer = null;
   let noiseBufferSampleRate = 0;
 
+  // Prompt 6: registry of scheduled bell/tick strike nodes (NOT drone nodes)
+  let scheduledBellNodes = [];
+
   // Mic v2 threshold (linear RMS)
   const DEFAULT_MIC_THRESHOLD = 0.06;
   if (!Number.isFinite(window.micThreshold)) window.micThreshold = DEFAULT_MIC_THRESHOLD;
 
   function clamp(v, min, max) { return v < min ? min : (v > max ? max : v); }
   function perfNow() { return performance.now(); }
+
+  function isMobileLikely() {
+    try {
+      return (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || window.innerWidth < 700;
+    } catch (_) {
+      return window.innerWidth < 700;
+    }
+  }
 
   async function requestWakeLock() {
     try {
@@ -1161,8 +1560,11 @@ select option { background-color: #0b1026; color: #e8eeff; }
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
 
     osc.connect(gain).connect(bellMasterGain || audioCtx.destination);
+    const tStop = t + 0.32;
     osc.start(t);
-    osc.stop(t + 0.32);
+    osc.stop(tStop);
+
+    scheduledBellNodes.push({ osc, gain, startAt: t, stopAt: tStop });
   }
 
   function playTickAt(whenMs) {
@@ -1176,8 +1578,41 @@ select option { background-color: #0b1026; color: #e8eeff; }
     gain.gain.exponentialRampToValueAtTime(0.08, t + 0.005);
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
     osc.connect(gain).connect(bellMasterGain || audioCtx.destination);
+    const tStop = t + 0.07;
     osc.start(t);
-    osc.stop(t + 0.07);
+    osc.stop(tStop);
+
+    scheduledBellNodes.push({ osc, gain, startAt: t, stopAt: tStop });
+  }
+
+  // Prompt 6: cancel any already-scheduled future bell/tick strikes (keep drone playing)
+  function cancelScheduledBellAudioNow() {
+    if (!scheduledBellNodes.length) return;
+    if (!audioCtx) {
+      scheduledBellNodes.length = 0;
+      return;
+    }
+
+    const now = audioCtx.currentTime;
+    for (let i = 0; i < scheduledBellNodes.length; i++) {
+      const n = scheduledBellNodes[i];
+      if (!n || !n.osc) continue;
+      const stopAt = Number(n.stopAt) || 0;
+      if (stopAt <= now) continue;
+      try {
+        if (n.gain && n.gain.gain) {
+          n.gain.gain.cancelScheduledValues(now);
+          n.gain.gain.setValueAtTime(0.0001, now);
+        }
+      } catch (_) {}
+      try {
+        const startAt = Number(n.startAt) || now;
+        n.osc.stop(Math.max(now + 0.001, startAt + 0.001));
+      } catch (_) {}
+      try { n.osc.disconnect(); } catch (_) {}
+      try { if (n.gain) n.gain.disconnect(); } catch (_) {}
+    }
+    scheduledBellNodes.length = 0;
   }
   // === Bell master volume + Drone (background) ===
   const DRONE_FADE_SEC = 0.12;
@@ -1196,12 +1631,45 @@ select option { background-color: #0b1026; color: #e8eeff; }
 
   function applyDroneMasterGain() {
     if (!audioCtx || !droneMasterGain) return;
-    const g = clamp((Number(state.droneVolume) || 0) / 100, 0, 1);
+    const g0 = clamp((Number(state.droneVolume) || 0) / 100, 0, 1);
+    const g = state.dronePaused ? 0 : g0;
     const now = audioCtx.currentTime;
     try {
       droneMasterGain.gain.cancelScheduledValues(now);
       droneMasterGain.gain.setTargetAtTime(g, now, 0.02);
     } catch (_) {}
+  }
+
+  // Prompt 7: Drone Pause/Unpause (mute/unmute without stopping the drone)
+  function syncDronePauseBtnUI() {
+    if (!dronePauseBtn) return;
+
+    if (state.droneType === 'off') {
+      state.dronePaused = false;
+      dronePauseBtn.classList.add('hidden');
+      dronePauseBtn.disabled = true;
+      dronePauseBtn.textContent = 'Pause Drone';
+      return;
+    }
+
+    dronePauseBtn.classList.remove('hidden');
+    dronePauseBtn.disabled = false;
+    dronePauseBtn.textContent = state.dronePaused ? 'Resume Drone' : 'Pause Drone';
+  }
+
+  function toggleDronePaused() {
+    if (state.droneType === 'off') return;
+
+    const wasPaused = !!state.dronePaused;
+    state.dronePaused = !wasPaused;
+
+    // Safety: if drone type is on but the drone graph doesn't exist, rebuild before resuming.
+    if (!state.dronePaused && state.droneType !== 'off' && !droneCurrent) {
+      try { startDrone(); } catch (_) {}
+    }
+
+    applyDroneMasterGain();
+    syncDronePauseBtnUI();
   }
 
   function getScaleDefByKey(key) {
@@ -1277,7 +1745,10 @@ select option { background-color: #0b1026; color: #e8eeff; }
     state.bellCustomHz = f;
     if (bellCustomHzSlider) bellCustomHzSlider.value = String(f);
     if (commit && bellCustomHzInput) bellCustomHzInput.value = String(f);
-    if (state.scaleKey === 'custom_hz' && state.phase === 'idle') rebuildBellFrequencies();
+    if (state.scaleKey === 'custom_hz') {
+      rebuildBellFrequencies();
+      onBellTuningChanged();
+    }
   }
 
   function setDroneCustomHzFromUI(raw, commit) {
@@ -1723,18 +2194,28 @@ select option { background-color: #0b1026; color: #e8eeff; }
     const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     const rows = [];
     let stage = null;
+
+    function charToBell(ch) {
+      if (ch >= '1' && ch <= '9') return ch.charCodeAt(0) - '0'.charCodeAt(0);
+      if (ch === '0') return 10;
+      if (ch === 'E' || ch === 'e') return 11;
+      if (ch === 'T' || ch === 't') return 12;
+      return null;
+    }
+
     for (const line of lines) {
-      if (!/^[1-9]+$/.test(line)) continue;
-      const nums = line.split('').map(c => parseInt(c, 10));
+      if (!/^[1-90EeTt]+$/.test(line)) continue;
+      const nums = line.split('').map(c => charToBell(c)).filter(v => v != null);
       if (stage == null) stage = nums.length;
       if (nums.length !== stage) throw new Error('All rows must have the same number of bells.');
       rows.push(nums);
     }
     if (!rows.length) throw new Error('No valid rows found in file.');
-    if (stage < 2 || stage > 12) throw new Error('Unsupported bell count in file.');
+    if (stage < 4 || stage > 12) throw new Error('Unsupported bell count in file.');
     return { rows, stage };
   }
-function computeRows() {
+
+  function computeRows() {
     if (state.method === 'custom' && state.customRows) state.rows = state.customRows.slice();
     else state.rows = makeLibraryRows(state.method, state.stage);
   }
@@ -1851,7 +2332,7 @@ function computeRows() {
       let stageNum = parseInt(stageText, 10);
       if (!isFinite(stageNum)) continue;
       stageNum = clamp(stageNum, 1, 16);
-      if (stageNum < 4 || stageNum > 8) continue;
+      if (stageNum < 4 || stageNum > 12) continue;
 
       let pnNorm = pnRaw == null ? '' : String(pnRaw);
       pnNorm = pnNorm.replace(/;/g, ' ').replace(/\s+/g, ' ').trim();
@@ -1871,7 +2352,7 @@ function computeRows() {
     }
 
     if (!added) {
-      alert('No supported 4–8 bell methods found in ' + (filename || 'file') + '.');
+      alert('No supported 4–12 bell methods found in ' + (filename || 'file') + '.');
       return 0;
     }
 
@@ -2184,7 +2665,7 @@ function computeRows() {
         });
       } catch (_) {}
     } else if (xmlCount && methodsAddedTotal === 0) {
-      alert('No supported 4–8 bell methods found in "' + name + '".');
+      alert('No supported 4–12 bell methods found in "' + name + '".');
     }
   }
 
@@ -2293,14 +2774,25 @@ function computeRows() {
 
     let stage = parseInt(m.stage, 10);
     if (!isFinite(stage)) stage = 0;
-    stage = clamp(stage, 4, 8);
-    if (stage < 4 || stage > 8) {
-      alert('Only 4–8 bell methods are supported in this game.');
+    stage = clamp(stage, 4, 12);
+    if (stage < 4 || stage > 12) {
+      alert('Only 4–12 bell methods are supported in this game.');
       return;
     }
 
     state.method = 'custom';
     if (methodSelect) methodSelect.value = 'custom';
+
+
+    // Prompt 5: method source + attribution metadata
+    state.methodSource = 'library';
+    state.methodMeta = {
+      title: m.title || '',
+      family: m.family || '',
+      class: m.class || '',
+      stage: stage,
+      pnPresent: !!(m.pn && String(m.pn).trim())
+    };
 
     state.stage = stage;
     if (bellCountSelect) bellCountSelect.value = String(stage);
@@ -2328,6 +2820,8 @@ function computeRows() {
     resetStats();
     rebuildBellFrequencies();
 
+    syncGameHeaderMeta();
+
     try {
       if (typeof analytics !== 'undefined' && analytics && typeof analytics.track === 'function') {
         analytics.track('cccbr_demo_start', {
@@ -2350,6 +2844,65 @@ function computeRows() {
     if (state.method === 'plainbob') return 'Plain Bob (variation)';
     if (state.method === 'grandsire') return 'Grandsire (variation)';
     return state.method;
+  }
+
+  // Prompt 5: in-game header meta sync
+  function syncGameHeaderMeta() {
+    try {
+      if (!gameMetaMethod || !gameMetaSource || !gameMetaAttr || !gameMetaBpm) return;
+
+      // Method name
+      let methodName = '';
+      if (state.methodSource === 'library' && state.methodMeta && state.methodMeta.title) {
+        methodName = String(state.methodMeta.title);
+      } else if (state.method === 'custom') {
+        const fn = state.methodMeta && state.methodMeta.fileName ? String(state.methodMeta.fileName) : '';
+        methodName = fn ? ('Custom rows: ' + shortenForUi(fn, 42)) : 'Custom rows';
+      } else {
+        methodName = methodLabel();
+      }
+
+      // Source tag
+      let src = '(built-in)';
+      if (state.methodSource === 'library') src = '(library)';
+      else if (state.methodSource === 'custom_rows') src = '(custom rows)';
+
+      // Attribution
+      let attr = '';
+      if (state.methodSource === 'library') {
+        const parts = ['CCCBR'];
+        if (state.methodMeta && state.methodMeta.family) parts.push(String(state.methodMeta.family));
+        if (state.methodMeta && state.methodMeta.class) parts.push(String(state.methodMeta.class));
+        attr = parts.filter(Boolean).join(' • ');
+      } else if (state.methodSource === 'custom_rows') {
+        const fn = state.methodMeta && state.methodMeta.fileName ? String(state.methodMeta.fileName) : '';
+        if (fn) attr = shortenForUi(fn, 52);
+      }
+
+      // BPM (idle shows selected tempo, running/countdown shows state.bpm)
+      let bpmVal = state.bpm;
+      if (state.phase === 'idle') {
+        const v = bpmInput ? parseInt(bpmInput.value, 10) : NaN;
+        if (Number.isFinite(v) && v > 0) bpmVal = v;
+      }
+
+      gameMetaMethod.textContent = methodName;
+      gameMetaSource.textContent = src;
+
+      gameMetaAttr.textContent = attr;
+      gameMetaAttr.classList.toggle('hidden', !attr);
+
+      let bpmLine = String(Math.round(bpmVal)) + ' BPM';
+      if (state.phase === 'paused') bpmLine += ' • Paused';
+      gameMetaBpm.textContent = bpmLine;
+    } catch (_) {}
+  }
+
+  function shortenForUi(s, maxLen) {
+    const str = String(s || '').trim();
+    const m = Math.max(10, parseInt(maxLen, 10) || 42);
+    if (str.length <= m) return str;
+    return str.slice(0, m - 1) + '…';
   }
 
   // === Scale -> bell frequencies ===
@@ -2418,7 +2971,7 @@ function computeRows() {
       btn.type = 'button';
       btn.textContent = String(b);
       btn.addEventListener('click', () => {
-        if (state.phase !== 'idle') return;
+        if (state.phase !== 'idle') ensureIdleForPlayChange();
         const max = state.liveCount;
         const list = state.liveBells.slice();
         const idx = list.indexOf(b);
@@ -2464,7 +3017,10 @@ function computeRows() {
   }
 
   function defaultBindKeyForBell(bell) {
-    if (bell >= 1 && bell <= 8) return String(bell);
+    if (bell >= 1 && bell <= 9) return String(bell);
+    if (bell === 10) return '0';
+    if (bell === 11) return 'E';
+    if (bell === 12) return 'T';
     return '';
   }
 
@@ -2496,7 +3052,7 @@ function computeRows() {
   }
 
   function resetKeyBindingsToDefaults() {
-    for (let b = 1; b <= 8; b++) state.keyBindings[b] = String(b);
+    for (let b = 1; b <= 12; b++) state.keyBindings[b] = defaultBindKeyForBell(b);
     saveKeyBindings();
   }
 
@@ -2524,7 +3080,7 @@ function computeRows() {
     keybindPanel.innerHTML = '';
 
     if (!live.length) {
-      keybindPanel.textContent = 'No live bells selected.';
+      keybindPanel.textContent = 'No scored bells selected.';
       if (keybindNote) keybindNote.textContent = '';
       return;
     }
@@ -2589,9 +3145,9 @@ function computeRows() {
       if (state.keybindCaptureBell != null) {
         keybindNote.textContent = 'Press a letter/number key, Space, or Enter (Esc to cancel).';
       } else if (live.length === 1) {
-        keybindNote.textContent = 'Tip: Space and Enter also ring the only live bell.';
+        keybindNote.textContent = 'Tip: Space and Enter also ring the only scored bell.';
       } else if (conflicts.size) {
-        keybindNote.textContent = 'Fix conflicts: each key can be bound to only one live bell.';
+        keybindNote.textContent = 'Fix conflicts: each key can be bound to only one scored bell.';
       } else keybindNote.textContent = '';
     }
   }
@@ -3217,13 +3773,19 @@ function computeRows() {
   }
 
   function countdownDisplay(nowMs) {
-    if (state.phase !== 'countdown') return null;
+    let tNow = nowMs;
+    let phase = state.phase;
+    if (phase === 'paused' && state.pausePrevPhase === 'countdown' && state.pauseAtMs) {
+      phase = 'countdown';
+      tNow = state.pauseAtMs;
+    }
+    if (phase !== 'countdown') return null;
     const beatMs = 60000 / state.bpm;
 
     // Before the first count-in beat, show Ready (no sound yet).
-    if (nowMs < state.countFirstBeatMs) return 'Ready';
+    if (tNow < state.countFirstBeatMs) return 'Ready';
 
-    const k = Math.floor((nowMs - state.countFirstBeatMs) / beatMs); // 0-based count-in beat
+    const k = Math.floor((tNow - state.countFirstBeatMs) / beatMs); // 0-based count-in beat
     if (k >= 0 && k < state.stage) return String(k + 1);
     return null;
   }
@@ -3356,7 +3918,10 @@ function computeRows() {
         roundRect(sctx, 0, 0, W - padX * 2, rowBlockH, 12);
         sctx.fill(); sctx.stroke();
 
-        const fontSize = Math.max(16, Math.min(34, Math.floor(rowBlockH * 0.58)));
+        let fontSize = Math.max(16, Math.min(34, Math.floor(rowBlockH * 0.58)));
+        if (stage >= 10) {
+          fontSize = Math.min(fontSize, Math.max(12, Math.floor(cellW * 0.82)));
+        }
         sctx.font = fontSize + 'px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
         sctx.textAlign = 'center';
         sctx.textBaseline = 'middle';
@@ -3562,7 +4127,8 @@ function computeRows() {
     const geom = computeDisplayPoints(W, H);
 
     const ringRadius = Math.max(18, Math.min(34, Math.floor(Math.min(W, H) * 0.06)));
-    const fontSize = Math.max(16, Math.min(26, Math.floor(ringRadius * 0.9)));
+    let fontSize = Math.max(16, Math.min(26, Math.floor(ringRadius * 0.9)));
+    if (state.stage >= 10) fontSize = Math.max(14, Math.floor(fontSize * 0.85));
 
     dctx.save();
     dctx.strokeStyle = 'rgba(255,255,255,0.06)';
@@ -3794,7 +4360,9 @@ function computeRows() {
       });
 
       // digits
-      nctx.font = fontSize + 'px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
+      let fs = fontSize;
+      if (stage >= 10) fs = Math.min(fs, Math.max(10, Math.floor(colW * 0.85)));
+      nctx.font = fs + 'px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
       nctx.textAlign = 'center';
       nctx.textBaseline = 'middle';
 
@@ -3867,7 +4435,7 @@ function computeRows() {
       return;
     }
     const live = state.liveBells.slice().sort((a,b)=>a-b);
-    if (!live.length) { statsDiv.textContent = 'No live bells selected.'; return; }
+    if (!live.length) { statsDiv.textContent = 'No scored bells selected.'; return; }
 
     let totalHits = 0, totalMisses = 0, sumAbs = 0, sumSigned = 0, scoreTotal = 0;
     live.forEach(b => {
@@ -3923,7 +4491,7 @@ function computeRows() {
 
     html += '<div class="stats-info">';
     html += 'Scoring: each row is divided into ' + state.stage + ' bell windows. ';
-    html += 'For each live bell and row, you get one scoring chance. ';
+    html += 'For each scored bell and row, you get one scoring chance. ';
     html += 'Within a bell window, hits in the middle third earn 10 points, ';
     html += 'hits in either outer third earn 9 points. ';
     html += 'If your first ring for that bell in the row is outside its window, it scores 0. Extra rings still sound but only the first ring for a bell in a row counts for scoring. ';
@@ -3949,6 +4517,7 @@ function computeRows() {
     const tempoBpm = clamp(parseInt(bpmInput.value, 10) || 80, 1, 240);
     state.bpm = tempoBpm;
     bpmInput.value = String(state.bpm);
+    syncGameHeaderMeta();
     const beatMs = 60000 / state.bpm;
 
     const pathMode = getPathMode();
@@ -3989,6 +4558,8 @@ function computeRows() {
     const now = perfNow();
 
     state.phase = 'countdown';
+    state.pausePrevPhase = '';
+    state.pauseAtMs = 0;
     state.elapsedMs = 0;
     state.runStartPerfMs = 0;
     state.schedBeatIndex = 0;
@@ -4006,6 +4577,10 @@ function computeRows() {
     if (state.mode === 'play') buildAllTargets(beatMs);
 
     startBtn.disabled = true;
+    if (pauseBtn) {
+      pauseBtn.textContent = 'Pause';
+      pauseBtn.disabled = false;
+    }
     stopBtn.disabled = false;
     if (demoBtn) demoBtn.disabled = true;
     markDirty();
@@ -4113,6 +4688,13 @@ function computeRows() {
     const runMode = (state.currentPlay && state.currentPlay.mode) || state.mode;
 
     state.phase = 'idle';
+    state.pausePrevPhase = '';
+    state.pauseAtMs = 0;
+    if (pauseBtn) {
+      pauseBtn.textContent = 'Pause';
+      pauseBtn.disabled = true;
+    }
+    scheduledBellNodes.length = 0;
     startBtn.disabled = false;
     stopBtn.disabled = true;
     if (demoBtn) demoBtn.disabled = false;
@@ -4127,12 +4709,81 @@ function computeRows() {
 
     closeAudio();
     state.mode = 'play';
+    syncGameHeaderMeta();
     markDirty();
+  }
+
+  // Prompt 6: pause/resume (does not pause the AudioContext; drone continues)
+  function togglePause() {
+    if (state.phase === 'paused') {
+      const nowMs = perfNow();
+      const pausedDurMs = Math.max(0, nowMs - (state.pauseAtMs || nowMs));
+      const prev = (state.pausePrevPhase === 'countdown' || state.pausePrevPhase === 'running') ? state.pausePrevPhase : 'running';
+
+      state.phase = prev;
+      state.methodStartMs += pausedDurMs;
+
+      if (prev === 'countdown') {
+        state.countFirstBeatMs += pausedDurMs;
+        state.countSched = state.countExec;
+      } else {
+        state.runStartPerfMs = nowMs;
+        state.schedBeatIndex = state.execBeatIndex;
+      }
+
+      // Shift unjudged scoring targets only (play mode)
+      if (state.mode === 'play' && Array.isArray(state.targets) && pausedDurMs > 0) {
+        for (let i = 0; i < state.targets.length; i++) {
+          const t = state.targets[i];
+          if (t && !t.judged) t.timeMs += pausedDurMs;
+        }
+      }
+
+      state.pausePrevPhase = '';
+      state.pauseAtMs = 0;
+      if (pauseBtn) pauseBtn.textContent = 'Pause';
+
+      syncGameHeaderMeta();
+      markDirty();
+      kickLoop();
+      return;
+    }
+
+    if (state.phase !== 'countdown' && state.phase !== 'running') return;
+    const nowMs = perfNow();
+
+    state.pausePrevPhase = state.phase;
+    state.pauseAtMs = nowMs;
+    if (state.phase === 'running') {
+      state.elapsedMs += (nowMs - state.runStartPerfMs);
+    }
+
+    state.phase = 'paused';
+
+    // Stop auto-ringing immediately by canceling already-scheduled future strikes.
+    cancelScheduledBellAudioNow();
+
+    // Align sched pointers so Resume can reschedule cleanly.
+    state.schedBeatIndex = state.execBeatIndex;
+    state.countSched = state.countExec;
+
+    if (pauseBtn) {
+      pauseBtn.textContent = 'Resume';
+      pauseBtn.disabled = false;
+    }
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
+    if (demoBtn) demoBtn.disabled = true;
+
+    syncGameHeaderMeta();
+    markDirty();
+    kickLoop();
   }
 
   function resyncDemoToNow(nowMs) {
     if (state.mode !== 'demo') return;
     if (state.phase === 'idle') return;
+    if (state.phase === 'paused') return;
 
     const beatMs = 60000 / state.bpm;
     const totalBeats = (state.rows && state.rows.length ? state.rows.length * state.stage : 0);
@@ -4183,6 +4834,7 @@ function computeRows() {
 
 
     function scheduleCountdown(nowMs) {
+    if (state.phase === 'paused') return;
     if (state.phase !== 'countdown') return;
     const beatMs = 60000 / state.bpm;
     const total = state.countdownBeats || state.stage;
@@ -4234,6 +4886,7 @@ function computeRows() {
 
 
     function scheduleMethod(nowMs) {
+    if (state.phase === 'paused') return;
     if (state.phase !== 'running' && !(state.mode === 'demo' && state.phase === 'countdown')) return;
     const beatMs = 60000 / state.bpm;
     const totalBeats = state.rows.length * state.stage;
@@ -4298,14 +4951,18 @@ function computeRows() {
     // === Rendering (only when needed) ===
     const useRAF = shouldUseRAFForRender();
 
-    if (needsRedraw || useRAF) {
+    const screenIsGame = (ui && ui.screen === 'game');
+
+    if (screenIsGame && (needsRedraw || useRAF)) {
       renderCountdownOverlay(nowMs);
 
       if (viewDisplay.checked) drawDisplay(nowMs);
       if (viewSpotlight.checked) drawSpotlight(nowMs);
       if (viewNotation.checked) drawNotation();
       if (viewStats.checked) renderStats(nowMs);
-
+      needsRedraw = false;
+    } else if (!screenIsGame && needsRedraw) {
+      // Game screen is hidden; avoid zero-size canvas layout work until shown.
       needsRedraw = false;
     }
 
@@ -4461,32 +5118,59 @@ function computeRows() {
     }
   });
 
+  // Prompt 6: Play settings changes restart (stop current run first).
+  function ensureIdleForPlayChange() {
+    if (state.phase === 'idle') return;
+    if (state.phase === 'paused') {
+      cancelScheduledBellAudioNow();
+      state.schedBeatIndex = state.execBeatIndex;
+      state.countSched = state.countExec;
+    }
+    stopPressed('play_change');
+  }
+
 
   methodSelect.addEventListener('change', () => {
-    if (state.phase !== 'idle') return;
-    state.method = methodSelect.value;
-    if (state.method !== 'custom') state.customRows = null;
+    ensureIdleForPlayChange();
+    const v = methodSelect.value;
+    state.method = v;
+
+    if (v !== 'custom') {
+      state.customRows = null;
+      state.methodSource = 'built_in';
+      state.methodMeta = null;
+    } else {
+      // Selecting "Custom" from the dropdown is not a library claim.
+      if (state.methodSource !== 'library') {
+        state.methodSource = 'custom_rows';
+        state.methodMeta = null;
+      }
+    }
+
     computeRows(); resetStats();
+    syncGameHeaderMeta();
   });
 
   bellCountSelect.addEventListener('change', () => {
-    if (state.phase !== 'idle') return;
-    state.stage = clamp(parseInt(bellCountSelect.value,10)||6, 4, 8);
-    if (state.method === 'custom') { state.method = 'plainhunt'; methodSelect.value='plainhunt'; state.customRows=null; }
+    ensureIdleForPlayChange();
+    state.stage = clamp(parseInt(bellCountSelect.value,10)||6, 4, 12);
+    if (state.method === 'custom') { state.method = 'plainhunt'; methodSelect.value='plainhunt'; state.customRows=null; state.methodSource='built_in'; state.methodMeta=null; }
     rebuildLiveCountOptions(); ensureLiveBells(); rebuildBellPicker();
     ensurePathBells(); rebuildPathPicker(); computeRows(); resetStats(); rebuildBellFrequencies();
+      syncGameHeaderMeta();
   });
 
   liveCountSelect.addEventListener('change', () => {
-    if (state.phase !== 'idle') return;
+    ensureIdleForPlayChange();
     state.liveCount = clamp(parseInt(liveCountSelect.value,10)||1, 1, state.stage);
     ensureLiveBells(); rebuildBellPicker(); resetStats();
   });
 
   bpmInput.addEventListener('change', () => {
-    if (state.phase !== 'idle') return;
+    ensureIdleForPlayChange();
     state.bpm = clamp(parseInt(bpmInput.value,10)||80, 1, 240);
     bpmInput.value = String(state.bpm);
+    syncGameHeaderMeta();
   });
 
   // Mic controls
@@ -4567,29 +5251,38 @@ function computeRows() {
   pathNoneBtn.addEventListener('click', setPathNone);
   pathAllBtn.addEventListener('click', setPathAll);
 
+  // Prompt 6: Sound changes apply without restart; reschedule auto-bells quickly if active.
+  function onBellTuningChanged() {
+    if (state.phase === 'running' || state.phase === 'countdown' || state.phase === 'paused') {
+      cancelScheduledBellAudioNow();
+      state.schedBeatIndex = state.execBeatIndex;
+      state.countSched = state.countExec;
+    }
+    markDirty();
+    kickLoop();
+  }
+
   scaleSelect.addEventListener('change', () => {
-    if (state.phase !== 'idle') return;
     state.scaleKey = scaleSelect.value;
     syncBellCustomHzUI();
     rebuildBellFrequencies();
+    onBellTuningChanged();
   });
 
   octaveSelect.addEventListener('change', () => {
-    if (state.phase !== 'idle') return;
     state.octaveC = parseInt(octaveSelect.value, 10) || 3;
     rebuildBellFrequencies();
+    onBellTuningChanged();
   });
 
 
   // Bell Custom (Hz) root controls
   if (bellCustomHzInput) {
     bellCustomHzInput.addEventListener('input', () => {
-      if (state.phase !== 'idle') return;
       setBellCustomHzFromUI(bellCustomHzInput.value, false);
     });
 
     const commitBellCustomHz = () => {
-      if (state.phase !== 'idle') return;
       setBellCustomHzFromUI(bellCustomHzInput.value, true);
       syncBellCustomHzUI();
     };
@@ -4599,7 +5292,6 @@ function computeRows() {
 
   if (bellCustomHzSlider) {
     bellCustomHzSlider.addEventListener('input', () => {
-      if (state.phase !== 'idle') return;
       setBellCustomHzFromUI(bellCustomHzSlider.value, true);
       syncBellCustomHzUI();
     });
@@ -4613,10 +5305,12 @@ function computeRows() {
   droneTypeSelect.addEventListener('change', () => {
     state.droneType = droneTypeSelect.value;
     if (state.droneType === 'off') {
+      state.dronePaused = false;
       stopDrone();
     } else {
       startDrone();
     }
+    syncDronePauseBtnUI();
   });
 
   droneScaleSelect.addEventListener('change', () => {
@@ -4668,9 +5362,12 @@ function computeRows() {
         state.method = 'custom';
         methodSelect.value = 'custom';
         state.customRows = parsed.rows.slice();
-        state.stage = clamp(parsed.stage, 2, 12);
+        state.stage = clamp(parsed.stage, 4, 12);
 
-        if (state.stage <= 8) bellCountSelect.value = String(state.stage);
+        state.methodSource = 'custom_rows';
+        state.methodMeta = { fileName: file.name || '' };
+
+        if (bellCountSelect) bellCountSelect.value = String(state.stage);
 
         rebuildLiveCountOptions();
         ensureLiveBells();
@@ -4680,6 +5377,8 @@ function computeRows() {
         computeRows();
         resetStats();
         rebuildBellFrequencies();
+
+        syncGameHeaderMeta();
 
         alert('Custom method loaded: ' + parsed.rows.length + ' rows on ' + parsed.stage + ' bells.');
       } catch (err) {
@@ -4726,8 +5425,10 @@ function computeRows() {
   }
 
   startBtn.addEventListener('click', () => startPressed('play'));
+  if (pauseBtn) pauseBtn.addEventListener('click', togglePause);
   if (demoBtn) demoBtn.addEventListener('click', () => startPressed('demo'));
   stopBtn.addEventListener('click', () => stopPressed('stopped'));
+  if (dronePauseBtn) dronePauseBtn.addEventListener('click', toggleDronePaused);
 
   if (keybindResetBtn) {
     keybindResetBtn.addEventListener('click', () => {
@@ -4741,18 +5442,33 @@ function computeRows() {
 
   // === Boot ===
   function boot() {
-    state.stage = clamp(parseInt(bellCountSelect.value,10)||6, 4, 8);
-    state.liveCount = Math.min(2, state.stage);
+    mountMenuControls();
+
+    // Play defaults (non-persisted)
+    state.method = 'plainhunt';
+    if (methodSelect) methodSelect.value = 'plainhunt';
+
+    state.methodSource = 'built_in';
+    state.methodMeta = null;
+
+    state.stage = 6;
+    if (bellCountSelect) bellCountSelect.value = '6';
+
+    state.liveCount = 1;
+    state.liveBells = [1];
+
+    state.bpm = 120;
+    if (bpmInput) bpmInput.value = String(state.bpm);
 
     loadKeyBindings();
 
     // swaps view settings (persisted)
     state.spotlightSwapsView = safeGetBoolLS(LS_SPOTLIGHT_SWAPS_VIEW, true);
     state.spotlightShowN = safeGetBoolLS(LS_SPOTLIGHT_SHOW_N, true);
-    state.spotlightShowN1 = safeGetBoolLS(LS_SPOTLIGHT_SHOW_N1, true);
+    state.spotlightShowN1 = safeGetBoolLS(LS_SPOTLIGHT_SHOW_N1, false);
     state.spotlightShowN2 = safeGetBoolLS(LS_SPOTLIGHT_SHOW_N2, true);
-    state.notationSwapsOverlay = safeGetBoolLS(LS_NOTATION_SWAPS_OVERLAY, false);
-    state.displayLiveBellsOnly = safeGetBoolLS(LS_DISPLAY_LIVE_BELLS_ONLY, false);
+    state.notationSwapsOverlay = safeGetBoolLS(LS_NOTATION_SWAPS_OVERLAY, true);
+    state.displayLiveBellsOnly = safeGetBoolLS(LS_DISPLAY_LIVE_BELLS_ONLY, isMobileLikely());
 
     loadMicPrefs();
 
@@ -4782,7 +5498,8 @@ function computeRows() {
       opt.textContent = s.label;
       scaleSelect.appendChild(opt);
     }
-    state.scaleKey = SCALE_LIBRARY[0].key;
+    // Sound defaults (non-persisted)
+    state.scaleKey = (SCALE_LIBRARY.find(s => s.key === 'Fs_major') ? 'Fs_major' : SCALE_LIBRARY[0].key);
     scaleSelect.value = state.scaleKey;
 
     // Drone scale (same option set as bells)
@@ -4799,7 +5516,7 @@ function computeRows() {
       opt.textContent = s.label;
       droneScaleSelect.appendChild(opt);
     }
-    state.droneScaleKey = state.scaleKey;
+    state.droneScaleKey = (SCALE_LIBRARY.find(s => s.key === 'Fs_major') ? 'Fs_major' : state.scaleKey);
     droneScaleSelect.value = state.droneScaleKey;
 
     octaveSelect.innerHTML = '';
@@ -4809,7 +5526,7 @@ function computeRows() {
       opt.textContent = 'C' + String(o);
       octaveSelect.appendChild(opt);
     }
-    state.octaveC = 3;
+    state.octaveC = 4;
     octaveSelect.value = String(state.octaveC);
 
     // Drone octave (same option set as bells)
@@ -4820,7 +5537,7 @@ function computeRows() {
       opt.textContent = 'C' + String(o);
       droneOctaveSelect.appendChild(opt);
     }
-    state.droneOctaveC = state.octaveC;
+    state.droneOctaveC = 4;
     droneOctaveSelect.value = String(state.droneOctaveC);
 
     // Sliders/defaults
@@ -4836,7 +5553,8 @@ function computeRows() {
     ensureLiveBells();
     rebuildBellPicker();
 
-    state.pathBells = [];
+    // View default: line (blue line) = bell 1
+    state.pathBells = [1];
     rebuildPathPicker();
 
     computeRows();
@@ -4906,6 +5624,12 @@ function computeRows() {
     });
 
     window.addEventListener('resize', () => { markDirty(); });
+
+    syncGameHeaderMeta();
+    syncDronePauseBtnUI();
+
+    // Default to Home screen; game initializes normally in the background.
+    setScreen('home');
 
     loop();
   }
