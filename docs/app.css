@@ -329,6 +329,26 @@ select option { background-color: #0b1026; color: #e8eeff; }
   line-height:1.4;
 }
 
+/* v06_p11_stats_scroll_safety: keep Stats usable on small screens */
+@media (max-width: 700px){
+  #statsPane{
+    max-height:min(60vh, 460px);
+    overflow:hidden;
+    display:flex;
+    flex-direction:column;
+    min-height:0;
+  }
+  #statsContent{
+    max-height:100%;
+    overflow:auto;
+    -webkit-overflow-scrolling:touch;
+    overscroll-behavior:contain;
+    flex:1 1 auto;
+    min-height:0;
+    box-shadow:inset 0 10px 14px -16px rgba(0,0,0,0.70);
+  }
+}
+
 .hit-window-control{
   display:flex;align-items:center;gap:10px;font-weight:600;
 }

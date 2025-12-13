@@ -71,7 +71,7 @@
 
   // === Analytics (GA4) ===
   const GA_ID = 'G-7TEG531231';
-  const SITE_VERSION = 'v06_p10_ui_home_menu_polish';
+  const SITE_VERSION = 'v06_p11_stats_scroll_safety';
 
   function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
   function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
