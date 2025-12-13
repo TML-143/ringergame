@@ -1,0 +1,547 @@
+
+html{background:var(--bg);}
+:root{
+  --bg:#050814;
+  --panel:rgba(255,255,255,0.04);
+  --panel2:rgba(255,255,255,0.06);
+  --stroke:rgba(255,255,255,0.10);
+  --stroke2:rgba(255,255,255,0.14);
+  --text:#e8eeff;
+  --muted:#9aa2bb;
+  --accent:#f9c74f;
+  --ok:#06d6a0;
+  --bad:#ef476f;
+}
+
+*{box-sizing:border-box}
+html,body{min-height:100%}
+body{
+  margin:0;
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  background:radial-gradient(1100px 500px at 20% -10%, rgba(249,199,79,0.12), transparent 60%),
+             radial-gradient(900px 500px at 110% 0%, rgba(6,214,160,0.09), transparent 55%),
+             var(--bg);
+  color:var(--text);
+}
+
+#app{max-width:1220px;margin:0 auto;padding:14px}
+
+
+
+    /* Screen scaffolding */
+    .rg-screen{display:none;}
+    .rg-screen.rg-active{display:block;}
+    .rg-screen .rg-screen-body{padding:14px;}
+    .rg-nav{display:flex;flex-wrap:wrap;gap:10px;align-items:center;}
+    .rg-muted{color:var(--muted);}
+    .rg-splash{max-width:760px;margin:0 auto;}
+
+    /* Home layout (v06_p10_ui_home_menu_polish) */
+    .rg-home{display:grid;grid-template-columns:1.15fr 0.85fr;grid-template-areas:"brand menu" "bottom bottom";gap:18px;align-items:center;}
+    .rg-home-brand{grid-area:brand;display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center;}
+    .rg-home-menu{grid-area:menu;display:flex;flex-direction:column;gap:12px;align-items:stretch;}
+    .rg-home-menu .pill{width:100%;text-align:center;padding:10px 12px;}
+    .rg-home-title{font-size:34px;font-weight:800;letter-spacing:0.4px;}
+    .rg-home-logo{width:175px;max-width:65vw;height:auto;display:block;border-radius:22px;box-shadow:0 18px 40px rgba(0,0,0,0.35);cursor:pointer;-webkit-tap-highlight-color:transparent;user-select:none;}
+    .rg-home-logo:focus{outline:2px solid rgba(249,199,79,0.75);outline-offset:3px;}
+    .rg-home-bottom{grid-area:bottom;display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:10px;}
+    .rg-home-bottom .pill{padding:10px 16px;min-width:120px;text-align:center;}
+
+    @media (max-width: 720px){
+      .rg-home{grid-template-columns:1fr;grid-template-areas:"brand" "menu" "bottom";}
+      .rg-home-menu{max-width:360px;margin:0 auto;width:100%;}
+      .rg-home-title{font-size:28px;}
+      .rg-home-logo{width:150px;}
+    }
+
+    /* Menu screens: lower nav row slightly (v06_p10_ui_home_menu_polish) */
+    #screenPlay .rg-nav,
+    #screenView .rg-nav,
+    #screenSound .rg-nav{margin-top:14px;padding-top:10px;flex-wrap:wrap;gap:10px;}
+.top-bar{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:16px;
+  flex-wrap:wrap;
+  padding:12px 14px;
+  background:var(--panel);
+  border:1px solid var(--stroke);
+  border-radius:18px;
+  box-shadow:0 12px 26px rgba(0,0,0,0.30);
+}
+
+h1{
+  margin:0;
+  font-size:20px;
+  letter-spacing:0.2px;
+}
+
+
+/* Prompt 5: in-game header meta */
+.rg-game-head{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  min-width:160px;
+}
+.rg-game-meta{
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+  font-size:12px;
+  line-height:1.2;
+}
+.rg-game-meta-line{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  align-items:baseline;
+}
+#gameMetaMethod{
+  font-weight:700;
+  color:var(--text);
+}
+
+/* Prompt 5: in-game menu overlay */
+#rgMenuOverlay{
+  position:fixed;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:18px;
+  background:rgba(0,0,0,0.55);
+  z-index:120; /* higher than countdown overlay */
+}
+#rgMenuPanel{
+  width:min(420px, 92vw);
+  max-height:min(72vh, 560px);
+  overflow:auto;
+}
+#rgMenuPanel .rg-menu-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-bottom:10px;
+}
+#rgMenuPanel .rg-menu-buttons{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+#rgMenuPanel .rg-menu-buttons button{
+  width:100%;
+}
+
+
+#controls{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px 14px;
+  align-items:flex-end;
+  justify-content:flex-end;
+  padding-right:54px; /* reserve space for absolute-positioned menu toggle */
+}
+
+.rg-controls{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px 14px;
+  align-items:flex-end;
+  justify-content:flex-start;
+}
+
+.control{display:flex;flex-direction:column;gap:6px;min-width:120px}
+.control > label{font-size:12px;color:rgba(232,238,255,0.75)}
+.control input, .control select{
+  appearance:none;
+  background:rgba(255,255,255,0.05);
+  border:1px solid rgba(255,255,255,0.12);
+  border-radius:12px;
+  padding:8px 10px;
+  color:var(--text);
+  outline:none;
+}
+
+
+/* Darker native dropdown menus (Chrome/Windows) */
+select { color-scheme: dark; }
+select option { background-color: #0b1026; color: #e8eeff; }
+
+.control input:focus,.control select:focus{border-color:rgba(249,199,79,0.40);box-shadow:0 0 0 3px rgba(249,199,79,0.14)}
+
+.control input:disabled,.control select:disabled{opacity:0.45;cursor:not-allowed}
+
+.control-buttons{flex-direction:row;gap:10px;min-width:auto;flex-wrap:wrap}
+.control-buttons button{
+  border:1px solid rgba(255,255,255,0.14);
+  background:rgba(255,255,255,0.06);
+  color:var(--text);
+  padding:9px 14px;
+  border-radius:14px;
+  cursor:pointer;
+  font-weight:600;
+}
+.control-buttons button:hover{border-color:rgba(249,199,79,0.40)}
+.control-buttons button:disabled{opacity:0.5;cursor:not-allowed}
+
+.toggles{display:flex;gap:10px;flex-wrap:wrap}
+.toggle{
+  display:flex;align-items:center;gap:6px;
+  padding:6px 10px;border-radius:999px;
+  border:1px solid rgba(255,255,255,0.10);
+  background:rgba(255,255,255,0.04);
+  user-select:none;
+}
+
+.path-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.pill{
+  border:1px solid rgba(255,255,255,0.12);
+  background:rgba(255,255,255,0.05);
+  color:var(--text);
+  padding:7px 10px;
+  border-radius:999px;
+  cursor:pointer;
+  font-weight:600;
+}
+.pill.active{border-color:rgba(249,199,79,0.45);box-shadow:0 0 0 3px rgba(249,199,79,0.12) inset}
+
+.bell-picker{
+  display:grid;
+  grid-template-columns:repeat(8,1fr);
+  gap:8px;
+}
+.bell-picker--small{grid-template-columns:repeat(8,1fr)}
+.bell-picker button{
+  border:1px solid rgba(255,255,255,0.10);
+  background:rgba(255,255,255,0.03);
+  color:var(--text);
+  padding:8px 0;
+  border-radius:12px;
+  cursor:pointer;
+  font-weight:700;
+}
+.bell-picker button.selected{
+  border-color:rgba(249,199,79,0.50);
+  box-shadow:0 0 0 3px rgba(249,199,79,0.12) inset;
+  background:rgba(249,199,79,0.10);
+}
+
+.main{
+  margin-top:12px;
+  display:grid;
+  grid-template-columns: 0.9fr 1.1fr;
+  gap:12px;
+  align-items:start;
+}
+
+#leftStack{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  min-height:0;
+}
+
+.main.onecol{grid-template-columns:1fr}
+
+.pane{
+  background:var(--panel);
+  border:1px solid var(--stroke);
+  border-radius:18px;
+  overflow:hidden;
+  box-shadow:0 10px 22px rgba(0,0,0,0.24);
+}
+
+.pane-title{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:12px 14px;
+  border-bottom:1px solid rgba(255,255,255,0.08);
+  font-weight:700;
+  font-size:13px;
+  color:rgba(232,238,255,0.90);
+}
+
+
+/* Pane inline settings toggles */
+.pane-actions{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px;
+  flex-wrap:wrap;
+}
+.pane-actions .toggle{ padding:4px 8px; font-size:12px; }
+.toggles--mini{ gap:6px; }
+.pane canvas{
+  display:block;
+  width:100%;
+  height:260px;
+}
+#displayCanvas{height:240px}
+#notationCanvas{height:540px}
+
+.pane-span{grid-column:1 / -1}
+.pane-span #stats{padding:12px 14px}
+
+.hidden{display:none !important}
+
+.footer{
+  margin-top:12px;
+  padding:10px 14px;
+  border-radius:18px;
+  border:1px solid rgba(255,255,255,0.10);
+  background:rgba(255,255,255,0.03);
+  color:rgba(232,238,255,0.78);
+  font-size:12px;
+}
+
+.summary{
+  padding:10px 12px;
+  border-radius:14px;
+  background:rgba(255,255,255,0.03);
+  border:1px solid rgba(255,255,255,0.08);
+  margin-bottom:10px;
+  font-weight:700;
+}
+
+#stats table{
+  width:100%;
+  border-collapse:separate;
+  border-spacing:0;
+}
+#stats th,#stats td{
+  text-align:right;
+  padding:9px 10px;
+  font-variant-numeric:tabular-nums;
+  border-bottom:1px solid rgba(255,255,255,0.06);
+}
+#stats th{color:rgba(232,238,255,0.75);font-size:12px;font-weight:700}
+#stats td:first-child,#stats th:first-child{text-align:left}
+
+.stats-info{
+  margin-top:10px;
+  color:rgba(232,238,255,0.70);
+  font-size:12px;
+  line-height:1.4;
+}
+
+.hit-window-control{
+  display:flex;align-items:center;gap:10px;font-weight:600;
+}
+.hit-window-control label{font-size:12px;color:rgba(232,238,255,0.72);font-weight:700}
+.hit-window-control select{padding:6px 10px;border-radius:12px}
+
+@media (max-width: 980px){
+  .main{grid-template-columns:1fr}
+  #notationCanvas{height:460px}
+}
+    
+
+/* Menu hide toggle */
+.top-bar{ position:relative; }
+.menu-toggle{
+  position:absolute;
+  top:12px;
+  right:18px;
+  width:36px;
+  height:36px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,0.12);
+  background:rgba(255,255,255,0.06);
+  color:#e8eeff;
+  cursor:pointer;
+  display:grid;
+  place-items:center;
+  font-size:18px;
+  line-height:1;
+}
+.menu-toggle:hover{ background:rgba(255,255,255,0.10); }
+.menu-toggle:active{ transform:translateY(1px); }
+
+.menu-hidden #controls .control:not(.control-buttons){
+  display:none !important;
+}
+.menu-hidden #controls{
+  gap:10px;
+}
+.menu-hidden .menu-toggle{
+  transform:rotate(180deg);
+}
+
+/* v06_p9a_view_layout_presets: helper note under control */
+.control .control-note{
+  font-size:11px;
+  line-height:1.25;
+}
+
+/* Countdown overlay (Rounds count-up) */
+.count-overlay{
+  position:fixed;
+  left:50%;
+  top:84px;
+  transform:translateX(-50%);
+  z-index:60;
+  display:none;
+  pointer-events:none;
+}
+.count-overlay .bubble{
+  min-width:110px;
+  padding:18px 20px 14px;
+  border-radius:20px;
+  border:1px solid rgba(255,255,255,0.14);
+  background:rgba(5,8,20,0.78);
+  box-shadow:0 20px 70px rgba(0,0,0,0.55);
+  text-align:center;
+}
+.count-overlay .num{
+  font:800 64px/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  color:#f9c74f;
+}
+.count-overlay .lbl{
+  margin-top:8px;
+  font:600 12px/1.1 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,"Helvetica Neue",Arial;
+  color:rgba(232,238,255,0.82);
+  letter-spacing:0.06em;
+  text-transform:uppercase;
+}
+
+
+.menu-hidden #controls{ padding-top:46px; }
+
+.count-overlay .num.ready{ font-size:40px; letter-spacing:0.02em; }
+
+/* Keybindings */
+.keybind-panel{display:flex;flex-direction:column;gap:6px;min-width:180px}
+.keybind-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.keybind-bell{font-size:12px;color:rgba(232,238,255,0.75);font-weight:700;min-width:60px}
+.keybind-key{
+  font:700 12px/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  padding:6px 10px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,0.12);
+  background:rgba(255,255,255,0.05);
+  min-width:92px;
+  text-align:center
+}
+.keybind-actions{margin-top:6px;display:flex;gap:10px;flex-wrap:wrap}
+.keybind-bind-btn{padding:6px 10px;font-size:12px}
+.keybind-row.capture .keybind-key{
+  border-color:rgba(249,199,79,0.55);
+  box-shadow:0 0 0 3px rgba(249,199,79,0.12) inset;
+  background:rgba(249,199,79,0.10);
+  color:#10162c
+}
+.keybind-row.conflict .keybind-key{
+  border-color:rgba(239,71,111,0.55);
+  box-shadow:0 0 0 3px rgba(239,71,111,0.10) inset
+}
+.keybind-note{font-size:11px;color:rgba(232,238,255,0.70);margin-top:4px;line-height:1.3}
+
+
+/* Mic */
+.mic-status{
+  font-size:11px;
+  color:rgba(232,238,255,0.70);
+  line-height:1.2;
+}
+.pill.mic-on{
+  border-color:rgba(6,214,160,0.55);
+  box-shadow:0 0 0 3px rgba(6,214,160,0.12) inset;
+  background:rgba(6,214,160,0.10);
+}
+.mic-body{ padding:12px 14px 14px; }
+.mic-meter{
+  position:relative;
+  height:14px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,0.10);
+  background:rgba(255,255,255,0.04);
+  overflow:hidden;
+}
+.mic-meter-fill{
+  height:100%;
+  width:0%;
+  background:rgba(249,199,79,0.85);
+}
+.mic-readouts{
+  margin-top:10px;
+  display:flex;
+  gap:14px;
+  flex-wrap:wrap;
+  align-items:baseline;
+}
+.mic-label{
+  color:rgba(232,238,255,0.78);
+  font-weight:700;
+  font-size:12px;
+  margin-right:6px;
+}
+.control input[type="range"]{ padding:0; height:34px; }
+
+
+/* v06_p9a_view_layout_presets: layout presets (class applied on main#main) */
+
+/* Two columns (classic) - keep existing behavior, but make it explicit. */
+.main.layout-two-col:not(.onecol){
+  grid-template-columns: 0.9fr 1.1fr;
+}
+
+/* One column (wide) */
+.main.layout-one-wide{
+  grid-template-columns: 1fr;
+}
+
+/* One column (narrow / centered) */
+.main.layout-one-narrow{
+  grid-template-columns: 1fr;
+  max-width: 860px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Mobile (thumb reach) */
+.main.layout-mobile-thumb{
+  grid-template-columns: 1fr;
+}
+.main.layout-mobile-thumb #spotlightPane{ order: 0; }
+.main.layout-mobile-thumb #displayPane{ order: 1; }
+.main.layout-mobile-thumb #micPane{ order: 2; }
+
+
+/* v06_p9b_view_menu_selected_states: clearly show selected vs deselected View toggles */
+#screenView #viewMenuControls label.toggle{
+  transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+/* Restore visible checkbox/radio state (global input styles set appearance:none). */
+#screenView #viewMenuControls label.toggle input[type="checkbox"],
+#screenView #viewMenuControls label.toggle input[type="radio"]{
+  appearance:auto;
+  -webkit-appearance:auto;
+  width:16px;
+  height:16px;
+  padding:0;
+  margin:0;
+  accent-color:var(--accent);
+  background:transparent;
+  border:none;
+  box-shadow:none;
+}
+
+/* Selected/on state */
+#screenView #viewMenuControls .is-selected{
+  border-color:rgba(249,199,79,0.55);
+  background:rgba(249,199,79,0.12);
+  box-shadow:0 0 0 3px rgba(249,199,79,0.10) inset;
+}
+
+/* Focus visibility for keyboard users */
+#screenView #viewMenuControls label.toggle:focus-within,
+#screenView #viewMenuControls button[aria-pressed]:focus-visible{
+  border-color:rgba(249,199,79,0.45);
+  box-shadow:0 0 0 3px rgba(249,199,79,0.14);
+}

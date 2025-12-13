@@ -1,0 +1,4938 @@
+
+(function () {
+  'use strict';
+
+  // Global CCCBR method library
+  window.RG = window.RG || {};
+  window.RG.methods = window.RG.methods || [];
+  const RG = window.RG;
+
+  const LOOKAHEAD_MS = 160;
+  const DEMO_VISIBLE_AHEAD_MS = 15 * 60 * 1000;          // 15 minutes
+  const DEMO_HIDDEN_AHEAD_MS  = 60 * 60 * 1000;          // 60 minutes
+  const DEMO_LOW_BPM_THRESHOLD = 12;
+  const DEMO_LOW_BPM_AHEAD_MS = 4 * 60 * 60 * 1000;      // 4 hours (only when BPM <= 12)
+  const DEMO_MAX_AHEAD_STRIKES = 8000;                   // hard cap on total strikes scheduled ahead
+  const DEMO_SCHED_MAX_PER_PASS = 400;                   // per-pass strike scheduling cap to avoid UI jank
+  const COUNTDOWN_BEATS = 3;
+
+  let wakeLockSentinel = null;
+
+  let needsRedraw = true;
+  let lastTickWasRAF = false;
+  let lastKnownDPR = window.devicePixelRatio || 1;
+
+  function markDirty() {
+    needsRedraw = true;
+  }
+
+  function getMaintenanceIntervalMs() {
+    const bpm = Math.max(1, Number(state.bpm) || 1);
+
+    if (state.phase === 'idle' || state.phase === 'paused') return 1100;
+
+    if (bpm <= 12) return 500;
+    if (bpm <= 30) return 250;
+    if (bpm <= 90) return 100;
+    return 60;
+  }
+
+  function shouldUseRAFForRender() {
+    return ((((state.phase === 'running' || state.phase === 'countdown') && state.bpm > 12)) ||
+            (state.micActive && viewMic.checked === true));
+  }
+
+  let loopTimer = null;
+  let loopRAF = null;
+
+  function kickLoop() {
+    if (loopRAF != null) {
+      window.cancelAnimationFrame(loopRAF);
+      loopRAF = null;
+    }
+    if (loopTimer != null) {
+      window.clearTimeout(loopTimer);
+      loopTimer = null;
+    }
+
+    const useRAF = shouldUseRAFForRender();
+    if (useRAF) {
+      lastTickWasRAF = true;
+      loopRAF = window.requestAnimationFrame(loop);
+    } else {
+      lastTickWasRAF = false;
+      loopTimer = window.setTimeout(loop, 0);
+    }
+  }
+
+
+  // Row-based scoring: each bell has one beat-wide window per row, split into three equal thirds.
+  // Middle third = 10 points, outer thirds = 9 points, miss = 0.
+
+  // === Analytics (GA4) ===
+  const GA_ID = 'G-7TEG531231';
+  const SITE_VERSION = 'v06_p10_ui_home_menu_polish';
+
+  function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
+  function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
+  function safeSetLS(key, val) { try { localStorage.setItem(key, val); } catch (_) {} }
+
+  function safeGetBoolLS(key, def) {
+    const v = safeGetLS(key);
+    if (v == null) return def;
+    if (v === '1' || v === 'true' || v === 'on') return true;
+    if (v === '0' || v === 'false' || v === 'off') return false;
+    return def;
+  }
+  function safeSetBoolLS(key, val) { safeSetLS(key, val ? '1' : '0'); }
+
+
+  function rid(prefix) {
+    try {
+      if (window.crypto && crypto.getRandomValues) {
+        const b = new Uint8Array(16);
+        crypto.getRandomValues(b);
+        let s = '';
+        for (let i = 0; i < b.length; i++) s += b[i].toString(16).padStart(2, '0');
+        return prefix + s;
+      }
+    } catch (_) {}
+    return prefix + Math.random().toString(16).slice(2) + Date.now().toString(16);
+  }
+
+  const analytics = (function () {
+    const LS_VISITOR = 'rg_visitor_id_v1';
+    const LS_TOTALS = 'rg_visitor_totals_v1';
+
+    const sessionId = rid('s_');
+
+    let visitorId = safeGetLS(LS_VISITOR);
+    if (!visitorId) {
+      visitorId = rid('v_');
+      safeSetLS(LS_VISITOR, visitorId);
+    }
+
+    const defaults = {
+      plays_total: 0,
+      seconds_total: 0,
+      targets_total: 0,
+      hits_total: 0,
+      misses_total: 0,
+      score_total: 0,
+      pr_combo_global: 0
+    };
+
+    function loadTotals() {
+      const raw = safeGetLS(LS_TOTALS);
+      const parsed = raw ? safeJsonParse(raw) : null;
+      const t = Object.assign({}, defaults, parsed || {});
+      for (const k of Object.keys(defaults)) t[k] = Number(t[k] || 0);
+      return t;
+    }
+
+    let totals = loadTotals();
+
+    function configure() {
+      try {
+        if (typeof window.gtag === 'function') {
+          window.gtag('config', GA_ID, {
+            user_id: visitorId,
+            allow_google_signals: false,
+            allow_ad_personalization_signals: false
+          });
+        }
+      } catch (_) {}
+    }
+
+    function track(name, params) {
+      try {
+        if (typeof window.gtag === 'function') window.gtag('event', name, params || {});
+      } catch (_) {}
+    }
+
+    function setUserProps(props) {
+      try {
+        if (typeof window.gtag === 'function') window.gtag('set', 'user_properties', props || {});
+      } catch (_) {}
+    }
+
+    function saveTotals() { safeSetLS(LS_TOTALS, JSON.stringify(totals)); }
+    function refreshTotals() { totals = loadTotals(); return totals; }
+
+    return { visitorId, sessionId, totals, configure, track, setUserProps, saveTotals, refreshTotals };
+  })();
+
+  // === DOM ===
+  const main = document.getElementById('main');
+  const leftStack = document.getElementById('leftStack');
+
+  const displayPane = document.getElementById('displayPane');
+  const spotlightPane = document.getElementById('spotlightPane');
+  const micPane = document.getElementById('micPane');
+  const notationPane = document.getElementById('notationPane');
+  const statsPane = document.getElementById('statsPane');
+
+  const displayCanvas = document.getElementById('displayCanvas');
+  const dctx = displayCanvas.getContext('2d');
+  const spotlightCanvas = document.getElementById('spotlightCanvas');
+  const sctx = spotlightCanvas.getContext('2d');
+  const notationCanvas = document.getElementById('notationCanvas');
+  const nctx = notationCanvas.getContext('2d');
+
+  const methodSelect = document.getElementById('methodSelect');
+  const bellCountSelect = document.getElementById('bellCount');
+  const scaleSelect = document.getElementById('scaleSelect');
+  const octaveSelect = document.getElementById('octaveSelect');
+  const bellVolume = document.getElementById('bellVolume');
+
+  const bellCustomHzInput = document.getElementById('bellCustomHzInput');
+  const bellCustomHzSlider = document.getElementById('bellCustomHzSlider');
+
+  const droneTypeSelect = document.getElementById('droneTypeSelect');
+  const droneScaleSelect = document.getElementById('droneScaleSelect');
+  const droneOctaveSelect = document.getElementById('droneOctaveSelect');
+  const droneVolume = document.getElementById('droneVolume');
+
+  const droneCustomHzInput = document.getElementById('droneCustomHzInput');
+  const droneCustomHzSlider = document.getElementById('droneCustomHzSlider');
+
+  const liveCountSelect = document.getElementById('liveCount');
+  const bellPicker = document.getElementById('bellPicker');
+  const keybindPanel = document.getElementById('keybindPanel');
+  const keybindResetBtn = document.getElementById('keybindResetBtn');
+  const keybindNote = document.getElementById('keybindNote');
+  const bpmInput = document.getElementById('bpmInput');
+
+  // Mic controls (top menu)
+  const micToggleBtn = document.getElementById('micToggleBtn');
+  const micCalibrateBtn = document.getElementById('micCalibrateBtn');
+  const micCalibrateStatus = document.getElementById('micCalibrateStatus');
+  const micStatus = document.getElementById('micStatus');
+  const micCooldown = document.getElementById('micCooldown');
+  const micCooldownVal = document.getElementById('micCooldownVal');
+
+
+// Mic pane
+  const micMeterFill = document.getElementById('micMeterFill');
+  const micDbReadout = document.getElementById('micDbReadout');
+  const micPaneStatus = document.getElementById('micPaneStatus');
+
+  const fileInput = document.getElementById('fileInput');
+  const xmlInput  = document.getElementById('xmlInput');
+  const startBtn = document.getElementById('startBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
+  const stopBtn = document.getElementById('stopBtn');
+  const demoBtn = document.getElementById('demoBtn');
+  const dronePauseBtn = document.getElementById('dronePauseBtn');
+  const menuToggle = document.getElementById('menuToggle');
+
+  // Prompt 5: in-game header meta elements
+  const gameMetaMethod = document.getElementById('gameMetaMethod');
+  const gameMetaSource = document.getElementById('gameMetaSource');
+  const gameMetaAttr   = document.getElementById('gameMetaAttr');
+  const gameMetaBpm    = document.getElementById('gameMetaBpm');
+
+  // Prompt 5: in-game menu overlay
+  const rgMenuOverlay = document.getElementById('rgMenuOverlay');
+  const rgMenuPanel   = document.getElementById('rgMenuPanel');
+  const rgMenuGoPlay  = document.getElementById('rgMenuGoPlay');
+  const rgMenuGoView  = document.getElementById('rgMenuGoView');
+  const rgMenuGoSound = document.getElementById('rgMenuGoSound');
+  const rgMenuClose   = document.getElementById('rgMenuClose');
+
+  function rgMenuIsOpen() {
+    return !!(rgMenuOverlay && !rgMenuOverlay.classList.contains('hidden'));
+  }
+  function openRgMenuOverlay() {
+    if (!rgMenuOverlay) return;
+    rgMenuOverlay.classList.remove('hidden');
+    rgMenuOverlay.setAttribute('aria-hidden', 'false');
+    try { if (rgMenuClose) rgMenuClose.focus({ preventScroll: true }); } catch (_) {}
+  }
+  function closeRgMenuOverlay() {
+    if (!rgMenuOverlay) return;
+    rgMenuOverlay.classList.add('hidden');
+    rgMenuOverlay.setAttribute('aria-hidden', 'true');
+    try { if (menuToggle && ui && ui.screen === 'game') menuToggle.focus({ preventScroll: true }); } catch (_) {}
+  }
+
+  // v06_p10_ui_home_menu_polish: Menu button routes to Home (no overlay).
+  if (rgMenuOverlay) {
+    // Keep overlay permanently hidden/inert (legacy DOM allowed).
+    try { rgMenuOverlay.classList.add('hidden'); } catch (_) {}
+    try { rgMenuOverlay.setAttribute('aria-hidden', 'true'); } catch (_) {}
+  }
+
+  if (menuToggle) {
+    menuToggle.setAttribute('aria-label', 'Menu');
+    menuToggle.setAttribute('title', 'Menu');
+    menuToggle.addEventListener('click', () => {
+      setScreen('home');
+    });
+  }
+
+  const statsDiv = document.getElementById('stats');
+
+  // === Screen scaffolding ===
+  const screenHome = document.getElementById('screenHome');
+  const screenPlay = document.getElementById('screenPlay');
+  const screenView = document.getElementById('screenView');
+  const screenSound = document.getElementById('screenSound');
+  const screenGame = document.getElementById('screenGame');
+
+  const ui = { screen: 'home' };
+
+  function setScreen(name) {
+    const n = String(name || '').toLowerCase();
+    const next = (n === 'home' || n === 'play' || n === 'view' || n === 'sound' || n === 'game') ? n : 'home';
+
+    const screens = { home: screenHome, play: screenPlay, view: screenView, sound: screenSound, game: screenGame };
+    for (const k in screens) {
+      const el = screens[k];
+      if (!el) continue;
+      el.classList.toggle('rg-active', k === next);
+      el.setAttribute('aria-hidden', k === next ? 'false' : 'true');
+    }
+
+    ui.screen = next;
+
+    if (next === 'view') {
+      // Ensure View menu selected-state UI is correct when revisiting the screen.
+      syncViewMenuSelectedUI();
+    }
+
+    if (next === 'game') {
+      markDirty();
+      kickLoop();
+      syncDronePauseBtnUI();
+    }
+  }
+
+  // Prompt 4: mount header controls into Play/View/Sound menus (move existing nodes; preserve IDs)
+  function moveControlByChildId(childId, destEl) {
+    if (!destEl) return;
+    const el = document.getElementById(childId);
+    if (!el) return;
+    const controlEl = el.closest('.control');
+    if (!controlEl) return;
+    destEl.appendChild(controlEl);
+  }
+
+  function mountMenuControls() {
+    const playDest = document.getElementById('playMenuControls');
+    const viewDest = document.getElementById('viewMenuControls');
+    const soundDest = document.getElementById('soundMenuControls');
+
+    if (!playDest && !viewDest && !soundDest) return;
+
+    // PLAY
+    moveControlByChildId('methodSelect', playDest);
+    moveControlByChildId('bellCount', playDest);
+    moveControlByChildId('bpmInput', playDest);
+    moveControlByChildId('liveCount', playDest);
+    moveControlByChildId('bellPicker', playDest);
+    moveControlByChildId('keybindPanel', playDest);
+    moveControlByChildId('micToggleBtn', playDest);
+    moveControlByChildId('micCooldown', playDest);
+    moveControlByChildId('fileInput', playDest);
+    moveControlByChildId('xmlInput', playDest);
+
+    // Move Method Library pane into Play screen (below controls)
+    const playScreen = document.getElementById('screenPlay');
+    const lib = document.getElementById('methodLibrary');
+    if (playScreen && lib) {
+      playScreen.appendChild(lib);
+      lib.classList.add('rg-splash');
+      lib.style.marginTop = '12px';
+    }
+
+    // VIEW
+    moveControlByChildId('viewDisplay', viewDest);
+    moveControlByChildId('displayLiveOnly', viewDest);
+    moveControlByChildId('spotlightSwapsView', viewDest);
+    moveControlByChildId('notationSwapsOverlay', viewDest);
+    moveControlByChildId('pathNoneBtn', viewDest);
+
+    // SOUND
+    moveControlByChildId('scaleSelect', soundDest);
+    moveControlByChildId('octaveSelect', soundDest);
+    moveControlByChildId('bellCustomHzInput', soundDest);
+    moveControlByChildId('bellVolume', soundDest);
+    moveControlByChildId('droneTypeSelect', soundDest);
+    moveControlByChildId('droneScaleSelect', soundDest);
+    moveControlByChildId('droneOctaveSelect', soundDest);
+    moveControlByChildId('droneCustomHzInput', soundDest);
+    moveControlByChildId('droneVolume', soundDest);
+  }
+
+  // Home / placeholder navigation buttons
+  const homeBtnPlay = document.getElementById('homeBtnPlay');
+  const homeBtnView = document.getElementById('homeBtnView');
+  const homeBtnSound = document.getElementById('homeBtnSound');
+  const homeBtnDemo = document.getElementById('homeBtnDemo');
+  const homeBtnBegin = document.getElementById('homeBtnBegin');
+
+  const homeBellLogo = document.getElementById('homeBellLogo');
+
+  const playBtnEnterGame = document.getElementById('playBtnEnterGame');
+  const playBtnDemo = document.getElementById('playBtnDemo');
+
+  const viewBtnEnterGame = document.getElementById('viewBtnEnterGame');
+  const viewBtnDemo = document.getElementById('viewBtnDemo');
+
+  const soundBtnEnterGame = document.getElementById('soundBtnEnterGame');
+  const soundBtnDemo = document.getElementById('soundBtnDemo');
+
+  function wireUniversalMenuNav() {
+    // Universal nav buttons (Home / Setup / View / Sound) across menu screens.
+    document.addEventListener('click', (e) => {
+      const btn = (e && e.target && e.target.closest) ? e.target.closest('button[data-go-screen]') : null;
+      if (!btn) return;
+      const go = (btn.dataset && btn.dataset.goScreen) ? btn.dataset.goScreen : '';
+      if (!go) return;
+      setScreen(go);
+    });
+
+    // Enter game (idle) buttons.
+    if (playBtnEnterGame) playBtnEnterGame.addEventListener('click', () => setScreen('game'));
+    if (viewBtnEnterGame) viewBtnEnterGame.addEventListener('click', () => setScreen('game'));
+    if (soundBtnEnterGame) soundBtnEnterGame.addEventListener('click', () => setScreen('game'));
+
+    // Demo buttons (idle only).
+    function wireDemo(btn) {
+      if (!btn) return;
+      btn.addEventListener('click', () => {
+        if (state.phase !== 'idle') {
+          alert('Stop the current game first.');
+          return;
+        }
+        setScreen('game');
+        requestAnimationFrame(() => startPressed('demo'));
+      });
+    }
+    wireDemo(playBtnDemo);
+    wireDemo(viewBtnDemo);
+    wireDemo(soundBtnDemo);
+  }
+
+  if (homeBtnPlay) homeBtnPlay.addEventListener('click', () => setScreen('play'));
+  if (homeBtnView) homeBtnView.addEventListener('click', () => setScreen('view'));
+  if (homeBtnSound) homeBtnSound.addEventListener('click', () => setScreen('sound'));
+  if (homeBtnBegin) homeBtnBegin.addEventListener('click', () => {
+    setScreen('game');
+    requestAnimationFrame(() => {
+      try { if (startBtn) startBtn.focus(); } catch (_) {}
+    });
+  });
+  if (homeBtnDemo) homeBtnDemo.addEventListener('click', () => {
+    if (state.phase !== 'idle') {
+      alert('Stop the current game first.');
+      return;
+    }
+    setScreen('game');
+    requestAnimationFrame(() => startPressed('demo'));
+  });
+
+  // Home: tapping the bell logo rings bell 1 (treble) once (UI-only).
+  function ringHomeLogoBell1() {
+    try {
+      ensureAudio();
+      playBellAt(1, perfNow());
+    } catch (_) {}
+  }
+  if (homeBellLogo) {
+    homeBellLogo.addEventListener('click', () => ringHomeLogoBell1());
+    homeBellLogo.addEventListener('keydown', (e) => {
+      const k = e && e.key ? String(e.key) : '';
+      if (k === 'Enter' || k === ' ' || k === 'Spacebar') {
+        try { e.preventDefault(); } catch (_) {}
+        ringHomeLogoBell1();
+      }
+    });
+  }
+
+
+  wireUniversalMenuNav();
+
+  const viewDisplay = document.getElementById('viewDisplay');
+  const viewSpotlight = document.getElementById('viewSpotlight');
+  const viewNotation = document.getElementById('viewNotation');
+  const viewStats = document.getElementById('viewStats');
+  const viewMic = document.getElementById('viewMic');
+  const displayLiveOnly = document.getElementById('displayLiveOnly');
+
+  // View: layout presets
+  const layoutPresetSelect = document.getElementById('layoutPresetSelect');
+
+
+  // swaps view controls
+  const spotlightSwapsView = document.getElementById('spotlightSwapsView');
+  const spotlightSwapRows = document.getElementById('spotlightSwapRows');
+  const spotlightShowN = document.getElementById('spotlightShowN');
+  const spotlightShowN1 = document.getElementById('spotlightShowN1');
+  const spotlightShowN2 = document.getElementById('spotlightShowN2');
+  const notationSwapsOverlay = document.getElementById('notationSwapsOverlay');
+
+
+  const pathNoneBtn = document.getElementById('pathNoneBtn');
+  const pathAllBtn = document.getElementById('pathAllBtn');
+  const pathPicker = document.getElementById('pathPicker');
+
+  // swaps view localStorage keys
+  const LS_SPOTLIGHT_SWAPS_VIEW = 'spotlight_swaps_view';
+  const LS_SPOTLIGHT_SHOW_N = 'spotlight_show_N';
+  const LS_SPOTLIGHT_SHOW_N1 = 'spotlight_show_N1';
+  const LS_SPOTLIGHT_SHOW_N2 = 'spotlight_show_N2';
+  const LS_NOTATION_SWAPS_OVERLAY = 'notation_swaps_overlay';
+  const LS_DISPLAY_LIVE_BELLS_ONLY = 'display_live_bells_only';
+
+  // layout preset localStorage key
+  const LS_LAYOUT_PRESET = 'rg_layout_preset';
+
+  // mic localStorage keys
+  const LS_MIC_ENABLED = 'rg_mic_enabled';
+  const LS_MIC_BELLS = 'rg_mic_bells_v1';
+  const LS_MIC_THRESHOLD = 'rg.mic.threshold';
+  const OLD_LS_MIC_THRESHOLD_DB = 'rg_mic_threshold_db'; // v1 (dB slider)
+  const LS_MIC_COOLDOWN_MS = 'rg_mic_cooldown_ms';
+
+
+  function syncSpotlightSwapRowTogglesUI() {
+    if (!spotlightSwapRows || !spotlightSwapsView) return;
+    spotlightSwapRows.classList.toggle('hidden', !spotlightSwapsView.checked);
+    syncViewMenuSelectedUI();
+    markDirty();
+    kickLoop();
+  }
+
+
+  // === Musical scales (8 tones incl octave) ===
+  // Intervals are semitones ascending from root to octave.
+  const SCALE_LIBRARY = [
+    { key: 'C_major', label: 'C major', root: 'C', intervals: [0,2,4,5,7,9,11,12] },
+    { key: 'Cs_major', label: 'C# major', root: 'C#', intervals: [0,2,4,5,7,9,11,12] },
+    { key: 'D_major', label: 'D major', root: 'D', intervals: [0,2,4,5,7,9,11,12] },
+    { key: 'Ef_major', label: 'Eb major', root: 'Eb', intervals: [0,2,4,5,7,9,11,12] },
+    { key: 'E_major', label: 'E major', root: 'E', intervals: [0,2,4,5,7,9,11,12] },
+    { key: 'F_major', label: 'F major', root: 'F', intervals: [0,2,4,5,7,9,11,12] },
+    { key: 'Fs_major', label: 'F# major', root: 'F#', intervals: [0,2,4,5,7,9,11,12] },
+    { key: 'G_major', label: 'G major', root: 'G', intervals: [0,2,4,5,7,9,11,12] },
+    { key: 'Af_major', label: 'Ab major', root: 'Ab', intervals: [0,2,4,5,7,9,11,12] },
+    { key: 'A_major', label: 'A major', root: 'A', intervals: [0,2,4,5,7,9,11,12] },
+    { key: 'Bf_major', label: 'Bb major', root: 'Bb', intervals: [0,2,4,5,7,9,11,12] },
+    { key: 'B_major', label: 'B major', root: 'B', intervals: [0,2,4,5,7,9,11,12] },
+    { key: 'C_minor', label: 'C minor', root: 'C', intervals: [0,2,3,5,7,8,10,12] },
+    { key: 'Cs_minor', label: 'C# minor', root: 'C#', intervals: [0,2,3,5,7,8,10,12] },
+    { key: 'D_minor', label: 'D minor', root: 'D', intervals: [0,2,3,5,7,8,10,12] },
+    { key: 'Ef_minor', label: 'Eb minor', root: 'Eb', intervals: [0,2,3,5,7,8,10,12] },
+    { key: 'E_minor', label: 'E minor', root: 'E', intervals: [0,2,3,5,7,8,10,12] },
+    { key: 'F_minor', label: 'F minor', root: 'F', intervals: [0,2,3,5,7,8,10,12] },
+    { key: 'Fs_minor', label: 'F# minor', root: 'F#', intervals: [0,2,3,5,7,8,10,12] },
+    { key: 'G_minor', label: 'G minor', root: 'G', intervals: [0,2,3,5,7,8,10,12] },
+    { key: 'Af_minor', label: 'Ab minor', root: 'Ab', intervals: [0,2,3,5,7,8,10,12] },
+    { key: 'A_minor', label: 'A minor', root: 'A', intervals: [0,2,3,5,7,8,10,12] },
+    { key: 'Bf_minor', label: 'Bb minor', root: 'Bb', intervals: [0,2,3,5,7,8,10,12] },
+    { key: 'B_minor', label: 'B minor', root: 'B', intervals: [0,2,3,5,7,8,10,12] }
+  ];
+
+  const NOTE_TO_SEMI = { 'C':0,'C#':1,'Db':1,'D':2,'D#':3,'Eb':3,'E':4,'F':5,'F#':6,'Gb':6,'G':7,'G#':8,'Ab':8,'A':9,'A#':10,'Bb':10,'B':11 };
+
+  function noteToMidi(note, octave) {
+    const semi = NOTE_TO_SEMI[note];
+    // MIDI: C-1 = 0, C4 = 60
+    return (octave + 1) * 12 + semi;
+  }
+  function midiToFreq(midi) {
+    return 440 * Math.pow(2, (midi - 69) / 12);
+  }
+
+  // === Game state ===
+  const state = {
+    method: 'plainhunt',
+    methodSource: 'built_in',
+    methodMeta: null,
+    stage: 6,
+    liveCount: 1,
+    liveBells: [1],
+    bpm: 120,
+
+    // musical settings
+    scaleKey: 'Fs_major',
+    octaveC: 4,
+    bellCustomHz: 440, // used when scaleKey === 'custom_hz' // UI shows C1..C6
+
+    // audio settings
+    bellVolume: 100, // 0..100 master bell volume
+    droneType: 'off',
+    droneScaleKey: 'Fs_major',
+    droneOctaveC: 4,
+    droneCustomHz: 440, // used when droneScaleKey === 'custom_hz'
+    droneVolume: 50, // 0..100
+    dronePaused: false, // Prompt 7: mute/unmute drone without stopping
+
+
+    bellFreq: [],
+
+    pathBells: [1],
+    rows: [],
+    customRows: null,
+    mode: 'play', // 'play' | 'demo'
+    phase: 'idle', // 'idle' | 'countdown' | 'running' | 'paused'
+
+    // pause bookkeeping
+    pausePrevPhase: '',
+    pauseAtMs: 0,
+
+    countFirstBeatMs: 0,
+    countExec: 0,
+    countSched: 0,
+    methodStartMs: 0,
+
+    schedBeatIndex: 0,
+    execBeatIndex: 0,
+
+    targets: [],
+
+    elapsedMs: 0,
+    runStartPerfMs: 0,
+
+    statsByBell: {},
+    comboCurrentGlobal: 0,
+    comboBestGlobal: 0,
+
+    currentPlay: null, // { playId, began }
+
+    lastRingAtMs: {}, // bell -> ms (intended beat time or actual key time)
+
+    // keybindings
+    keyBindings: {}, // bell -> normalized key name
+    keybindCaptureBell: null,
+
+    // swaps view settings
+    spotlightSwapsView: true,
+    spotlightShowN: true,
+    spotlightShowN1: false,
+    spotlightShowN2: true,
+    notationSwapsOverlay: true,
+    displayLiveBellsOnly: false,
+
+    // mic input
+    micEnabled: false,          // desired toggle state (persisted)
+    micActive: false,           // stream + analyser running
+    micStream: null,
+    micSource: null,
+    micAnalyser: null,
+    micSink: null,
+    micBuf: null,
+    micRms: 0,
+    micDb: -Infinity,
+    micWasAbove: false,
+    micLastFireTimeMs: -1e9,
+    micCooldownMs: 200,
+    micBells: [],
+    micError: '',
+  };
+
+  let audioCtx = null;
+  let bellMasterGain = null;
+  let droneMasterGain = null;
+  let droneCurrent = null;
+  let noiseBuffer = null;
+  let noiseBufferSampleRate = 0;
+
+  // Prompt 6: registry of scheduled bell/tick strike nodes (NOT drone nodes)
+  let scheduledBellNodes = [];
+
+  // Mic v2 threshold (linear RMS)
+  const DEFAULT_MIC_THRESHOLD = 0.06;
+  if (!Number.isFinite(window.micThreshold)) window.micThreshold = DEFAULT_MIC_THRESHOLD;
+
+  function clamp(v, min, max) { return v < min ? min : (v > max ? max : v); }
+  function perfNow() { return performance.now(); }
+
+  function isMobileLikely() {
+    try {
+      return (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || window.innerWidth < 700;
+    } catch (_) {
+      return window.innerWidth < 700;
+    }
+  }
+
+  async function requestWakeLock() {
+    try {
+      if (!navigator.wakeLock || typeof navigator.wakeLock.request !== 'function') return;
+      if (wakeLockSentinel) return;
+      wakeLockSentinel = await navigator.wakeLock.request('screen');
+      try {
+        if (wakeLockSentinel && typeof wakeLockSentinel.addEventListener === 'function') {
+          wakeLockSentinel.addEventListener('release', () => { wakeLockSentinel = null; });
+        }
+      } catch (_) {}
+    } catch (_) {}
+  }
+
+  async function releaseWakeLock() {
+    try {
+      if (wakeLockSentinel) await wakeLockSentinel.release();
+    } catch (_) {}
+    wakeLockSentinel = null;
+  }
+
+  function demoEffectiveHorizonMs() {
+    const bpm = Math.max(1, Number(state.bpm) || 1);
+    const beatMs = 60000 / bpm;
+    let baseHorizonMs;
+    if (document.hidden) {
+      baseHorizonMs = (bpm <= DEMO_LOW_BPM_THRESHOLD) ? DEMO_LOW_BPM_AHEAD_MS : DEMO_HIDDEN_AHEAD_MS;
+    } else {
+      baseHorizonMs = DEMO_VISIBLE_AHEAD_MS;
+    }
+    const capMs = beatMs * DEMO_MAX_AHEAD_STRIKES;
+    return Math.min(baseHorizonMs, capMs);
+  }
+
+  // === Audio ===
+    function ensureAudio() {
+    if (!audioCtx) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      audioCtx = new Ctx();
+
+      // Master gain for bell sounds (global bell volume slider)
+      bellMasterGain = audioCtx.createGain();
+      bellMasterGain.gain.value = clamp((Number(state.bellVolume) || 100) / 100, 0, 1);
+      bellMasterGain.connect(audioCtx.destination);
+
+      // Master gain for the drone (separate from bell volume)
+      droneMasterGain = audioCtx.createGain();
+      droneMasterGain.gain.value = clamp((Number(state.droneVolume) || 50) / 100, 0, 1);
+      droneMasterGain.connect(audioCtx.destination);
+
+      noiseBuffer = null;
+      noiseBufferSampleRate = 0;
+    } else {
+      // Recreate master gains if needed (e.g., after an AudioContext restart)
+      if (!bellMasterGain) {
+        bellMasterGain = audioCtx.createGain();
+        bellMasterGain.gain.value = clamp((Number(state.bellVolume) || 100) / 100, 0, 1);
+        bellMasterGain.connect(audioCtx.destination);
+      }
+      if (!droneMasterGain) {
+        droneMasterGain = audioCtx.createGain();
+        droneMasterGain.gain.value = clamp((Number(state.droneVolume) || 50) / 100, 0, 1);
+        droneMasterGain.connect(audioCtx.destination);
+      }
+    }
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  }
+  function closeAudio() {
+    if (audioCtx) {
+      // Keep the shared AudioContext alive while mic capture, drone, or a demo run is active.
+      if (state.phase !== 'idle' && state.mode === 'demo') return;
+      if (state.micActive) return;
+      if (state.droneType && state.droneType !== 'off') return;
+      try { audioCtx.close(); } catch (_) {}
+      audioCtx = null;
+      bellMasterGain = null;
+      droneMasterGain = null;
+      droneCurrent = null;
+      noiseBuffer = null;
+      noiseBufferSampleRate = 0;
+    }
+  }
+  function msToAudioTime(whenMs) {
+    ensureAudio();
+    const deltaMs = Math.max(0, whenMs - perfNow());
+    return audioCtx.currentTime + deltaMs / 1000;
+  }
+
+  function getBellFrequency(bell) {
+    const i = bell - 1;
+    return state.bellFreq[i] || 440;
+  }
+
+  function playBellAt(bell, whenMs) {
+    ensureAudio();
+    const t = msToAudioTime(whenMs);
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(getBellFrequency(bell), t);
+
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.16, t + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+
+    osc.connect(gain).connect(bellMasterGain || audioCtx.destination);
+    const tStop = t + 0.32;
+    osc.start(t);
+    osc.stop(tStop);
+
+    scheduledBellNodes.push({ osc, gain, startAt: t, stopAt: tStop });
+  }
+
+  function playTickAt(whenMs) {
+    ensureAudio();
+    const t = msToAudioTime(whenMs);
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(1400, t);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.08, t + 0.005);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+    osc.connect(gain).connect(bellMasterGain || audioCtx.destination);
+    const tStop = t + 0.07;
+    osc.start(t);
+    osc.stop(tStop);
+
+    scheduledBellNodes.push({ osc, gain, startAt: t, stopAt: tStop });
+  }
+
+  // Prompt 6: cancel any already-scheduled future bell/tick strikes (keep drone playing)
+  function cancelScheduledBellAudioNow() {
+    if (!scheduledBellNodes.length) return;
+    if (!audioCtx) {
+      scheduledBellNodes.length = 0;
+      return;
+    }
+
+    const now = audioCtx.currentTime;
+    for (let i = 0; i < scheduledBellNodes.length; i++) {
+      const n = scheduledBellNodes[i];
+      if (!n || !n.osc) continue;
+      const stopAt = Number(n.stopAt) || 0;
+      if (stopAt <= now) continue;
+      try {
+        if (n.gain && n.gain.gain) {
+          n.gain.gain.cancelScheduledValues(now);
+          n.gain.gain.setValueAtTime(0.0001, now);
+        }
+      } catch (_) {}
+      try {
+        const startAt = Number(n.startAt) || now;
+        n.osc.stop(Math.max(now + 0.001, startAt + 0.001));
+      } catch (_) {}
+      try { n.osc.disconnect(); } catch (_) {}
+      try { if (n.gain) n.gain.disconnect(); } catch (_) {}
+    }
+    scheduledBellNodes.length = 0;
+  }
+  // === Bell master volume + Drone (background) ===
+  const DRONE_FADE_SEC = 0.12;
+  const DRONE_TONAL_LEVEL = 0.10;
+  const DRONE_NOISE_LEVEL = 0.06;
+
+  function applyBellMasterGain() {
+    if (!audioCtx || !bellMasterGain) return;
+    const g = clamp((Number(state.bellVolume) || 0) / 100, 0, 1);
+    const now = audioCtx.currentTime;
+    try {
+      bellMasterGain.gain.cancelScheduledValues(now);
+      bellMasterGain.gain.setTargetAtTime(g, now, 0.01);
+    } catch (_) {}
+  }
+
+  function applyDroneMasterGain() {
+    if (!audioCtx || !droneMasterGain) return;
+    const g0 = clamp((Number(state.droneVolume) || 0) / 100, 0, 1);
+    const g = state.dronePaused ? 0 : g0;
+    const now = audioCtx.currentTime;
+    try {
+      droneMasterGain.gain.cancelScheduledValues(now);
+      droneMasterGain.gain.setTargetAtTime(g, now, 0.02);
+    } catch (_) {}
+  }
+
+  // Prompt 7: Drone Pause/Unpause (mute/unmute without stopping the drone)
+  function syncDronePauseBtnUI() {
+    if (!dronePauseBtn) return;
+
+    if (state.droneType === 'off') {
+      state.dronePaused = false;
+      dronePauseBtn.classList.add('hidden');
+      dronePauseBtn.disabled = true;
+      dronePauseBtn.textContent = 'Pause Drone';
+      return;
+    }
+
+    dronePauseBtn.classList.remove('hidden');
+    dronePauseBtn.disabled = false;
+    dronePauseBtn.textContent = state.dronePaused ? 'Resume Drone' : 'Pause Drone';
+  }
+
+  function toggleDronePaused() {
+    if (state.droneType === 'off') return;
+
+    const wasPaused = !!state.dronePaused;
+    state.dronePaused = !wasPaused;
+
+    // Safety: if drone type is on but the drone graph doesn't exist, rebuild before resuming.
+    if (!state.dronePaused && state.droneType !== 'off' && !droneCurrent) {
+      try { startDrone(); } catch (_) {}
+    }
+
+    applyDroneMasterGain();
+    syncDronePauseBtnUI();
+  }
+
+  function getScaleDefByKey(key) {
+    return SCALE_LIBRARY.find(s => s.key === key) || SCALE_LIBRARY[0];
+  }
+
+  function getBellRootFrequency() {
+    if (state.scaleKey === 'custom_hz') {
+      let f = parseFloat(state.bellCustomHz);
+      if (!Number.isFinite(f)) f = 440;
+      f = Math.min(Math.max(f, 20), 4000);
+      return f;
+    }
+
+    const def = getScaleDefByKey(state.scaleKey);
+    const rootMidi = noteToMidi(def.root, state.octaveC);
+    return midiToFreq(rootMidi);
+  }
+
+  function getDroneRootFrequency() {
+    if (state.droneScaleKey === 'custom_hz') {
+      let f = parseFloat(state.droneCustomHz);
+      if (!Number.isFinite(f)) f = 440;
+      f = Math.min(Math.max(f, 20), 4000);
+      return f;
+    }
+
+    const def = getScaleDefByKey(state.droneScaleKey);
+    const rootMidi = noteToMidi(def.root, state.droneOctaveC);
+    return midiToFreq(rootMidi);
+  }
+
+  function coerceCustomHz(raw, fallbackHz) {
+    let f = parseFloat(raw);
+    if (!Number.isFinite(f)) f = fallbackHz;
+    return clamp(f, 20, 4000);
+  }
+
+  function syncBellCustomHzUI() {
+    const on = state.scaleKey === 'custom_hz';
+    const f = coerceCustomHz(state.bellCustomHz, 440);
+    state.bellCustomHz = f;
+    if (bellCustomHzInput) {
+      bellCustomHzInput.value = String(f);
+      bellCustomHzInput.disabled = !on;
+    }
+    if (bellCustomHzSlider) {
+      bellCustomHzSlider.value = String(f);
+      bellCustomHzSlider.disabled = !on;
+    }
+  }
+
+  function syncDroneCustomHzUI() {
+    const on = state.droneScaleKey === 'custom_hz';
+    const f = coerceCustomHz(state.droneCustomHz, 440);
+    state.droneCustomHz = f;
+    if (droneCustomHzInput) {
+      droneCustomHzInput.value = String(f);
+      droneCustomHzInput.disabled = !on;
+    }
+    if (droneCustomHzSlider) {
+      droneCustomHzSlider.value = String(f);
+      droneCustomHzSlider.disabled = !on;
+    }
+  }
+
+  function setBellCustomHzFromUI(raw, commit) {
+    const parsed = parseFloat(raw);
+    if (!Number.isFinite(parsed)) {
+      if (!commit) return;
+    }
+    const f = coerceCustomHz(raw, 440);
+    state.bellCustomHz = f;
+    if (bellCustomHzSlider) bellCustomHzSlider.value = String(f);
+    if (commit && bellCustomHzInput) bellCustomHzInput.value = String(f);
+    if (state.scaleKey === 'custom_hz') {
+      rebuildBellFrequencies();
+      onBellTuningChanged();
+    }
+  }
+
+  function setDroneCustomHzFromUI(raw, commit) {
+    const parsed = parseFloat(raw);
+    if (!Number.isFinite(parsed)) {
+      if (!commit) return;
+    }
+    const f = coerceCustomHz(raw, 440);
+    state.droneCustomHz = f;
+    if (droneCustomHzSlider) droneCustomHzSlider.value = String(f);
+    if (commit && droneCustomHzInput) droneCustomHzInput.value = String(f);
+    if (state.droneScaleKey === 'custom_hz' && state.droneType !== 'off') refreshDrone();
+  }
+
+
+  function getNoiseBuffer() {
+    ensureAudio();
+    if (noiseBuffer && noiseBufferSampleRate === audioCtx.sampleRate) return noiseBuffer;
+
+    const seconds = 2.0;
+    const len = Math.max(1, Math.floor(audioCtx.sampleRate * seconds));
+    const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+
+    noiseBuffer = buf;
+    noiseBufferSampleRate = audioCtx.sampleRate;
+    return noiseBuffer;
+  }
+
+  function stopDrone() {
+    if (!droneCurrent) return;
+    const old = droneCurrent;
+    droneCurrent = null;
+
+    if (!audioCtx || !old.groupGain) {
+      try { (old.nodes || []).forEach(n => { try { n.disconnect(); } catch (_) {} }); } catch (_) {}
+      try { old.groupGain && old.groupGain.disconnect(); } catch (_) {}
+      return;
+    }
+
+    const now = audioCtx.currentTime;
+    const fade = DRONE_FADE_SEC;
+    const g = old.groupGain;
+    try {
+      g.gain.cancelScheduledValues(now);
+      const startVal = Math.max(0.0001, g.gain.value || 0.0001);
+      g.gain.setValueAtTime(startVal, now);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + fade);
+    } catch (_) {}
+
+    const stopAt = now + fade + 0.02;
+    (old.nodes || []).forEach(n => {
+      try { if (n && typeof n.stop === 'function') n.stop(stopAt); } catch (_) {}
+    });
+
+    setTimeout(() => {
+      try { (old.nodes || []).forEach(n => { try { n.disconnect(); } catch (_) {} }); } catch (_) {}
+      try { g.disconnect(); } catch (_) {}
+    }, Math.round((fade + 0.08) * 1000));
+  }
+
+  
+
+  function computeDroneSpec(type, f, nyquist) {
+    const MIN_F = 20;
+    const MAX_F = Math.max(MIN_F, nyquist * 0.9);
+    const clampVoiceFreq = (hz) => clamp(hz, MIN_F, MAX_F);
+    const et = (semi) => Math.pow(2, semi / 12);
+
+    function tonal(ratios, weights, detunes, wave, level) {
+      const n = ratios.length;
+      const out = new Array(n);
+      let sumW = 0;
+
+      for (let i = 0; i < n; i++) {
+        const ratio = ratios[i];
+        const rawFreq = f * ratio;
+
+        let w = (weights && weights[i] != null) ? weights[i] : 1;
+        if (!Number.isFinite(w) || w < 0) w = 0;
+
+        // If raw is outside usable range, exclude from normalization
+        if (!Number.isFinite(rawFreq) || rawFreq < MIN_F || rawFreq > MAX_F) w = 0;
+
+        const det = (detunes && detunes[i] != null && Number.isFinite(detunes[i])) ? detunes[i] : 0;
+
+        out[i] = {
+          wave: wave || 'sine',
+          freq: clampVoiceFreq(Number.isFinite(rawFreq) ? rawFreq : f),
+          amp: 0,
+          detune: det,
+          _w: w
+        };
+        sumW += w;
+      }
+
+      if (sumW <= 0) {
+        // Fallback: pick the middle voice
+        const mid = Math.floor(n / 2);
+        out[mid]._w = 1;
+        sumW = 1;
+      }
+
+      for (let i = 0; i < n; i++) {
+        out[i].amp = level * (out[i]._w / sumW);
+        delete out[i]._w;
+      }
+
+      return out;
+    }
+
+    function noiseSpec(opts) {
+      const gain = opts && Number.isFinite(opts.gain) ? opts.gain : DRONE_NOISE_LEVEL;
+      const lpFreq = clampVoiceFreq(f * 2);
+      const lpQ = 0.9;
+
+      const peakOn = !!(opts && opts.peak);
+      const peak = peakOn ? {
+        freq: clampVoiceFreq(f),
+        Q: (opts.peak && Number.isFinite(opts.peak.Q)) ? opts.peak.Q : 4.0,
+        gainDb: (opts.peak && Number.isFinite(opts.peak.gainDb)) ? opts.peak.gainDb : 6
+      } : null;
+
+      return { lpFreq, lpQ, gain, peak };
+    }
+
+    switch (type) {
+      case 'single':
+        return { kind: 'tonal', voices: tonal([1], [1], [0], 'sine', DRONE_TONAL_LEVEL), noise: null };
+
+      case 'octaves':
+        return { kind: 'tonal', voices: tonal([0.5, 1, 2], [0.7, 1.0, 0.7], [0, 0, 0], 'sine', DRONE_TONAL_LEVEL), noise: null };
+
+      case 'root5':
+        return { kind: 'tonal', voices: tonal([1, et(7)], [1.0, 0.85], [0, 0], 'sine', DRONE_TONAL_LEVEL), noise: null };
+
+      case 'fifth':
+        return { kind: 'tonal', voices: tonal([1, et(7), 2], [1, 1, 1], [0, 2, -2], 'sine', DRONE_TONAL_LEVEL), noise: null };
+
+      case 'majtriad':
+        return { kind: 'tonal', voices: tonal([1, et(4), et(7)], [1.0, 0.9, 0.85], [0, 0, 0], 'sine', DRONE_TONAL_LEVEL), noise: null };
+
+      case 'mintriad':
+        return { kind: 'tonal', voices: tonal([1, et(3), et(7)], [1.0, 0.9, 0.85], [0, 0, 0], 'sine', DRONE_TONAL_LEVEL), noise: null };
+
+      case 'seventh':
+        return { kind: 'tonal', voices: tonal([1, et(4), et(7), et(11)], [1, 1, 1, 1], [0, -2, 1, 2], 'sine', DRONE_TONAL_LEVEL), noise: null };
+
+      case 'harm4':
+        return { kind: 'tonal', voices: tonal([1, 2, 3, 4], [1.0, 0.6, 0.4, 0.3], [0, 0, 0, 0], 'sine', DRONE_TONAL_LEVEL), noise: null };
+
+      case 'harm6':
+        return { kind: 'tonal', voices: tonal([1, 2, 3, 4, 5, 6], [1.0, 0.7, 0.5, 0.4, 0.3, 0.25], [0, 0, 0, 0, 0, 0], 'sine', DRONE_TONAL_LEVEL), noise: null };
+
+      case 'oddharm':
+        return { kind: 'tonal', voices: tonal([1, 3, 5, 7], [1.0, 0.7, 0.5, 0.4], [0, 0, 0, 0], 'sine', DRONE_TONAL_LEVEL), noise: null };
+
+      case 'shepard': {
+        const ratios = [];
+        const weights = [];
+        const detunes = [];
+        const sigma = 1.05;
+        for (let k = -3; k <= 3; k++) {
+          ratios.push(Math.pow(2, k));
+          weights.push(Math.exp(-0.5 * (k / sigma) * (k / sigma)));
+        }
+        for (let i = 0; i < ratios.length; i++) detunes.push(i * 1.5 - 4.5);
+        return { kind: 'tonal', voices: tonal(ratios, weights, detunes, 'sine', DRONE_TONAL_LEVEL), noise: null };
+      }
+
+      case 'cluster': {
+        const ratios = [];
+        for (let k = -3; k <= 3; k++) ratios.push(et(k));
+        const weights = [0.35, 0.5, 0.75, 1.0, 0.75, 0.5, 0.35];
+        const detunes = new Array(ratios.length).fill(0);
+        return { kind: 'tonal', voices: tonal(ratios, weights, detunes, 'sine', DRONE_TONAL_LEVEL), noise: null };
+      }
+
+      case 'noise':
+        return { kind: 'noise', voices: [], noise: noiseSpec({ gain: DRONE_NOISE_LEVEL }) };
+
+      case 'resnoise':
+        return { kind: 'noise', voices: [], noise: noiseSpec({ gain: DRONE_NOISE_LEVEL, peak: { Q: 4.0, gainDb: 6 } }) };
+
+      case 'noisetone':
+        return {
+          kind: 'hybrid',
+          voices: tonal([1], [1], [0], 'sine', DRONE_TONAL_LEVEL * 0.25),
+          noise: noiseSpec({ gain: DRONE_NOISE_LEVEL * 0.75 })
+        };
+
+      default:
+        return { kind: 'none', voices: [], noise: null };
+    }
+  }
+
+
+  function startDrone() {
+    if (state.droneType === 'off') { stopDrone(); return; }
+
+    ensureAudio();
+    applyDroneMasterGain();
+
+    // Crossfade old -> new configuration
+    stopDrone();
+
+    const type = state.droneType;
+    const now = audioCtx.currentTime;
+    const nyquist = audioCtx.sampleRate * 0.5;
+    const f = getDroneRootFrequency();
+    const spec = computeDroneSpec(type, f, nyquist);
+
+    const groupGain = audioCtx.createGain();
+    groupGain.gain.setValueAtTime(0.0001, now);
+    groupGain.connect(droneMasterGain || audioCtx.destination);
+
+    const nodes = [groupGain];
+    const voices = [];
+    let noise = null;
+
+    // Tonal voices
+    (spec.voices || []).forEach(v => {
+      const osc = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+
+      osc.type = v.wave || 'sine';
+      try { osc.frequency.setValueAtTime(Math.max(20, v.freq || 20), now); } catch (_) {}
+      try { osc.detune.setValueAtTime(v.detune || 0, now); } catch (_) {}
+      try { g.gain.setValueAtTime(Math.max(0, v.amp || 0), now); } catch (_) {}
+
+      osc.connect(g);
+      g.connect(groupGain);
+      osc.start(now);
+
+      nodes.push(osc, g);
+      voices.push({ osc, gain: g });
+    });
+
+    // Noise path (optional)
+    if (spec.noise) {
+      const src = audioCtx.createBufferSource();
+      src.buffer = getNoiseBuffer();
+      src.loop = true;
+
+      const lp = audioCtx.createBiquadFilter();
+      lp.type = 'lowpass';
+      try { lp.frequency.setValueAtTime(Math.max(20, spec.noise.lpFreq || 20), now); } catch (_) {}
+      try { lp.Q.setValueAtTime(spec.noise.lpQ || 0.9, now); } catch (_) {}
+
+      let tail = lp;
+      let peak = null;
+
+      if (spec.noise.peak) {
+        peak = audioCtx.createBiquadFilter();
+        peak.type = 'peaking';
+        try { peak.frequency.setValueAtTime(Math.max(20, spec.noise.peak.freq || 20), now); } catch (_) {}
+        try { peak.Q.setValueAtTime(spec.noise.peak.Q || 4.0, now); } catch (_) {}
+        try { peak.gain.setValueAtTime(spec.noise.peak.gainDb || 6, now); } catch (_) {}
+        lp.connect(peak);
+        tail = peak;
+      }
+
+      const ng = audioCtx.createGain();
+      try { ng.gain.setValueAtTime(Math.max(0, spec.noise.gain || 0), now); } catch (_) {}
+
+      src.connect(lp);
+      tail.connect(ng);
+      ng.connect(groupGain);
+
+      src.start(now);
+
+      nodes.push(src, lp, ng);
+      if (peak) nodes.push(peak);
+
+      noise = { src, lp, peak, gain: ng };
+    }
+
+    // Fail-safe: unknown type (shouldn't happen)
+    if (spec.kind === 'none') {
+      try { groupGain.disconnect(); } catch (_) {}
+      return;
+    }
+
+    // Fade in
+    try { groupGain.gain.exponentialRampToValueAtTime(1.0, now + DRONE_FADE_SEC); } catch (_) {}
+
+    droneCurrent = { type, groupGain, nodes, voices, noise };
+  }
+
+
+  function refreshDrone() {
+    if (state.droneType === 'off') return;
+
+    // If structure changed, just rebuild
+    if (!droneCurrent || droneCurrent.type !== state.droneType) {
+      startDrone();
+      return;
+    }
+
+    ensureAudio();
+    applyDroneMasterGain();
+
+    const now = audioCtx.currentTime;
+    const t = now + 0.08;
+    const nyquist = audioCtx.sampleRate * 0.5;
+    const f = getDroneRootFrequency();
+    const spec = computeDroneSpec(state.droneType, f, nyquist);
+
+    const cur = droneCurrent;
+    const curVoices = cur.voices || [];
+    const newVoices = spec.voices || [];
+
+    const curHasNoise = !!cur.noise;
+    const newHasNoise = !!spec.noise;
+    const curHasPeak = !!(cur.noise && cur.noise.peak);
+    const newHasPeak = !!(spec.noise && spec.noise.peak);
+
+    if (curVoices.length !== newVoices.length || curHasNoise !== newHasNoise || curHasPeak !== newHasPeak) {
+      startDrone();
+      return;
+    }
+
+    for (let i = 0; i < newVoices.length; i++) {
+      const v = newVoices[i];
+      const cv = curVoices[i];
+      if (!cv || !cv.osc || !cv.gain) continue;
+
+      const newFreq = Math.max(20, v.freq || 20);
+      try {
+        cv.osc.frequency.cancelScheduledValues(now);
+        cv.osc.frequency.exponentialRampToValueAtTime(newFreq, t);
+      } catch (_) {}
+
+      try {
+        cv.osc.detune.cancelScheduledValues(now);
+        cv.osc.detune.linearRampToValueAtTime(v.detune || 0, t);
+      } catch (_) {}
+
+      try {
+        cv.gain.gain.cancelScheduledValues(now);
+        cv.gain.gain.linearRampToValueAtTime(Math.max(0, v.amp || 0), t);
+      } catch (_) {}
+    }
+
+    if (spec.noise && cur.noise) {
+      const n = spec.noise;
+      const cn = cur.noise;
+
+      try {
+        cn.lp.frequency.cancelScheduledValues(now);
+        cn.lp.frequency.exponentialRampToValueAtTime(Math.max(20, n.lpFreq || 20), t);
+      } catch (_) {}
+
+      try {
+        cn.lp.Q.cancelScheduledValues(now);
+        cn.lp.Q.linearRampToValueAtTime(n.lpQ || 0.9, t);
+      } catch (_) {}
+
+      try {
+        cn.gain.gain.cancelScheduledValues(now);
+        cn.gain.gain.linearRampToValueAtTime(Math.max(0, n.gain || 0), t);
+      } catch (_) {}
+
+      if (n.peak && cn.peak) {
+        try {
+          cn.peak.frequency.cancelScheduledValues(now);
+          cn.peak.frequency.exponentialRampToValueAtTime(Math.max(20, n.peak.freq || 20), t);
+        } catch (_) {}
+
+        try {
+          cn.peak.Q.cancelScheduledValues(now);
+          cn.peak.Q.linearRampToValueAtTime(n.peak.Q || 4.0, t);
+        } catch (_) {}
+
+        try {
+          cn.peak.gain.cancelScheduledValues(now);
+          cn.peak.gain.linearRampToValueAtTime(n.peak.gainDb || 6, t);
+        } catch (_) {}
+      }
+    }
+  }
+
+
+  // === Canvas helpers ===
+  function fitCanvas(el, ctx) {
+    const rect = el.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.max(2, Math.floor(rect.width * dpr));
+    const h = Math.max(2, Math.floor(rect.height * dpr));
+    if (el.width !== w || el.height !== h) { el.width = w; el.height = h; }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { W: rect.width, H: rect.height };
+  }
+  function roundRect(ctx, x, y, w, h, r) {
+    const rr = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + rr, y);
+    ctx.arcTo(x + w, y, x + w, y + h, rr);
+    ctx.arcTo(x + w, y + h, x, y + h, rr);
+    ctx.arcTo(x, y + h, x, y, rr);
+    ctx.arcTo(x, y, x + w, y, rr);
+    ctx.closePath();
+  }
+
+  // === Methods ===
+  function applyX(row, stage) {
+    const next = row.slice();
+    for (let i = 0; i < stage - 1; i += 2) { const tmp = next[i]; next[i] = next[i+1]; next[i+1] = tmp; }
+    return next;
+  }
+  function applyY(row, stage) {
+    const next = row.slice();
+    for (let i = 1; i < stage - 1; i += 2) { const tmp = next[i]; next[i] = next[i+1]; next[i+1] = tmp; }
+    return next;
+  }
+  function makePlainHunt(stage, leads) {
+    const rows = [];
+    let current = [];
+    for (let i = 1; i <= stage; i++) current.push(i);
+    rows.push(current.slice());
+    let useX = true;
+    const steps = stage * 2 * leads;
+    for (let i = 0; i < steps; i++) {
+      current = useX ? applyX(current, stage) : applyY(current, stage);
+      rows.push(current.slice());
+      useX = !useX;
+    }
+    return rows;
+  }
+  function rotateRow(row, k) {
+    const n = row.length;
+    const off = ((k % n) + n) % n;
+    return row.slice(off).concat(row.slice(0, off));
+  }
+  function makeLibraryRows(name, stage) {
+    const base = makePlainHunt(stage, 5);
+    if (name === 'plainbob') return base.map((r, i) => rotateRow(r, i % stage));
+    if (name === 'grandsire') return base.map((r, i) => rotateRow(r, (i * 2) % stage));
+    return base;
+  }
+  function parseCustom(text) {
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const rows = [];
+    let stage = null;
+
+    function charToBell(ch) {
+      if (ch >= '1' && ch <= '9') return ch.charCodeAt(0) - '0'.charCodeAt(0);
+      if (ch === '0') return 10;
+      if (ch === 'E' || ch === 'e') return 11;
+      if (ch === 'T' || ch === 't') return 12;
+      return null;
+    }
+
+    for (const line of lines) {
+      if (!/^[1-90EeTt]+$/.test(line)) continue;
+      const nums = line.split('').map(c => charToBell(c)).filter(v => v != null);
+      if (stage == null) stage = nums.length;
+      if (nums.length !== stage) throw new Error('All rows must have the same number of bells.');
+      rows.push(nums);
+    }
+    if (!rows.length) throw new Error('No valid rows found in file.');
+    if (stage < 4 || stage > 12) throw new Error('Unsupported bell count in file.');
+    return { rows, stage };
+  }
+
+  function computeRows() {
+    if (state.method === 'custom' && state.customRows) state.rows = state.customRows.slice();
+    else state.rows = makeLibraryRows(state.method, state.stage);
+  }
+
+
+  function cccbGetElements(root, localName) {
+    if (!root || !localName) return [];
+    if (typeof root.getElementsByTagNameNS === 'function') {
+      try {
+        const els = root.getElementsByTagNameNS('*', localName);
+        if (els && els.length) return els;
+      } catch (_) {}
+    }
+    if (typeof root.getElementsByTagName === 'function') {
+      return root.getElementsByTagName(localName);
+    }
+    return [];
+  }
+
+  function cccbFirstText(root, names) {
+    if (!root) return '';
+    const arr = Array.isArray(names) ? names : [names];
+    for (let i = 0; i < arr.length; i++) {
+      const localName = arr[i];
+      const els = cccbGetElements(root, localName);
+      if (els && els[0] && els[0].textContent != null) {
+        const txt = String(els[0].textContent).trim();
+        if (txt) return txt;
+      }
+    }
+    return '';
+  }
+
+  function cccbFamilyFromFilename(filename) {
+    let name = (filename == null ? '' : String(filename)).trim();
+    if (!name) return '';
+    let lower = name.toLowerCase();
+    if (lower.endsWith('.zip')) {
+      name = name.slice(0, -4);
+      lower = name.toLowerCase();
+    }
+    if (lower.endsWith('.xml')) {
+      name = name.slice(0, -4);
+    }
+    return name;
+  }
+
+  function parseCCCBR(xmlText, filename) {
+    let text = xmlText == null ? '' : String(xmlText);
+    if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+
+    let doc;
+    try {
+      const parser = new DOMParser();
+      doc = parser.parseFromString(text, 'application/xml');
+    } catch (err) {
+      console.error('CCCBR XML parse error', filename, err);
+      alert('Could not parse XML in ' + (filename || 'file') + '.');
+      return 0;
+    }
+
+    if (!doc || !doc.documentElement) {
+      alert('Empty XML document in ' + (filename || 'file') + '.');
+      return 0;
+    }
+
+    const perr = doc.getElementsByTagName('parsererror');
+    if (perr && perr.length) {
+      console.error('CCCBR XML parsererror', filename, perr[0] && perr[0].textContent);
+      alert('Could not parse XML in ' + (filename || 'file') + '.');
+      return 0;
+    }
+
+    const family = cccbFamilyFromFilename(filename);
+    const methodEls = cccbGetElements(doc, 'method');
+    if (!methodEls || !methodEls.length) {
+      alert('No <method> entries found in ' + (filename || 'file') + '.');
+      return 0;
+    }
+
+    let added = 0;
+
+    for (let i = 0; i < methodEls.length; i++) {
+      const mEl = methodEls[i];
+
+      const title = cccbFirstText(mEl, ['title', 'name']) || 'Untitled';
+      const pnRaw = cccbFirstText(mEl, ['pn', 'notation', 'placeNotation']);
+      const lh = cccbFirstText(mEl, ['lh', 'leadHead']);
+
+      let stageText = cccbFirstText(mEl, 'stage');
+      let classText = cccbFirstText(mEl, ['class', 'classification']);
+
+      if (!stageText || !classText) {
+        let cur = mEl.parentElement;
+        while (cur && cur.nodeType === 1) {
+          const props = cccbGetElements(cur, 'properties');
+          for (let j = 0; j < props.length; j++) {
+            const p = props[j];
+            if (p.parentNode !== cur) continue;
+            if (!stageText) {
+              const st = cccbFirstText(p, 'stage');
+              if (st) stageText = st;
+            }
+            if (!classText) {
+              const cl = cccbFirstText(p, ['class', 'classification']);
+              if (cl) classText = cl;
+            }
+          }
+          if (stageText && classText) break;
+          cur = cur.parentElement;
+        }
+      }
+
+      let stageNum = parseInt(stageText, 10);
+      if (!isFinite(stageNum)) continue;
+      stageNum = clamp(stageNum, 1, 16);
+      if (stageNum < 4 || stageNum > 12) continue;
+
+      let pnNorm = pnRaw == null ? '' : String(pnRaw);
+      pnNorm = pnNorm.replace(/;/g, ' ').replace(/\s+/g, ' ').trim();
+      pnNorm = pnNorm.replace(/\s*,\s*/g, ',');
+
+      const methodObj = {
+        title: title,
+        class: classText || '',
+        stage: stageNum,
+        pn: pnNorm,
+        lh: lh || '',
+        family: family
+      };
+
+      RG.methods.push(methodObj);
+      added += 1;
+    }
+
+    if (!added) {
+      alert('No supported 4–12 bell methods found in ' + (filename || 'file') + '.');
+      return 0;
+    }
+
+    refreshMethodList();
+    return added;
+  }
+
+  function cccbParsePnTokens(pn) {
+    if (pn == null) return [];
+    let raw = String(pn);
+    raw = raw.replace(/;/g, ' ').replace(/[\r\n]+/g, ' ').trim();
+    if (!raw) return [];
+    const parts = raw.split(/[.,\s]+/);
+    const tokens = [];
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      if (!part) continue;
+      let buf = '';
+      for (let j = 0; j < part.length; j++) {
+        const ch = part[j];
+        if (ch === 'x' || ch === 'X' || ch === '-') {
+          if (buf) {
+            tokens.push(buf);
+            buf = '';
+          }
+          tokens.push('-');
+        } else if (/[0-9A-Za-z]/.test(ch)) {
+          buf += ch;
+        }
+      }
+      if (buf) tokens.push(buf);
+    }
+    return tokens;
+  }
+
+  function cccbPlacesFromToken(token, stage) {
+    const places = [];
+    if (!token || token === '-') return places;
+    const s = String(token);
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i];
+      let place = null;
+      if (ch >= '1' && ch <= '9') place = ch.charCodeAt(0) - '0'.charCodeAt(0);
+      else if (ch === '0') place = 10;
+      else if (ch === 'E' || ch === 'e') place = 11;
+      else if (ch === 'T' || ch === 't') place = 12;
+      if (place == null) continue;
+      if (stage && place > stage) continue;
+      if (places.indexOf(place) === -1) places.push(place);
+    }
+    places.sort(function(a, b) { return a - b; });
+    return places;
+  }
+
+  function cccbApplyPn(row, stage, token) {
+    const next = row.slice();
+    const n = stage || row.length;
+    if (token === '-') {
+      for (let i = 0; i + 1 < n; i += 2) {
+        const tmp = next[i];
+        next[i] = next[i + 1];
+        next[i + 1] = tmp;
+      }
+      return next;
+    }
+
+    const places = cccbPlacesFromToken(token, n);
+    const placeSet = {};
+    for (let i = 0; i < places.length; i++) placeSet[places[i]] = true;
+
+    let i = 0;
+    while (i < n) {
+      const pos = i + 1;
+      if (placeSet[pos]) {
+        i += 1;
+      } else {
+        const nextPos = pos + 1;
+        if (i + 1 < n && !placeSet[nextPos]) {
+          const tmp = next[i];
+          next[i] = next[i + 1];
+          next[i + 1] = tmp;
+          i += 2;
+        } else {
+          i += 1;
+        }
+      }
+    }
+    return next;
+  }
+
+  function cccbRowsFromPn(stage, pn, leads) {
+    let s = parseInt(stage, 10);
+    if (!isFinite(s) || s <= 1) return null;
+    s = clamp(s, 2, 12);
+    const tokens = cccbParsePnTokens(pn);
+    if (!tokens.length) return null;
+    let leadCount = parseInt(leads, 10);
+    if (!isFinite(leadCount) || leadCount <= 0) leadCount = 5;
+    leadCount = clamp(leadCount, 1, 20);
+
+    const rows = [];
+    let row = [];
+    for (let i = 1; i <= s; i++) row.push(i);
+    rows.push(row.slice());
+
+    for (let l = 0; l < leadCount; l++) {
+      for (let ti = 0; ti < tokens.length; ti++) {
+        const tok = tokens[ti];
+        row = cccbApplyPn(row, s, tok);
+        rows.push(row.slice());
+      }
+    }
+    return rows;
+  }
+
+  async function inflateZipDeflate(data) {
+    const bytes = data instanceof Uint8Array ? data : new Uint8Array(data || 0);
+    if (typeof DecompressionStream === 'undefined') {
+      throw new Error('DecompressionStream not supported');
+    }
+    const types = ['deflate-raw', 'deflate'];
+    let lastErr = null;
+    for (let i = 0; i < types.length; i++) {
+      try {
+        const ds = new DecompressionStream(types[i]);
+        const stream = new Blob([bytes]).stream().pipeThrough(ds);
+        const resp = new Response(stream);
+        const buf = await resp.arrayBuffer();
+        return new Uint8Array(buf);
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+    throw lastErr || new Error('Could not decompress deflate stream');
+  }
+
+  async function parseZipArchive(file) {
+    const name = file && file.name ? String(file.name) : '';
+    let arrayBuffer;
+    try {
+      arrayBuffer = await file.arrayBuffer();
+    } catch (err) {
+      console.error('ZIP read failed', err);
+      alert('Could not read ' + name + ': ' + (err && err.message ? err.message : err));
+      return;
+    }
+
+    const bytes = new Uint8Array(arrayBuffer);
+    const view = new DataView(arrayBuffer);
+    const len = bytes.length;
+    if (len < 22) {
+      alert('Not a valid ZIP archive: ' + name);
+      return;
+    }
+
+    const EOCD_SIG = 0x06054b50;
+    const CEN_SIG = 0x02014b50;
+    const maxComment = 65535;
+    let eocdOffset = -1;
+    const startSearch = Math.max(0, len - 22 - maxComment);
+    for (let i = len - 22; i >= startSearch; i--) {
+      if (view.getUint32(i, true) === EOCD_SIG) {
+        eocdOffset = i;
+        break;
+      }
+    }
+    if (eocdOffset < 0) {
+      alert('Not a valid ZIP archive: ' + name);
+      return;
+    }
+
+    const totalEntries = view.getUint16(eocdOffset + 10, true);
+    const cdSize = view.getUint32(eocdOffset + 12, true);
+    const cdOffset = view.getUint32(eocdOffset + 16, true);
+
+    const entries = [];
+    let ptr = cdOffset;
+    const decoder = new TextDecoder('utf-8');
+
+    for (let i = 0; i < totalEntries && ptr + 46 <= len; i++) {
+      const sig = view.getUint32(ptr, true);
+      if (sig !== CEN_SIG) break;
+
+      const compMethod = view.getUint16(ptr + 10, true);
+      const compSize = view.getUint32(ptr + 20, true);
+      const localOffset = view.getUint32(ptr + 42, true);
+      const fnameLen = view.getUint16(ptr + 28, true);
+      const extraLen = view.getUint16(ptr + 30, true);
+      const commentLen = view.getUint16(ptr + 32, true);
+
+      const nameStart = ptr + 46;
+      const nameEnd = nameStart + fnameLen;
+      if (nameEnd > len) break;
+
+      const fnameBytes = bytes.subarray(nameStart, nameEnd);
+      let fname = '';
+      try {
+        fname = decoder.decode(fnameBytes);
+      } catch (_) {}
+
+      entries.push({ fname: fname, compMethod: compMethod, compSize: compSize, localOffset: localOffset });
+
+      ptr = nameEnd + extraLen + commentLen;
+      if (ptr > cdOffset + cdSize) break;
+    }
+
+    if (!entries.length) {
+      alert('No files found in ' + name);
+      return;
+    }
+
+    let xmlCount = 0;
+    let methodsAddedTotal = 0;
+    let decompressionUnsupported = false;
+
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
+      const fname = entry.fname || '';
+      const lower = fname.toLowerCase();
+
+      if (!lower.endsWith('.xml')) continue;
+      xmlCount += 1;
+
+      try {
+        const localOffset = entry.localOffset;
+        if (localOffset + 30 > len) {
+          console.warn('Local header truncated for', fname);
+          alert('Could not read ' + fname + ' in ' + name + ' (truncated header).');
+          continue;
+        }
+
+        const localSig = view.getUint32(localOffset, true);
+        if (localSig !== 0x04034b50) {
+          console.warn('Bad local header sig for', fname);
+          alert('Could not read ' + fname + ' in ' + name + ' (invalid local header).');
+          continue;
+        }
+
+        const localNameLen = view.getUint16(localOffset + 26, true);
+        const localExtraLen = view.getUint16(localOffset + 28, true);
+        const dataStart = localOffset + 30 + localNameLen + localExtraLen;
+
+        const compSize = entry.compSize;
+        if (dataStart + compSize > len) {
+          console.warn('Data truncated for', fname);
+          alert('Could not read ' + fname + ' in ' + name + ' (truncated data).');
+          continue;
+        }
+
+        const compMethod = entry.compMethod;
+        const compBytes = bytes.subarray(dataStart, dataStart + compSize);
+
+        let plainBytes;
+        if (compMethod === 0) {
+          plainBytes = compBytes;
+        } else if (compMethod === 8) {
+          try {
+            plainBytes = await inflateZipDeflate(compBytes);
+          } catch (err) {
+            const msg = err && err.message ? String(err.message) : String(err);
+            if (msg && msg.toLowerCase().indexOf('decompressionstream not supported') >= 0) {
+              decompressionUnsupported = true;
+              break;
+            } else {
+              console.error('Deflate inflate failed for', fname, err);
+              alert('Could not decompress ' + fname + ' in ' + name + '.');
+              continue;
+            }
+          }
+        } else {
+          console.warn('Skipping entry with unsupported compression method', compMethod);
+          continue;
+        }
+
+        let xmlText = '';
+        try {
+          xmlText = decoder.decode(plainBytes);
+        } catch (err) {
+          console.error('UTF-8 decode failed for', fname, err);
+          alert('Could not decode ' + fname + ' in ' + name + '.');
+          continue;
+        }
+
+        const before = RG.methods.length;
+        parseCCCBR(xmlText, fname);
+        const added = RG.methods.length - before;
+        if (added > 0) methodsAddedTotal += added;
+      } catch (err) {
+        console.error('Error loading ZIP entry', fname, err);
+        alert('Could not load ' + fname + ' in ' + name + ': ' + (err && err.message ? err.message : err));
+      }
+    }
+
+    if (decompressionUnsupported) {
+      alert('This browser cannot open ZIP archives directly. Please unzip "' + name + '" and load the XML file(s) instead.');
+      return;
+    }
+
+    if (!xmlCount) {
+      alert('No XML files found in ' + name + '.');
+      return;
+    }
+
+    if (methodsAddedTotal > 0 && typeof analytics !== 'undefined' && analytics && typeof analytics.track === 'function') {
+      try {
+        analytics.track('cccbr_load', {
+          source: 'zip',
+          methods_added: methodsAddedTotal,
+          filename: cccbFamilyFromFilename(name).slice(0, 80)
+        });
+      } catch (_) {}
+    } else if (xmlCount && methodsAddedTotal === 0) {
+      alert('No supported 4–12 bell methods found in "' + name + '".');
+    }
+  }
+
+  function refreshMethodList() {
+    const lib = document.getElementById('methodLibrary');
+    const list = document.getElementById('methodList');
+    if (!lib || !list) return;
+
+    if (!RG.methods || !RG.methods.length) {
+      lib.classList.add('hidden');
+      list.innerHTML = '';
+      return;
+    }
+
+    lib.classList.remove('hidden');
+    list.innerHTML = '';
+
+    const methods = RG.methods.slice();
+
+    for (let i = 0; i < methods.length; i++) {
+      const m = methods[i];
+      const card = document.createElement('div');
+      card.style.padding = '8px 10px 10px';
+      card.style.borderRadius = '12px';
+      card.style.border = '1px solid rgba(255,255,255,0.14)';
+      card.style.background = 'rgba(255,255,255,0.04)';
+      card.style.display = 'flex';
+      card.style.flexDirection = 'column';
+      card.style.gap = '4px';
+      card.style.minWidth = '180px';
+      card.style.maxWidth = '240px';
+      card.style.fontSize = '13px';
+
+      const titleEl = document.createElement('div');
+      titleEl.style.fontWeight = '700';
+      titleEl.style.marginBottom = '2px';
+      titleEl.textContent = (m.title && String(m.title).trim()) || 'Untitled';
+      card.appendChild(titleEl);
+
+      const metaEl = document.createElement('div');
+      metaEl.style.color = 'rgba(232,238,255,0.80)';
+      const stage = parseInt(m.stage, 10) || 0;
+      const fam = (m.family && String(m.family).trim()) || '';
+      let meta = stage ? (stage + ' bell' + (stage === 1 ? '' : 's')) : '';
+      if (fam) meta = meta ? (meta + ' • ' + fam) : fam;
+      metaEl.textContent = meta;
+      card.appendChild(metaEl);
+
+      if (m.class && String(m.class).trim()) {
+        const clsEl = document.createElement('div');
+        clsEl.style.color = 'rgba(154,162,187,0.92)';
+        clsEl.textContent = String(m.class).trim();
+        card.appendChild(clsEl);
+      }
+
+      const pnText = (m.pn && String(m.pn).trim()) || '';
+      const pnEl = document.createElement('div');
+      pnEl.style.color = 'rgba(232,238,255,0.80)';
+      pnEl.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
+      pnEl.style.fontSize = '12px';
+      pnEl.style.marginTop = '4px';
+      const pnLabel = 'PN: ';
+      if (!pnText) {
+        pnEl.textContent = pnLabel + '(none)';
+      } else {
+        let short = pnText;
+        if (short.length > 64) short = short.slice(0, 61) + '…';
+        pnEl.textContent = pnLabel + short;
+      }
+      card.appendChild(pnEl);
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = 'Demo';
+      btn.style.marginTop = '6px';
+      btn.style.padding = '6px 10px';
+      btn.style.borderRadius = '10px';
+      btn.style.border = '1px solid rgba(255,255,255,0.18)';
+      btn.style.background = 'rgba(255,255,255,0.06)';
+      btn.style.color = '#e8eeff';
+      btn.style.cursor = 'pointer';
+      btn.style.fontWeight = '600';
+      btn.style.fontSize = '12px';
+      btn.style.alignSelf = 'stretch';
+      btn.addEventListener('click', function () {
+        loadCCCBRMethod(i);
+      });
+      card.appendChild(btn);
+
+      list.appendChild(card);
+    }
+  }
+
+  function loadCCCBRMethod(i) {
+    const methods = RG.methods || [];
+    const m = methods[i];
+    if (!m) {
+      alert('Invalid method.');
+      return;
+    }
+
+    if (state.phase !== 'idle') {
+      alert('Stop the current game first.');
+      return;
+    }
+
+    let stage = parseInt(m.stage, 10);
+    if (!isFinite(stage)) stage = 0;
+    stage = clamp(stage, 4, 12);
+    if (stage < 4 || stage > 12) {
+      alert('Only 4–12 bell methods are supported in this game.');
+      return;
+    }
+
+    state.method = 'custom';
+    if (methodSelect) methodSelect.value = 'custom';
+
+
+    // Prompt 5: method source + attribution metadata
+    state.methodSource = 'library';
+    state.methodMeta = {
+      title: m.title || '',
+      family: m.family || '',
+      class: m.class || '',
+      stage: stage,
+      pnPresent: !!(m.pn && String(m.pn).trim())
+    };
+
+    state.stage = stage;
+    if (bellCountSelect) bellCountSelect.value = String(stage);
+
+    let rows = null;
+    if (m.pn && String(m.pn).trim()) {
+      try {
+        rows = cccbRowsFromPn(stage, m.pn, 5);
+      } catch (err) {
+        console.error('cccbRowsFromPn failed', m, err);
+      }
+    }
+    if (!rows || !rows.length) {
+      rows = makePlainHunt(stage, 5);
+    }
+
+    state.customRows = rows.slice();
+    computeRows();
+
+    rebuildLiveCountOptions();
+    ensureLiveBells();
+    rebuildBellPicker();
+    ensurePathBells();
+    rebuildPathPicker();
+    resetStats();
+    rebuildBellFrequencies();
+
+    syncGameHeaderMeta();
+
+    try {
+      if (typeof analytics !== 'undefined' && analytics && typeof analytics.track === 'function') {
+        analytics.track('cccbr_demo_start', {
+          title: m.title || '',
+          stage: stage,
+          family: m.family || '',
+          pn_present: !!(m.pn && String(m.pn).trim())
+        });
+      }
+    } catch (_) {}
+
+    alert('Loaded CCCBR method: ' + (m.title || 'Untitled') + ' (' + stage + ' bells). Starting Demo.');
+    startPressed('demo');
+  }
+  window.loadCCCBRMethod = loadCCCBRMethod;
+
+  function methodLabel() {
+    if (state.method === 'custom') return 'Custom';
+    if (state.method === 'plainhunt') return 'Plain Hunt';
+    if (state.method === 'plainbob') return 'Plain Bob (variation)';
+    if (state.method === 'grandsire') return 'Grandsire (variation)';
+    return state.method;
+  }
+
+  // Prompt 5: in-game header meta sync
+  function syncGameHeaderMeta() {
+    try {
+      if (!gameMetaMethod || !gameMetaSource || !gameMetaAttr || !gameMetaBpm) return;
+
+      // Method name
+      let methodName = '';
+      if (state.methodSource === 'library' && state.methodMeta && state.methodMeta.title) {
+        methodName = String(state.methodMeta.title);
+      } else if (state.method === 'custom') {
+        const fn = state.methodMeta && state.methodMeta.fileName ? String(state.methodMeta.fileName) : '';
+        methodName = fn ? ('Custom rows: ' + shortenForUi(fn, 42)) : 'Custom rows';
+      } else {
+        methodName = methodLabel();
+      }
+
+      // Source tag
+      let src = '(built-in)';
+      if (state.methodSource === 'library') src = '(library)';
+      else if (state.methodSource === 'custom_rows') src = '(custom rows)';
+
+      // Attribution
+      let attr = '';
+      if (state.methodSource === 'library') {
+        const parts = ['CCCBR'];
+        if (state.methodMeta && state.methodMeta.family) parts.push(String(state.methodMeta.family));
+        if (state.methodMeta && state.methodMeta.class) parts.push(String(state.methodMeta.class));
+        attr = parts.filter(Boolean).join(' • ');
+      } else if (state.methodSource === 'custom_rows') {
+        const fn = state.methodMeta && state.methodMeta.fileName ? String(state.methodMeta.fileName) : '';
+        if (fn) attr = shortenForUi(fn, 52);
+      }
+
+      // BPM (idle shows selected tempo, running/countdown shows state.bpm)
+      let bpmVal = state.bpm;
+      if (state.phase === 'idle') {
+        const v = bpmInput ? parseInt(bpmInput.value, 10) : NaN;
+        if (Number.isFinite(v) && v > 0) bpmVal = v;
+      }
+
+      gameMetaMethod.textContent = methodName;
+      gameMetaSource.textContent = src;
+
+      gameMetaAttr.textContent = attr;
+      gameMetaAttr.classList.toggle('hidden', !attr);
+
+      let bpmLine = String(Math.round(bpmVal)) + ' BPM';
+      if (state.phase === 'paused') bpmLine += ' • Paused';
+      gameMetaBpm.textContent = bpmLine;
+    } catch (_) {}
+  }
+
+  function shortenForUi(s, maxLen) {
+    const str = String(s || '').trim();
+    const m = Math.max(10, parseInt(maxLen, 10) || 42);
+    if (str.length <= m) return str;
+    return str.slice(0, m - 1) + '…';
+  }
+
+  // === Scale -> bell frequencies ===
+  function getScaleDef() { return SCALE_LIBRARY.find(s => s.key === state.scaleKey) || SCALE_LIBRARY[0]; }
+
+  function downsampleIntervals(intervals, stage) {
+    if (stage <= 1) return [intervals[0]];
+    const out = [];
+    const last = intervals.length - 1;
+    for (let i = 0; i < stage; i++) {
+      const t = i / (stage - 1);
+      const idx = Math.round(t * last);
+      out.push(intervals[idx]);
+    }
+    out[0] = intervals[0];
+    out[out.length - 1] = intervals[last];
+    return out;
+  }
+
+  function rebuildBellFrequencies() {
+    const def = getScaleDef();
+    const rootFreq = getBellRootFrequency();
+    const intervals = downsampleIntervals(def.intervals, state.stage); // ascending low->high
+    const freq = [];
+    for (let bell = 1; bell <= state.stage; bell++) {
+      const off = intervals[state.stage - bell]; // bell 1 highest
+      freq.push(rootFreq * Math.pow(2, off / 12));
+    }
+    state.bellFreq = freq;
+  }
+
+  function currentTrebleToneLabel() { return getScaleDef().label; }
+  function currentOctaveLabel() { return 'C' + String(state.octaveC); }
+
+  // === Selection ===
+  function ensureLiveBells() {
+    const max = state.liveCount;
+    const chosen = [];
+    for (const b of state.liveBells) {
+      if (b >= 1 && b <= state.stage && !chosen.includes(b)) {
+        chosen.push(b);
+        if (chosen.length >= max) break;
+      }
+    }
+    if (!chosen.length) for (let b = 1; b <= state.stage && chosen.length < max; b++) chosen.push(b);
+    state.liveBells = chosen;
+  }
+
+  function rebuildLiveCountOptions() {
+    liveCountSelect.innerHTML = '';
+    for (let n = 1; n <= state.stage; n++) {
+      const opt = document.createElement('option');
+      opt.value = String(n);
+      opt.textContent = String(n);
+      liveCountSelect.appendChild(opt);
+    }
+    state.liveCount = clamp(state.liveCount, 1, state.stage);
+    liveCountSelect.value = String(state.liveCount);
+  }
+
+  function rebuildBellPicker() {
+    ensureLiveBells();
+    bellPicker.innerHTML = '';
+    for (let b = 1; b <= state.stage; b++) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = String(b);
+      btn.addEventListener('click', () => {
+        if (state.phase !== 'idle') ensureIdleForPlayChange();
+        const max = state.liveCount;
+        const list = state.liveBells.slice();
+        const idx = list.indexOf(b);
+        if (idx >= 0) list.splice(idx, 1);
+        else {
+          if (list.length >= max) {
+            if (max === 1) list.splice(0, 1, b);
+            else return;
+          } else list.push(b);
+        }
+        state.liveBells = list;
+        rebuildBellPicker();
+        resetStats();
+      });
+      if (state.liveBells.includes(b)) btn.classList.add('selected');
+      bellPicker.appendChild(btn);
+    }
+    rebuildKeybindPanel();
+    rebuildMicBellControls();
+    syncMicToggleUI();
+  }
+
+
+  // === Keybindings ===
+  const LS_KEYBINDS = 'rg_keybindings_v1';
+
+  function normalizeBindKey(k) {
+    if (k === ' ') return 'Space';
+    if (k === 'Spacebar') return 'Space';
+    if (!k) return '';
+    if (k.length === 1) return k.toUpperCase();
+    return k;
+  }
+
+  function formatBindKey(k) {
+    const kk = normalizeBindKey(k);
+    return kk ? kk : 'Unbound';
+  }
+
+  function isAllowedBindKey(k) {
+    const kk = normalizeBindKey(k);
+    return (kk.length === 1) || kk === 'Enter' || kk === 'Space';
+  }
+
+  function defaultBindKeyForBell(bell) {
+    if (bell >= 1 && bell <= 9) return String(bell);
+    if (bell === 10) return '0';
+    if (bell === 11) return 'E';
+    if (bell === 12) return 'T';
+    return '';
+  }
+
+  function loadKeyBindings() {
+    state.keyBindings = {};
+    const raw = safeGetLS(LS_KEYBINDS);
+    const parsed = raw ? safeJsonParse(raw) : null;
+    if (parsed && typeof parsed === 'object') {
+      for (const k in parsed) {
+        if (!Object.prototype.hasOwnProperty.call(parsed, k)) continue;
+        const bell = parseInt(k, 10);
+        if (!isFinite(bell)) continue;
+        const val = parsed[k];
+        if (typeof val === 'string') state.keyBindings[bell] = normalizeBindKey(val);
+      }
+    }
+  }
+
+  function saveKeyBindings() {
+    safeSetLS(LS_KEYBINDS, JSON.stringify(state.keyBindings));
+  }
+
+  function ensureKeyBindings() {
+    for (let b = 1; b <= state.stage; b++) {
+      if (!Object.prototype.hasOwnProperty.call(state.keyBindings, b)) {
+        state.keyBindings[b] = defaultBindKeyForBell(b);
+      }
+    }
+  }
+
+  function resetKeyBindingsToDefaults() {
+    for (let b = 1; b <= 12; b++) state.keyBindings[b] = defaultBindKeyForBell(b);
+    saveKeyBindings();
+  }
+
+  function getLiveKeyConflicts() {
+    const live = state.liveBells.slice();
+    const usage = {};
+    for (const b of live) {
+      const k = state.keyBindings[b];
+      if (!k) continue;
+      if (!usage[k]) usage[k] = [];
+      usage[k].push(b);
+    }
+    const conflicts = new Set();
+    for (const k in usage) {
+      if (usage[k].length > 1) usage[k].forEach(b => conflicts.add(b));
+    }
+    return conflicts;
+  }
+
+  function rebuildKeybindPanel() {
+    if (!keybindPanel) return;
+    ensureKeyBindings();
+
+    const live = state.liveBells.slice().sort((a,b)=>a-b);
+    keybindPanel.innerHTML = '';
+
+    if (!live.length) {
+      keybindPanel.textContent = 'No scored bells selected.';
+      if (keybindNote) keybindNote.textContent = '';
+      return;
+    }
+
+    const conflicts = getLiveKeyConflicts();
+
+    live.forEach(b => {
+      const row = document.createElement('div');
+      row.className = 'keybind-row';
+      if (conflicts.has(b)) row.classList.add('conflict');
+      if (state.keybindCaptureBell === b) row.classList.add('capture');
+
+      const bellLabel = document.createElement('span');
+      bellLabel.className = 'keybind-bell';
+      bellLabel.textContent = 'Bell ' + b;
+
+      const keyLabel = document.createElement('span');
+      keyLabel.className = 'keybind-key';
+      keyLabel.textContent = (state.keybindCaptureBell === b) ? 'Press key…' : formatBindKey(state.keyBindings[b]);
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'pill keybind-bind-btn';
+      btn.textContent = (state.keybindCaptureBell === b) ? 'Cancel' : 'Bind key';
+      btn.disabled = state.phase !== 'idle';
+      btn.addEventListener('click', () => {
+        if (state.phase !== 'idle') return;
+        state.keybindCaptureBell = (state.keybindCaptureBell === b) ? null : b;
+        rebuildKeybindPanel();
+      });
+
+      const micBtn = document.createElement('button');
+      micBtn.type = 'button';
+      micBtn.className = 'pill keybind-bind-btn keybind-mic-btn';
+      micBtn.textContent = 'Mic';
+      micBtn.setAttribute('data-mic-bell', String(b));
+      micBtn.title = 'Toggle mic input for this bell';
+      const micOn = (state.micBells || []).includes(b);
+      micBtn.classList.toggle('mic-on', micOn);
+      micBtn.setAttribute('aria-pressed', micOn ? 'true' : 'false');
+      micBtn.setAttribute('aria-label', micOn ? `Mic on for bell ${b}` : `Mic off for bell ${b}`);
+      micBtn.addEventListener('click', () => {
+        const set = new Set(state.micBells || []);
+        if (set.has(b)) set.delete(b);
+        else set.add(b);
+        state.micBells = Array.from(set).sort((x, y) => x - y);
+        rebuildMicBellControls();
+        syncMicToggleUI();
+      });
+
+      row.appendChild(bellLabel);
+      row.appendChild(keyLabel);
+      row.appendChild(btn);
+      row.appendChild(micBtn);
+
+      keybindPanel.appendChild(row);
+    });
+
+    if (keybindResetBtn) keybindResetBtn.disabled = state.phase !== 'idle';
+
+    if (keybindNote) {
+      if (state.keybindCaptureBell != null) {
+        keybindNote.textContent = 'Press a letter/number key, Space, or Enter (Esc to cancel).';
+      } else if (live.length === 1) {
+        keybindNote.textContent = 'Tip: Space and Enter also ring the only scored bell.';
+      } else if (conflicts.size) {
+        keybindNote.textContent = 'Fix conflicts: each key can be bound to only one scored bell.';
+      } else keybindNote.textContent = '';
+    }
+  }
+
+
+  function ensurePathBells() {
+    const keep = [];
+    for (const b of state.pathBells) if (b >= 1 && b <= state.stage && !keep.includes(b)) keep.push(b);
+    state.pathBells = keep;
+  }
+  function updatePathButtons() {
+    const none = state.pathBells.length === 0;
+    const all = state.pathBells.length === state.stage && state.pathBells.every(b => b>=1 && b<=state.stage);
+    pathNoneBtn.classList.toggle('active', none);
+    pathAllBtn.classList.toggle('active', all);
+    syncViewMenuSelectedUI();
+  }
+  function rebuildPathPicker() {
+    ensurePathBells();
+    pathPicker.innerHTML = '';
+    for (let b = 1; b <= state.stage; b++) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = String(b);
+      btn.addEventListener('click', () => {
+        const list = state.pathBells.slice();
+        const idx = list.indexOf(b);
+        if (idx >= 0) list.splice(idx, 1);
+        else list.push(b);
+        state.pathBells = list;
+        rebuildPathPicker();
+      });
+      if (state.pathBells.includes(b)) btn.classList.add('selected');
+      pathPicker.appendChild(btn);
+    }
+    updatePathButtons();
+    markDirty();
+  }
+  function setPathNone() { state.pathBells = []; rebuildPathPicker(); }
+  function setPathAll() { state.pathBells = []; for (let b=1; b<=state.stage; b++) state.pathBells.push(b); rebuildPathPicker(); }
+  function getPathMode() {
+    if (state.pathBells.length === 0) return 'none';
+    if (state.pathBells.length === state.stage) return 'all';
+    return 'custom';
+  }
+
+  // === Layout presets (CSS classes only; no DOM moves) ===
+  function applyLayoutPreset(presetValue) {
+    if (!main) return;
+    const v = String(presetValue || 'auto');
+
+    main.classList.remove('layout-two-col', 'layout-one-wide', 'layout-one-narrow', 'layout-mobile-thumb');
+
+    let cls = '';
+    if (v === 'two_col') cls = 'layout-two-col';
+    else if (v === 'one_wide') cls = 'layout-one-wide';
+    else if (v === 'one_narrow') cls = 'layout-one-narrow';
+    else if (v === 'mobile_thumb') cls = 'layout-mobile-thumb';
+    else {
+      const coarse = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || (window.innerWidth < 700);
+      cls = coarse ? 'layout-mobile-thumb' : 'layout-two-col';
+    }
+
+    if (cls) main.classList.add(cls);
+    markDirty();
+    kickLoop();
+  }
+
+  function syncLayoutPresetUI() {
+    let v = safeGetLS(LS_LAYOUT_PRESET);
+    if (!v) v = 'auto';
+    v = String(v);
+    if (!(v === 'auto' || v === 'two_col' || v === 'one_wide' || v === 'one_narrow' || v === 'mobile_thumb')) v = 'auto';
+
+    if (layoutPresetSelect) layoutPresetSelect.value = v;
+    applyLayoutPreset(v);
+  }
+
+  // v06_p9b_view_menu_selected_states: Selected/on UI for View menu toggles & button groups.
+  // Pure UI: reads existing inputs/state as the source of truth; no new persistence.
+  function syncViewMenuSelectedUI() {
+    const root = document.getElementById('viewMenuControls');
+    if (!root) return;
+
+    // Checkbox/radio toggles styled as pills: reflect checked state on the label.
+    const toggleLabels = root.querySelectorAll('label.toggle');
+    for (const lbl of toggleLabels) {
+      const inp = lbl.querySelector('input[type="checkbox"], input[type="radio"]');
+      if (!inp) continue;
+      lbl.classList.toggle('is-selected', !!inp.checked);
+    }
+
+    // Button-style toggle group(s) within View (e.g., Line: None/All)
+    if (pathNoneBtn) {
+      const on = pathNoneBtn.classList.contains('active');
+      pathNoneBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      pathNoneBtn.classList.toggle('is-selected', on);
+    }
+    if (pathAllBtn) {
+      const on = pathAllBtn.classList.contains('active');
+      pathAllBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      pathAllBtn.classList.toggle('is-selected', on);
+    }
+  }
+
+  // === View layout ===
+  function syncViewLayout() {
+    displayPane.classList.toggle('hidden', !viewDisplay.checked);
+    spotlightPane.classList.toggle('hidden', !viewSpotlight.checked);
+    micPane.classList.toggle('hidden', !viewMic.checked);
+    notationPane.classList.toggle('hidden', !viewNotation.checked);
+    statsPane.classList.toggle('hidden', !viewStats.checked);
+
+    const leftVisible = viewDisplay.checked || viewSpotlight.checked || viewMic.checked;
+    leftStack.classList.toggle('hidden', !leftVisible);
+
+    const rightVisible = viewNotation.checked;
+    main.classList.toggle('onecol', !(leftVisible && rightVisible));
+
+    syncViewMenuSelectedUI();
+    markDirty();
+    if (state.micActive && viewMic.checked) kickLoop();
+  }
+
+
+  // === Mic input (silent scoring) ===
+  function dbToLin(db) { return Math.pow(10, db / 20); }
+  function linToDb(lin) { return lin > 0 ? (20 * Math.log10(lin)) : -Infinity; }
+
+  function setMicUiStatus(msg, isError = false) {
+    if (micStatus) {
+      micStatus.textContent = msg || '';
+      micStatus.style.color = isError ? 'rgba(255, 107, 107, 0.95)' : '';
+    }
+    if (micPaneStatus) {
+      micPaneStatus.textContent = msg || '';
+      micPaneStatus.style.color = isError ? 'rgba(255, 107, 107, 0.95)' : '';
+    }
+  }
+
+  function syncMicToggleUI() {
+    if (!micToggleBtn) return;
+    const on = !!state.micEnabled;
+    micToggleBtn.textContent = on ? 'Mic ON' : 'Mic OFF';
+    micToggleBtn.classList.toggle('mic-on', on);
+    micToggleBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+
+    // status hint
+    if (!on) {
+      setMicUiStatus(state.micError ? state.micError : '', !!state.micError);
+      return;
+    }
+
+    const live = (state.liveBells || []).length;
+    const chosen = getMicControlledBells().length;
+    if (live >= 1 && chosen === 0) {
+      setMicUiStatus('Select mic bell(s) below');
+      return;
+    }
+
+    if (!state.micActive) {
+      // Enabled in UI, but capture requires a gesture.
+      setMicUiStatus(state.micError ? state.micError : 'Click Mic or Start to activate', !!state.micError);
+      return;
+    }
+
+    // Active: only show errors persistently.
+    setMicUiStatus(state.micError ? state.micError : '', !!state.micError);
+  }
+
+  function syncMicSlidersUI() {
+    if (micCooldown) micCooldown.value = String(state.micCooldownMs);
+    if (micCooldownVal) micCooldownVal.textContent = `${Math.round(state.micCooldownMs)} ms`;
+  }
+
+  let micCalibrateTimer = null;
+  let micCalibrating = false;
+
+  function setMicCalibrateStatus(msg, isError = false, autoClearMs = 2500) {
+    if (!micCalibrateStatus) return;
+    micCalibrateStatus.textContent = msg || '';
+    micCalibrateStatus.style.color = isError ? 'rgba(255, 107, 107, 0.95)' : '';
+    if (micCalibrateTimer) {
+      clearTimeout(micCalibrateTimer);
+      micCalibrateTimer = null;
+    }
+    if (msg && autoClearMs > 0) {
+      micCalibrateTimer = setTimeout(() => {
+        if (!micCalibrateStatus) return;
+        micCalibrateStatus.textContent = '';
+        micCalibrateStatus.style.color = '';
+        micCalibrateTimer = null;
+      }, autoClearMs);
+    }
+  }
+
+  function rmsFromByteTimeDomain(bytes) {
+    let sum = 0;
+    for (let i = 0; i < bytes.length; i++) {
+      const v = (bytes[i] - 128) / 128;
+      sum += v * v;
+    }
+    return Math.sqrt(sum / bytes.length);
+  }
+
+  async function calibrateMicThreshold() {
+    if (micCalibrating) return;
+    micCalibrating = true;
+    if (micCalibrateBtn) micCalibrateBtn.disabled = true;
+
+    const durationMs = 1200;
+    const headroom = 1.8;
+
+    let tmpStream = null;
+    let tmpSource = null;
+    let tmpAnalyser = null;
+    let tmpSink = null;
+    let usingExisting = false;
+
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('getUserMedia not supported');
+
+      setMicCalibrateStatus('listening…', false, 0);
+
+      let analyser = null;
+      if (state.micActive && state.micAnalyser) {
+        analyser = state.micAnalyser;
+        usingExisting = true;
+      } else {
+        ensureAudio();
+        try { if (audioCtx && audioCtx.state === 'suspended') await audioCtx.resume(); } catch (_) {}
+
+        tmpStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+          }
+        });
+        tmpSource = audioCtx.createMediaStreamSource(tmpStream);
+        tmpAnalyser = audioCtx.createAnalyser();
+        tmpAnalyser.fftSize = 2048;
+        tmpSink = audioCtx.createMediaStreamDestination();
+        tmpSource.connect(tmpAnalyser);
+        tmpAnalyser.connect(tmpSink);
+        analyser = tmpAnalyser;
+      }
+
+      const buf = new Uint8Array(analyser.fftSize);
+      const samples = [];
+      const startMs = perfNow();
+
+      await new Promise(resolve => {
+        const tick = () => {
+          analyser.getByteTimeDomainData(buf);
+          samples.push(rmsFromByteTimeDomain(buf));
+          if (perfNow() - startMs < durationMs) requestAnimationFrame(tick);
+          else resolve();
+        };
+        tick();
+      });
+
+      if (!samples.length) throw new Error('no samples');
+      samples.sort((a, b) => a - b);
+      const mid = Math.floor(samples.length / 2);
+      const median = (samples.length % 2) ? samples[mid] : (samples[mid - 1] + samples[mid]) / 2;
+
+      const next = clamp(median * headroom, 0.01, 0.25);
+      window.micThreshold = next;
+      safeSetLS(LS_MIC_THRESHOLD, String(next));
+
+      setMicCalibrateStatus(`threshold: ${next.toFixed(3)}`, false, 2500);
+    } catch (err) {
+      console.error('Mic calibration failed', err);
+      const denied = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError');
+      setMicCalibrateStatus(denied ? 'mic denied' : 'calibration failed', true, 2500);
+    } finally {
+      // cleanup
+      try {
+        if (!usingExisting && tmpSource) tmpSource.disconnect();
+      } catch (_) {}
+      try {
+        if (!usingExisting && tmpAnalyser) tmpAnalyser.disconnect();
+      } catch (_) {}
+      if (tmpStream) {
+        try { tmpStream.getTracks().forEach(t => t.stop()); } catch (_) {}
+      }
+
+      if (micCalibrateBtn) micCalibrateBtn.disabled = false;
+      micCalibrating = false;
+    }
+  }
+
+  function parseBellList(s) {
+    if (!s) return [];
+    const out = [];
+    String(s).split(',').forEach(x => {
+      const n = parseInt(String(x).trim(), 10);
+      if (!Number.isFinite(n)) return;
+      if (n < 1 || n > 12) return;
+      out.push(n);
+    });
+    return Array.from(new Set(out)).sort((a, b) => a - b);
+  }
+
+
+  function getMicControlledBells() {
+    const live = (state.liveBells || []).slice().sort((a, b) => a - b);
+    const liveSet = new Set(live);
+    const chosen = (state.micBells || []).filter(b => liveSet.has(b));
+    // dedupe + sort
+    return Array.from(new Set(chosen)).sort((a, b) => a - b);
+  }
+
+  function rebuildMicBellControls() {
+    // Mic v2: per-bell mic toggles live next to "Bind key" in the Keybindings panel.
+    safeSetLS(LS_MIC_BELLS, (state.micBells || []).join(','));
+
+    // Update any visible per-bell Mic buttons without forcing a full rebuild.
+    try {
+      const btns = document.querySelectorAll('[data-mic-bell]');
+      btns.forEach(btn => {
+        const bell = parseInt(btn.getAttribute('data-mic-bell') || '', 10);
+        const on = Number.isFinite(bell) && (state.micBells || []).includes(bell);
+        btn.classList.toggle('mic-on', on);
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+        btn.setAttribute('aria-label', on ? `Mic on for bell ${bell}` : `Mic off for bell ${bell}`);
+      });
+    } catch (_) {}
+  }
+
+
+  function loadMicPrefs() {
+    state.micEnabled = safeGetBoolLS(LS_MIC_ENABLED, false);
+
+    // Mic threshold (linear RMS)
+    let th = parseFloat(safeGetLS(LS_MIC_THRESHOLD) || '');
+    if (!Number.isFinite(th)) {
+      // Migrate legacy dB slider value if present.
+      const oldDb = parseFloat(safeGetLS(OLD_LS_MIC_THRESHOLD_DB) || '');
+      if (Number.isFinite(oldDb)) th = dbToLin(clamp(oldDb, -72, 0));
+    }
+    if (Number.isFinite(th)) window.micThreshold = clamp(th, 0.01, 0.25);
+    else window.micThreshold = DEFAULT_MIC_THRESHOLD;
+
+    // Persist to the new key so it sticks going forward.
+    safeSetLS(LS_MIC_THRESHOLD, String(window.micThreshold));
+
+    const cd = parseFloat(safeGetLS(LS_MIC_COOLDOWN_MS) || '');
+    if (Number.isFinite(cd)) state.micCooldownMs = clamp(cd, 100, 400);
+
+    const bellsRaw = safeGetLS(LS_MIC_BELLS);
+    state.micBells = (bellsRaw == null) ? (state.liveBells || []).slice() : parseBellList(bellsRaw);
+    if (bellsRaw == null) safeSetLS(LS_MIC_BELLS, state.micBells.join(','));
+
+    syncMicSlidersUI();
+    rebuildMicBellControls();
+    syncMicToggleUI();
+  }
+
+
+  function setMicEnabled(on, opts = {}) {
+    const next = !!on;
+    if (next) state.micError = '';
+    state.micEnabled = next;
+    safeSetBoolLS(LS_MIC_ENABLED, next);
+
+    if (!next) {
+      if (!opts.keepError) state.micError = '';
+      stopMicCapture();
+    }
+    syncMicToggleUI();
+  }
+
+  function stopMicCapture() {
+    state.micActive = false;
+
+    try { if (state.micSource) state.micSource.disconnect(); } catch (_) {}
+    try { if (state.micAnalyser) state.micAnalyser.disconnect(); } catch (_) {}
+    try { if (state.micSink) state.micSink.disconnect(); } catch (_) {}
+    state.micSource = null;
+    state.micAnalyser = null;
+    state.micSink = null;
+    state.micBuf = null;
+
+    if (state.micStream) {
+      try { state.micStream.getTracks().forEach(t => t.stop()); } catch (_) {}
+    }
+    state.micStream = null;
+
+    state.micWasAbove = false;
+    if (micMeterFill) micMeterFill.style.width = '0%';
+    if (micDbReadout) micDbReadout.textContent = '–∞ dB';
+
+    // If mic was the only reason we kept audio alive while idle, restore old behavior.
+    if (state.phase === 'idle') closeAudio();
+    markDirty();
+    kickLoop();
+  }
+
+  function startMicCapture() {
+    if (!state.micEnabled || state.micActive) return;
+    if (state.mode === 'demo') { setMicUiStatus('Mic disabled in Demo'); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      state.micError = 'Mic unsupported';
+      setMicEnabled(false, { keepError: true });
+      setMicUiStatus('Mic unsupported', true);
+      return;
+    }
+
+    ensureAudio();
+    setMicUiStatus('Requesting mic…');
+    navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    }).then(stream => {
+      if (!state.micEnabled) { stream.getTracks().forEach(t => t.stop()); return; }
+      state.micStream = stream;
+      state.micSource = audioCtx.createMediaStreamSource(stream);
+
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 2048;
+      analyser.smoothingTimeConstant = 0.2;
+
+      // Keep graph alive without speaker output.
+      const sink = audioCtx.createMediaStreamDestination();
+      state.micAnalyser = analyser;
+      state.micSink = sink;
+
+      state.micSource.connect(analyser);
+      analyser.connect(sink);
+
+      state.micBuf = new Float32Array(analyser.fftSize);
+      state.micActive = true;
+      state.micWasAbove = false;
+      state.micLastFireTimeMs = -1e9;
+
+      setMicUiStatus('');
+      syncMicToggleUI();
+      markDirty();
+      kickLoop();
+    }).catch(err => {
+      const name = err && err.name ? String(err.name) : '';
+      state.micError = (name === 'NotAllowedError' || name === 'SecurityError') ? 'Mic blocked' : 'Mic error';
+      setMicEnabled(false, { keepError: true });
+      setMicUiStatus(state.micError, true);
+    });
+  }
+
+  function updateMicMeter(rms) {
+    const db = linToDb(rms);
+    state.micRms = rms;
+    state.micDb = db;
+
+    if (micDbReadout) micDbReadout.textContent = Number.isFinite(db) ? `${Math.round(db)} dB` : '–∞ dB';
+    if (micMeterFill) {
+      const p = Number.isFinite(db) ? clamp((db + 72) / 72, 0, 1) : 0;
+      micMeterFill.style.width = `${Math.round(p * 100)}%`;
+    }
+  }
+
+  function pickMicTargetInWindow(nowMs) {
+    if (state.phase !== 'running') return null;
+    const bells = getMicControlledBells();
+    if (!bells.length) return null;
+
+    const bellSet = new Set(bells);
+    const beatMs = 60000 / state.bpm;
+    const halfBeat = beatMs / 2;
+
+    let chosen = null;
+    for (const t of state.targets) {
+      if (t.judged) continue;
+      if (!bellSet.has(t.bell)) continue;
+
+      const ws = t.timeMs - halfBeat;
+      const we = t.timeMs + halfBeat;
+      if (nowMs >= ws && nowMs < we) {
+        if (!chosen || t.timeMs < chosen.timeMs || (t.timeMs === chosen.timeMs && t.bell < chosen.bell)) chosen = t;
+      }
+    }
+    return chosen;
+  }
+
+  function registerMicHit(bell, timeMs) {
+    if (state.mode !== 'play') return;
+    // Mic hits are silent: score + visuals only, no bell audio.
+    markRung(bell, timeMs);
+    scoreHit(bell, timeMs);
+  }
+
+  function updateMicAnalysis(nowMs) {
+    if (!state.micActive || !state.micAnalyser || !state.micBuf) return;
+    try { state.micAnalyser.getFloatTimeDomainData(state.micBuf); } catch (_) { return; }
+
+    let sum = 0;
+    const buf = state.micBuf;
+    for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+    const rms = Math.sqrt(sum / buf.length);
+    updateMicMeter(rms);
+
+    const thresholdLin = clamp(Number(window.micThreshold) || DEFAULT_MIC_THRESHOLD, 0.01, 0.25);
+    const above = rms >= thresholdLin;
+    const rising = above && !state.micWasAbove;
+
+    if (rising) {
+      const cdOk = (nowMs - state.micLastFireTimeMs) >= state.micCooldownMs;
+      if (cdOk) {
+        const target = pickMicTargetInWindow(nowMs);
+        if (target) {
+          registerMicHit(target.bell, nowMs);
+          state.micLastFireTimeMs = nowMs;
+        }
+      }
+    }
+    state.micWasAbove = above;
+  }
+
+  // === Visual ring flash ===
+  function markRung(bell, atMs) { state.lastRingAtMs[bell] = atMs; markDirty(); }
+
+  // === Bell ring action (user) ===
+  function ringBell(bell) {
+    const now = perfNow();
+    releaseWakeLock();
+    markRung(bell, now);
+    playBellAt(bell, now);
+    if (state.mode === 'play' && state.phase === 'running') scoreHit(bell, now);
+    if (state.phase === 'idle') kickLoop();
+  }
+
+  // === Stats ===
+  function resetStats() {
+    state.statsByBell = {};
+    for (let b = 1; b <= state.stage; b++) {
+      state.statsByBell[b] = { bell: b, hits: 0, misses: 0, sumAbsDelta: 0, sumSignedDelta: 0, score: 0, comboCurrent: 0, comboBest: 0 };
+    }
+    state.targets.length = 0;
+    state.comboCurrentGlobal = 0;
+    state.comboBestGlobal = 0;
+    markDirty();
+  }
+
+  function getBellForStrikeIndex(i) {
+    const stage = state.stage;
+    const rowIdx = Math.floor(i / stage);
+    const pos = i % stage;
+    const row = state.rows[rowIdx];
+    return row ? row[pos] : 1;
+  }
+
+  function recordTarget(bell, timeMs) {
+    state.targets.push({ bell, timeMs, judged: false, hit: false });
+  }
+
+  function buildAllTargets(beatMs) {
+    state.targets.length = 0;
+    const stage = state.stage;
+    const totalBeats = state.rows.length * stage;
+    for (let i = 0; i < totalBeats; i++) {
+      const bell = getBellForStrikeIndex(i);
+      const tMs = state.methodStartMs + i * beatMs;
+      recordTarget(bell, tMs);
+    }
+  }
+
+  function updateMisses(nowMs) {
+    const live = new Set(state.liveBells);
+    const beatMs = 60000 / state.bpm;
+    const halfBeat = beatMs / 2;
+    let didChange = false;
+    for (const t of state.targets) {
+      if (t.judged) continue;
+      if (nowMs > t.timeMs + halfBeat) {
+        t.judged = true;
+        if (live.has(t.bell)) {
+          const s = state.statsByBell[t.bell];
+          s.misses += 1;
+          s.comboCurrent = 0;
+          state.comboCurrentGlobal = 0;
+          didChange = true;
+        }
+      }
+    }
+    const cutoff = nowMs - 8000;
+    while (state.targets.length && state.targets[0].timeMs < cutoff && state.targets[0].judged) state.targets.shift();
+    if (didChange) markDirty();
+  }
+
+  function finalizePendingAsMisses(nowMs) {
+    state.targets = state.targets.filter(t => t.timeMs <= nowMs);
+    const live = new Set(state.liveBells);
+    for (const t of state.targets) {
+      if (t.judged) continue;
+      t.judged = true;
+      if (live.has(t.bell)) {
+        const s = state.statsByBell[t.bell];
+        s.misses += 1;
+        s.comboCurrent = 0;
+        state.comboCurrentGlobal = 0;
+      }
+    }
+  }
+
+  function scoreHit(bell, timeMs) {
+    if (state.phase !== 'running') return;
+    if (!state.liveBells.includes(bell)) return;
+
+    const beatMs = 60000 / state.bpm;
+    const halfBeat = beatMs / 2;
+
+    // Only the first ring for this bell within the current row counts (hit or miss).
+    const rel = timeMs - (state.methodStartMs - halfBeat);
+    if (rel < 0) return;
+
+    const beatIndex = Math.floor(rel / beatMs);
+    if (beatIndex < 0) return;
+
+    const rowIdx = Math.floor(beatIndex / state.stage);
+    if (rowIdx < 0 || rowIdx >= state.rows.length) return;
+
+    const row = state.rows[rowIdx];
+    if (!row) return;
+
+    const posInRow = row.indexOf(bell);
+    if (posInRow < 0) return;
+
+    const targetTimeMs = state.methodStartMs + (rowIdx * state.stage + posInRow) * beatMs;
+
+    let t = null;
+    let bestAbs = Infinity;
+    for (let i = 0; i < state.targets.length; i++) {
+      const cand = state.targets[i];
+      if (cand.bell !== bell) continue;
+      const abs = Math.abs(cand.timeMs - targetTimeMs);
+      if (abs < bestAbs) { bestAbs = abs; t = cand; }
+    }
+    if (!t) return;
+    if (bestAbs > halfBeat) return; // target already expired/trimmed
+    if (t.judged) return;
+
+    const windowStart = targetTimeMs - halfBeat;
+    const windowEnd = targetTimeMs + halfBeat;
+
+    // Miss if the first ring in the row is outside the bell's own window.
+    if (timeMs < windowStart || timeMs >= windowEnd) {
+      t.judged = true;
+      t.hit = false;
+
+      const s = state.statsByBell[bell];
+      s.misses += 1;
+      s.comboCurrent = 0;
+      state.comboCurrentGlobal = 0;
+      return;
+    }
+
+    // Hit: score within the bell window (middle third = 10, outer thirds = 9).
+    t.judged = true;
+    t.hit = true;
+
+    const deltaMs = timeMs - targetTimeMs;
+    const absDelta = Math.abs(deltaMs);
+    const s = state.statsByBell[bell];
+
+    s.hits += 1;
+    s.sumAbsDelta += absDelta;
+    s.sumSignedDelta += deltaMs;
+
+    const offset = clamp(timeMs - windowStart, 0, beatMs);
+    const third = beatMs / 3;
+    let points = 9;
+    if (offset >= third && offset < 2 * third) points = 10;
+
+    s.score += points;
+
+    s.comboCurrent += 1;
+    if (s.comboCurrent > s.comboBest) s.comboBest = s.comboCurrent;
+
+    state.comboCurrentGlobal += 1;
+    if (state.comboCurrentGlobal > state.comboBestGlobal) state.comboBestGlobal = state.comboCurrentGlobal;
+  }
+
+  function getElapsedSeconds(nowMs) {
+    if (state.phase === 'running') return (state.elapsedMs + (nowMs - state.runStartPerfMs)) / 1000;
+    return state.elapsedMs / 1000;
+  }
+
+  function countdownDisplay(nowMs) {
+    let tNow = nowMs;
+    let phase = state.phase;
+    if (phase === 'paused' && state.pausePrevPhase === 'countdown' && state.pauseAtMs) {
+      phase = 'countdown';
+      tNow = state.pauseAtMs;
+    }
+    if (phase !== 'countdown') return null;
+    const beatMs = 60000 / state.bpm;
+
+    // Before the first count-in beat, show Ready (no sound yet).
+    if (tNow < state.countFirstBeatMs) return 'Ready';
+
+    const k = Math.floor((tNow - state.countFirstBeatMs) / beatMs); // 0-based count-in beat
+    if (k >= 0 && k < state.stage) return String(k + 1);
+    return null;
+  }
+
+  const countOverlay = document.getElementById('countOverlay');
+  function renderCountdownOverlay(nowMs) {
+    if (!countOverlay) return;
+    const cd = countdownDisplay(nowMs);
+    if (!cd) { countOverlay.style.display = 'none'; countOverlay.innerHTML = ''; return; }
+
+    countOverlay.style.display = 'block';
+
+    if (cd === 'Ready') {
+      countOverlay.innerHTML =
+        '<div class="bubble"><div class="num ready">Ready</div><div class="lbl">Count in</div></div>';
+      return;
+    }
+
+    countOverlay.innerHTML =
+      '<div class="bubble"><div class="num">' + cd + '</div><div class="lbl">Count in</div></div>';
+  }
+
+
+  // === Spotlight (cue only; not clickable) ===
+    function drawSpotlight(nowMs) {
+      const { W, H } = fitCanvas(spotlightCanvas, sctx);
+      sctx.clearRect(0, 0, W, H);
+
+      const cd = countdownDisplay(nowMs);
+      if (!state.rows.length) return;
+
+      // countdown badge intentionally omitted (overlay handles count-in)
+
+      const stage = state.stage;
+      const totalBeats = state.rows.length * stage;
+      const strikeIdx = clamp(state.execBeatIndex - 1, 0, Math.max(0, totalBeats - 1));
+      const rowIdx = Math.floor(strikeIdx / stage);
+      const pos = strikeIdx % stage;
+
+      // Default Spotlight (exactly as before)
+      if (!state.spotlightSwapsView) {
+        const currentRow = state.rows[rowIdx] || state.rows[0];
+        const nextRow = state.rows[Math.min(rowIdx + 1, state.rows.length - 1)] || currentRow;
+
+        const padX = 14, padY = 12, gapY = 10;
+        const rowBlockH = (H - padY * 2 - gapY) / 2;
+        const cellW = (W - padX * 2) / stage;
+
+        function drawRow(row, yTop, highlightPos, faded) {
+          sctx.save();
+          sctx.translate(padX, yTop);
+          sctx.fillStyle = faded ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.05)';
+          sctx.strokeStyle = 'rgba(255,255,255,0.08)';
+          roundRect(sctx, 0, 0, W - padX * 2, rowBlockH, 12);
+          sctx.fill(); sctx.stroke();
+
+          const fontSize = Math.max(20, Math.min(34, Math.floor(rowBlockH * 0.58)));
+          sctx.font = fontSize + 'px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
+          sctx.textAlign = 'center';
+          sctx.textBaseline = 'middle';
+
+          for (let i = 0; i < stage; i++) {
+            const x = i * cellW + cellW / 2;
+            const y = rowBlockH / 2;
+            const bell = row[i];
+            const isLive = state.liveBells.includes(bell);
+
+            if (!faded && i === highlightPos) {
+              sctx.fillStyle = (cd === 'Ready') ? 'rgba(232,238,255,0.86)' : '#f9c74f';
+              roundRect(sctx, i * cellW + 4, 6, cellW - 8, rowBlockH - 12, 10);
+              sctx.fill();
+              sctx.fillStyle = '#10162c';
+            } else sctx.fillStyle = isLive ? '#e8eeff' : '#9aa2bb';
+
+            sctx.fillText(String(bell), x, y);
+          }
+          sctx.restore();
+        }
+
+        drawRow(currentRow, padY, pos, false);
+        drawRow(nextRow, padY + rowBlockH + gapY, -1, true);
+        return;
+      }
+
+      // === Swaps View ===
+      const rows = state.rows;
+      const padX = 14, padY = 12;
+      const gapY = 8;
+      const diagramH = 18;
+
+      const show0 = !!state.spotlightShowN;
+      const show1 = !!state.spotlightShowN1 && (rowIdx + 1 < rows.length);
+      const show2 = !!state.spotlightShowN2 && (rowIdx + 2 < rows.length);
+
+      const row0 = rows[rowIdx] || rows[0];
+      const row1 = show1 ? rows[rowIdx + 1] : null;
+      const row2 = show2 ? rows[rowIdx + 2] : null;
+
+      const items = [];
+      if (show0) items.push({ type: 'row', row: row0, highlightPos: pos, faded: false, offset: 0 });
+      if (show0 && show1) items.push({ type: 'diagram', before: row0, after: row1 });
+      if (show1) items.push({ type: 'row', row: row1, highlightPos: -1, faded: true, offset: 1 });
+      if (show1 && show2) items.push({ type: 'diagram', before: row1, after: row2 });
+      if (show2) items.push({ type: 'row', row: row2, highlightPos: -1, faded: true, offset: 2 });
+
+      const rowCount = items.reduce((n, it) => n + (it.type === 'row' ? 1 : 0), 0);
+      if (!rowCount) return;
+
+      // If row N is hidden, avoid a permanently "faded" first row.
+      if (!show0) {
+        for (let i = 0; i < items.length; i++) {
+          if (items[i].type === 'row') { items[i].faded = false; break; }
+        }
+      }
+
+      const diagramCount = items.length - rowCount;
+      const availH = H - padY * 2;
+      const gapsH = Math.max(0, (items.length - 1) * gapY);
+      let rowBlockH = (availH - diagramCount * diagramH - gapsH) / rowCount;
+      if (!isFinite(rowBlockH) || rowBlockH <= 0) rowBlockH = Math.max(34, (availH - diagramCount * diagramH) / rowCount);
+
+      const cellW = (W - padX * 2) / stage;
+      const liveSet = new Set(state.liveBells);
+
+      function drawRowBlock(row, yTop, highlightPos, faded) {
+        sctx.save();
+        sctx.translate(padX, yTop);
+        sctx.fillStyle = faded ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.05)';
+        sctx.strokeStyle = 'rgba(255,255,255,0.08)';
+        roundRect(sctx, 0, 0, W - padX * 2, rowBlockH, 12);
+        sctx.fill(); sctx.stroke();
+
+        let fontSize = Math.max(16, Math.min(34, Math.floor(rowBlockH * 0.58)));
+        if (stage >= 10) {
+          fontSize = Math.min(fontSize, Math.max(12, Math.floor(cellW * 0.82)));
+        }
+        sctx.font = fontSize + 'px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
+        sctx.textAlign = 'center';
+        sctx.textBaseline = 'middle';
+
+        for (let i = 0; i < stage; i++) {
+          const x = i * cellW + cellW / 2;
+          const y = rowBlockH / 2;
+          const bell = row[i];
+          const isLive = liveSet.has(bell);
+
+          if (!faded && i === highlightPos) {
+            sctx.fillStyle = (cd === 'Ready') ? 'rgba(232,238,255,0.86)' : '#f9c74f';
+            roundRect(sctx, i * cellW + 4, 6, cellW - 8, rowBlockH - 12, 10);
+            sctx.fill();
+            sctx.fillStyle = '#10162c';
+          } else sctx.fillStyle = isLive ? '#e8eeff' : '#9aa2bb';
+
+          sctx.fillText(String(bell), x, y);
+        }
+
+        sctx.restore();
+      }
+
+      function drawSwapDiagram(before, after, yTop) {
+        if (!before || !after) return;
+        sctx.save();
+        sctx.translate(padX, yTop);
+
+        const y1 = 2;
+        const y2 = diagramH - 2;
+
+        for (let i = 0; i < stage; i++) {
+          const bell = before[i];
+          const j = after.indexOf(bell);
+          if (j < 0) continue;
+
+          const x1 = i * cellW + cellW / 2;
+          const x2 = j * cellW + cellW / 2;
+          const isLive = liveSet.has(bell);
+
+          sctx.strokeStyle = isLive ? 'rgba(232,238,255,0.60)' : 'rgba(154,162,187,0.20)';
+          sctx.lineWidth = isLive ? 1.5 : 1;
+          sctx.beginPath();
+          sctx.moveTo(x1, y1);
+          sctx.lineTo(x2, y2);
+          sctx.stroke();
+        }
+        sctx.restore();
+      }
+
+      let y = padY;
+      for (let k = 0; k < items.length; k++) {
+        const it = items[k];
+        if (it.type === 'row') {
+          drawRowBlock(it.row, y, it.highlightPos, it.faded);
+          y += rowBlockH;
+        } else {
+          drawSwapDiagram(it.before, it.after, y);
+          y += diagramH;
+        }
+        if (k < items.length - 1) y += gapY;
+      }
+    }
+
+  // === Display (polygon; primary touch control) ===
+  function computeDisplayPoints(W, H) {
+    const cx = W / 2;
+    const cy = H / 2;
+    const r = Math.min(W, H) * 0.34;
+    const pts = [];
+    for (let b = 1; b <= state.stage; b++) {
+      const ang = -Math.PI / 2 + (b - 1) * (2 * Math.PI / state.stage);
+      pts.push({ bell: b, x: cx + Math.cos(ang) * r, y: cy + Math.sin(ang) * r });
+    }
+    return { cx, cy, r, pts };
+  }
+
+
+  function getSortedLiveBells() {
+    return state.liveBells.slice().filter(b => b >= 1 && b <= state.stage).sort((a,b)=>a-b);
+  }
+
+  function computeDisplayLiveOnlyLayout(W, H, bellsSorted) {
+    const padX = 14;
+    const padY = 12;
+    const x0 = padX, y0 = padY;
+    const w0 = W - padX * 2;
+    const h0 = H - padY * 2;
+
+    const n = bellsSorted.length;
+
+    let rows = 1, cols = Math.max(1, n);
+    if (n <= 3) { rows = 1; cols = Math.max(1, n); }
+    else if (n === 4) { rows = 2; cols = 2; }
+    else if (n <= 6) { rows = 2; cols = 3; }
+    else if (n <= 8) { rows = 2; cols = 4; }
+    else {
+      cols = Math.ceil(Math.sqrt(n));
+      rows = Math.ceil(n / cols);
+    }
+
+    const cellW = w0 / cols;
+    const cellH = h0 / rows;
+
+    return { x0, y0, w0, h0, rows, cols, cellW, cellH, bells: bellsSorted };
+  }
+
+  function drawDisplayLiveOnly(nowMs, W, H, bellsSorted) {
+    const layout = computeDisplayLiveOnlyLayout(W, H, bellsSorted);
+    const n = bellsSorted.length;
+    const totalCells = layout.rows * layout.cols;
+
+    let inset = Math.floor(Math.min(layout.cellW, layout.cellH) * 0.08);
+    inset = Math.max(6, Math.min(14, inset));
+    inset = Math.max(4, Math.min(inset, Math.floor(layout.cellW / 2 - 10), Math.floor(layout.cellH / 2 - 10)));
+
+    for (let idx = 0; idx < totalCells; idx++) {
+      const row = Math.floor(idx / layout.cols);
+      const col = idx % layout.cols;
+      const x = layout.x0 + col * layout.cellW;
+      const y = layout.y0 + row * layout.cellH;
+
+      const tx = x + inset;
+      const ty = y + inset;
+      const tw = layout.cellW - inset * 2;
+      const th = layout.cellH - inset * 2;
+      if (tw <= 0 || th <= 0) continue;
+
+      const rr = Math.min(16, tw / 2, th / 2);
+
+      dctx.save();
+      dctx.fillStyle = 'rgba(255,255,255,0.04)';
+      dctx.strokeStyle = 'rgba(255,255,255,0.08)';
+      roundRect(dctx, tx, ty, tw, th, rr);
+      dctx.fill(); dctx.stroke();
+      dctx.restore();
+
+      if (idx >= n) continue;
+
+      const bell = bellsSorted[idx];
+      const cx = x + layout.cellW / 2;
+      const cy = y + layout.cellH / 2;
+
+      const t = state.lastRingAtMs[bell] || -1e9;
+      const age = nowMs - t;
+
+      let glow = 0;
+      if (age >= 0 && age <= 260) glow = 1 - (age / 260);
+      if (age < 0 && age >= -60) glow = 0.25;
+
+      const minDim = Math.max(10, Math.min(tw, th));
+      let ringRadius = minDim * (n === 1 ? 0.42 : 0.36);
+      ringRadius = Math.max(18, Math.min(ringRadius, minDim / 2 - 10));
+      const fontSize = Math.max(16, Math.min(96, Math.floor(ringRadius * 0.9)));
+      const lineW = Math.max(2, Math.min(6, ringRadius * 0.06));
+      const glowExtra = Math.max(6, Math.min(18, ringRadius * 0.18));
+
+      dctx.save();
+      dctx.fillStyle = 'rgba(255,255,255,0.05)';
+      dctx.strokeStyle = 'rgba(249,199,79,0.50)';
+      dctx.lineWidth = lineW;
+      dctx.beginPath();
+      dctx.arc(cx, cy, ringRadius, 0, Math.PI * 2);
+      dctx.fill();
+      dctx.stroke();
+
+      if (glow > 0) {
+        dctx.fillStyle = `rgba(249,199,79,${0.18 + glow * 0.30})`;
+        dctx.beginPath();
+        dctx.arc(cx, cy, ringRadius + glowExtra, 0, Math.PI * 2);
+        dctx.fill();
+      }
+
+      dctx.font = fontSize + 'px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
+      dctx.textAlign = 'center';
+      dctx.textBaseline = 'middle';
+      dctx.fillStyle = glow > 0.2 ? '#10162c' : '#e8eeff';
+      dctx.fillText(String(bell), cx, cy);
+      dctx.restore();
+    }
+  }
+
+
+  function drawDisplay(nowMs) {
+    const { W, H } = fitCanvas(displayCanvas, dctx);
+    dctx.clearRect(0, 0, W, H);
+
+    dctx.save();
+    dctx.fillStyle = 'rgba(255,255,255,0.03)';
+    dctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    roundRect(dctx, 14, 12, W - 28, H - 24, 16);
+    dctx.fill(); dctx.stroke();
+    dctx.restore();
+
+    if (state.displayLiveBellsOnly) {
+      const liveSorted = getSortedLiveBells();
+      if (liveSorted.length) {
+        drawDisplayLiveOnly(nowMs, W, H, liveSorted);
+        return;
+      }
+    }
+
+    const geom = computeDisplayPoints(W, H);
+
+    const ringRadius = Math.max(18, Math.min(34, Math.floor(Math.min(W, H) * 0.06)));
+    let fontSize = Math.max(16, Math.min(26, Math.floor(ringRadius * 0.9)));
+    if (state.stage >= 10) fontSize = Math.max(14, Math.floor(fontSize * 0.85));
+
+    dctx.save();
+    dctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    dctx.setLineDash([4, 6]);
+    dctx.beginPath();
+    geom.pts.forEach((p, i) => { if (i === 0) dctx.moveTo(p.x, p.y); else dctx.lineTo(p.x, p.y); });
+    dctx.closePath();
+    dctx.stroke();
+    dctx.setLineDash([]);
+    dctx.restore();
+
+    for (const p of geom.pts) {
+      const bell = p.bell;
+      const isLive = state.liveBells.includes(bell);
+      const t = state.lastRingAtMs[bell] || -1e9;
+      const age = nowMs - t;
+
+      let glow = 0;
+      if (age >= 0 && age <= 260) glow = 1 - (age / 260);
+      if (age < 0 && age >= -60) glow = 0.25;
+
+      dctx.save();
+      dctx.fillStyle = 'rgba(255,255,255,0.05)';
+      dctx.strokeStyle = isLive ? 'rgba(249,199,79,0.50)' : 'rgba(255,255,255,0.12)';
+      dctx.lineWidth = 2;
+      dctx.beginPath();
+      dctx.arc(p.x, p.y, ringRadius, 0, Math.PI * 2);
+      dctx.fill();
+      dctx.stroke();
+
+      if (glow > 0) {
+        dctx.fillStyle = `rgba(249,199,79,${0.18 + glow * 0.30})`;
+        dctx.beginPath();
+        dctx.arc(p.x, p.y, ringRadius + 6, 0, Math.PI * 2);
+        dctx.fill();
+      }
+
+      dctx.font = fontSize + 'px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
+      dctx.textAlign = 'center';
+      dctx.textBaseline = 'middle';
+      dctx.fillStyle = glow > 0.2 ? '#10162c' : (isLive ? '#e8eeff' : '#9aa2bb');
+      dctx.fillText(String(bell), p.x, p.y);
+      dctx.restore();
+    }
+  }
+
+  function displayHitTest(clientX, clientY) {
+    const rect = displayCanvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    if (x < 0 || y < 0 || x > rect.width || y > rect.height) return null;
+
+    const liveSorted = getSortedLiveBells();
+    if (state.displayLiveBellsOnly && liveSorted.length) {
+      const layout = computeDisplayLiveOnlyLayout(rect.width, rect.height, liveSorted);
+      if (x < layout.x0 || y < layout.y0 || x > layout.x0 + layout.w0 || y > layout.y0 + layout.h0) return null;
+
+      const col = Math.floor((x - layout.x0) / layout.cellW);
+      const row = Math.floor((y - layout.y0) / layout.cellH);
+      if (col < 0 || row < 0 || col >= layout.cols || row >= layout.rows) return null;
+
+      const idx = row * layout.cols + col;
+      return (idx >= 0 && idx < liveSorted.length) ? liveSorted[idx] : null;
+    }
+
+    const geom = computeDisplayPoints(rect.width, rect.height);
+    const ringRadius = Math.max(18, Math.min(34, Math.floor(Math.min(rect.width, rect.height) * 0.06)));
+
+    let best = null;
+    let bestD2 = Infinity;
+    for (const p of geom.pts) {
+      const dx = x - p.x;
+      const dy = y - p.y;
+      const d2 = dx*dx + dy*dy;
+      if (d2 < bestD2) { bestD2 = d2; best = p.bell; }
+    }
+    if (best == null) return null;
+    return bestD2 <= (ringRadius + 10) * (ringRadius + 10) ? best : null;
+  }
+
+  // === Notation ===
+  const PATH_STYLES = [[ ], [8,4], [2,6], [10,4,2,4], [4,4], [1,3], [12,5,3,5]];
+
+  function drawNotation() {
+    const { W, H } = fitCanvas(notationCanvas, nctx);
+    nctx.clearRect(0, 0, W, H);
+    if (!state.rows.length) return;
+
+    const stage = state.stage;
+    const rows = state.rows;
+    const totalBeats = rows.length * stage;
+    const strikeIdx = clamp(state.execBeatIndex - 1, 0, Math.max(0, totalBeats - 1));
+    const activeRowIdx = Math.floor(strikeIdx / stage);
+
+    const pad = 14, gap = 14;
+    const pageW = (W - pad * 2 - gap) / 2;
+    const pageH = H - pad * 2;
+    const titleH = 18;
+
+    const lineH = 24;
+    const fontSize = 20;
+    const usable = pageH - titleH - 18;
+    const pageSize = clamp(Math.floor(usable / lineH), 10, 24);
+
+    const pageStart = Math.floor(activeRowIdx / pageSize) * pageSize;
+    const pageAStart = pageStart;
+    const pageBStart = pageStart + pageSize;
+
+    const bellsForPath = state.pathBells.slice().sort((a,b)=>a-b);
+    const liveSet = new Set(state.liveBells);
+
+    function drawPage(pageStartRow, x0, y0, label, isCurrent) {
+      const w0 = pageW, h0 = pageH;
+      nctx.save();
+      nctx.fillStyle = 'rgba(255,255,255,0.03)';
+      nctx.strokeStyle = 'rgba(255,255,255,0.08)';
+      roundRect(nctx, x0, y0, w0, h0, 16);
+      nctx.fill(); nctx.stroke();
+
+      nctx.font = '11px system-ui, -apple-system, "Segoe UI", sans-serif';
+      nctx.fillStyle = isCurrent ? 'rgba(249,199,79,0.92)' : 'rgba(200,210,235,0.75)';
+      nctx.textAlign = 'left';
+      nctx.textBaseline = 'top';
+      nctx.fillText(label, x0 + 10, y0 + 8);
+
+      const contentTop = y0 + titleH + 12;
+      const contentBottom = y0 + h0 - 12;
+      const contentH = contentBottom - contentTop;
+
+      const maxColW = 60;
+      const baseColW = w0 / stage;
+      const colW = Math.min(baseColW, maxColW);
+      const gridW = colW * stage;
+      const left = x0 + (w0 - gridW) / 2;
+      const rowsToShow = pageSize;
+
+      nctx.strokeStyle = 'rgba(255,255,255,0.06)';
+      nctx.setLineDash([4,5]);
+      for (let j = 0; j <= stage; j++) {
+        const x = left + j * colW;
+        nctx.beginPath(); nctx.moveTo(x, contentTop); nctx.lineTo(x, contentBottom); nctx.stroke();
+      }
+      nctx.setLineDash([]);
+
+      // clip
+      nctx.save();
+      nctx.beginPath();
+      nctx.rect(x0 + 2, contentTop, w0 - 4, contentH);
+      nctx.clip();
+
+
+      // swaps overlay (optional)
+      if (state.notationSwapsOverlay) {
+        nctx.save();
+
+        // non-live swaps (very light)
+        nctx.lineWidth = 1;
+        nctx.strokeStyle = 'rgba(255,255,255,0.06)';
+        nctx.beginPath();
+        for (let i = 0; i < rowsToShow - 1; i++) {
+          const beforeIdx = pageStartRow + i;
+          const afterIdx = beforeIdx + 1;
+          if (afterIdx >= rows.length) break;
+          const before = rows[beforeIdx];
+          const after = rows[afterIdx];
+          const y1 = contentTop + i * lineH + lineH / 2;
+          const y2 = contentTop + (i + 1) * lineH + lineH / 2;
+
+          for (let p = 0; p < stage; p++) {
+            const bell = before[p];
+            if (liveSet.has(bell)) continue;
+            const j = after.indexOf(bell);
+            if (j < 0) continue;
+            const x1 = left + p * colW + colW / 2;
+            const x2 = left + j * colW + colW / 2;
+            nctx.moveTo(x1, y1);
+            nctx.lineTo(x2, y2);
+          }
+        }
+        nctx.stroke();
+
+        // live swaps (slightly stronger tint)
+        nctx.lineWidth = 1.25;
+        nctx.strokeStyle = 'rgba(249,199,79,0.16)';
+        nctx.beginPath();
+        for (let i = 0; i < rowsToShow - 1; i++) {
+          const beforeIdx = pageStartRow + i;
+          const afterIdx = beforeIdx + 1;
+          if (afterIdx >= rows.length) break;
+          const before = rows[beforeIdx];
+          const after = rows[afterIdx];
+          const y1 = contentTop + i * lineH + lineH / 2;
+          const y2 = contentTop + (i + 1) * lineH + lineH / 2;
+
+          for (let p = 0; p < stage; p++) {
+            const bell = before[p];
+            if (!liveSet.has(bell)) continue;
+            const j = after.indexOf(bell);
+            if (j < 0) continue;
+            const x1 = left + p * colW + colW / 2;
+            const x2 = left + j * colW + colW / 2;
+            nctx.moveTo(x1, y1);
+            nctx.lineTo(x2, y2);
+          }
+        }
+        nctx.stroke();
+
+        nctx.restore();
+      }
+
+      // paths terminate per page
+      bellsForPath.forEach((bell, bi) => {
+        nctx.strokeStyle = '#f9c74f';
+        nctx.lineWidth = 2;
+        nctx.setLineDash(PATH_STYLES[bi % PATH_STYLES.length]);
+        let prev = null;
+        for (let i = 0; i < rowsToShow; i++) {
+          const rowIdx = pageStartRow + i;
+          if (rowIdx >= rows.length) break;
+          const row = rows[rowIdx];
+          const pos = row.indexOf(bell);
+          if (pos < 0) continue;
+          const x = left + pos * colW + colW / 2;
+          const y = contentTop + i * lineH + lineH / 2;
+          if (prev) { nctx.beginPath(); nctx.moveTo(prev.x, prev.y); nctx.lineTo(x, y); nctx.stroke(); }
+          prev = { x, y };
+        }
+        nctx.setLineDash([]);
+      });
+
+      // digits
+      let fs = fontSize;
+      if (stage >= 10) fs = Math.min(fs, Math.max(10, Math.floor(colW * 0.85)));
+      nctx.font = fs + 'px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
+      nctx.textAlign = 'center';
+      nctx.textBaseline = 'middle';
+
+      for (let i = 0; i < rowsToShow; i++) {
+        const rowIdx = pageStartRow + i;
+        if (rowIdx >= rows.length) break;
+        const row = rows[rowIdx];
+        const y = contentTop + i * lineH + lineH / 2;
+        const isActive = isCurrent && (rowIdx === activeRowIdx);
+
+        if (isActive) {
+          nctx.fillStyle = 'rgba(249,199,79,0.14)';
+          roundRect(nctx, x0 + 8, y - lineH / 2 + 2, w0 - 16, lineH - 4, 10);
+          nctx.fill();
+        }
+
+        for (let p = 0; p < stage; p++) {
+          const bell = row[p];
+          const isLive = state.liveBells.includes(bell);
+          const x = left + p * colW + colW / 2;
+          nctx.fillStyle = isActive ? (isLive ? '#ffffff' : '#c6cbe0') : (isLive ? '#dde8ff' : '#9aa2bb');
+          nctx.fillText(String(bell), x, y);
+        }
+      }
+
+      nctx.restore();
+      nctx.restore();
+    }
+
+    drawPage(pageAStart, pad, pad, 'CURRENT PAGE', true);
+    drawPage(pageBStart, pad + pageW + gap, pad, 'NEXT PAGE', false);
+  }
+
+  // === Stats render (Mean Δ only + scale/octave) ===
+  function fmtMs(ms, signed) {
+    if (ms == null || isNaN(ms)) return '&ndash;';
+    const v = Math.round(ms);
+    if (signed) {
+      if (v === 0) return '0';
+      const sign = v > 0 ? '+' : '−';
+      return sign + Math.abs(v);
+    }
+    return String(v);
+  }
+
+  function getPRCombo() {
+    const t = analytics.totals || analytics.refreshTotals();
+    return Number((t && t.pr_combo_global) || 0);
+  }
+
+  function renderStats(nowMs) {
+    if (!viewStats.checked) return;
+    if (state.mode === 'demo') {
+      const rowsTotal = state.rows ? state.rows.length : 0;
+      const rowsDone = rowsTotal ? Math.min(Math.floor(state.execBeatIndex / state.stage), rowsTotal) : 0;
+      const elapsed = getElapsedSeconds(nowMs);
+      statsDiv.innerHTML = `
+        <div class="summary">
+          <div><span>Rows:</span> ${rowsDone}/${rowsTotal}</div>
+          <div><span>Time:</span> ${elapsed.toFixed(1)} s</div>
+          <div><span>Mode:</span> Demo</div>
+          <div><span>Scoring:</span> Disabled</div>
+        </div>
+        <div class="stats-info">
+          Demo mode – all bells ring automatically according to the method.
+          You can still ring bells via keyboard or display for musical expression,
+          but hits/misses are not tracked.
+        </div>
+      `;
+      return;
+    }
+    const live = state.liveBells.slice().sort((a,b)=>a-b);
+    if (!live.length) { statsDiv.textContent = 'No scored bells selected.'; return; }
+
+    let totalHits = 0, totalMisses = 0, sumAbs = 0, sumSigned = 0, scoreTotal = 0;
+    live.forEach(b => {
+      const s = state.statsByBell[b];
+      totalHits += s.hits;
+      totalMisses += s.misses;
+      sumAbs += s.sumAbsDelta;
+      sumSigned += s.sumSignedDelta;
+      scoreTotal += s.score;
+    });
+
+    const totalTargets = totalHits + totalMisses;
+    const rowsCompleted = Math.min(Math.floor(state.execBeatIndex / state.stage), state.rows.length);
+    const totalRows = state.rows.length;
+
+    const accOverall = totalTargets > 0 ? (totalHits / totalTargets) * 100 : null;
+    const meanSignedOverall = totalHits > 0 ? Math.round(sumSigned / totalHits) : null;
+    const elapsed = getElapsedSeconds(nowMs);
+    let html = '';
+    html += '<div class="summary">';
+    html += 'Rows: ' + rowsCompleted + ' / ' + totalRows + ' &nbsp; ';
+    html += 'Acc%: ' + (accOverall == null ? '&ndash;' : accOverall.toFixed(0)) + ' &nbsp; ';
+    html += 'Combo: ' + state.comboCurrentGlobal + ' (best ' + state.comboBestGlobal + ') &nbsp; ';
+    html += 'Mean Δ: ' + (meanSignedOverall == null ? '&ndash;' : fmtMs(meanSignedOverall, true) + ' ms') + ' &nbsp; ';
+    html += 'Score: ' + Math.round(scoreTotal) + ' &nbsp; ';
+    html += 'Time: ' + elapsed.toFixed(1) + ' s';
+    html += '</div>';
+
+    html += '<table><thead><tr>';
+    html += '<th>Bell</th><th>Targets</th><th>Hits</th><th>Misses</th><th>Acc%</th><th>Cur combo</th><th>Best combo</th><th>Mean Δ</th><th>Score</th>';
+    html += '</tr></thead><tbody>';
+
+    live.forEach(bell => {
+      const s = state.statsByBell[bell];
+      const targets = s.hits + s.misses;
+      const acc = targets > 0 ? (s.hits / targets) * 100 : null;
+      const meanSigned = s.hits > 0 ? Math.round(s.sumSignedDelta / s.hits) : null;
+
+      html += '<tr>';
+      html += '<td>' + bell + '</td>';
+      html += '<td>' + targets + '</td>';
+      html += '<td>' + s.hits + '</td>';
+      html += '<td>' + s.misses + '</td>';
+      html += '<td>' + (acc == null ? '&ndash;' : acc.toFixed(0)) + '</td>';
+      html += '<td>' + s.comboCurrent + '</td>';
+      html += '<td>' + s.comboBest + '</td>';
+      html += '<td>' + fmtMs(meanSigned, true) + '</td>';
+      html += '<td>' + Math.round(s.score) + '</td>';
+      html += '</tr>';
+    });
+
+    html += '</tbody></table>';
+
+    html += '<div class="stats-info">';
+    html += 'Scoring: each row is divided into ' + state.stage + ' bell windows. ';
+    html += 'For each scored bell and row, you get one scoring chance. ';
+    html += 'Within a bell window, hits in the middle third earn 10 points, ';
+    html += 'hits in either outer third earn 9 points. ';
+    html += 'If your first ring for that bell in the row is outside its window, it scores 0. Extra rings still sound but only the first ring for a bell in a row counts for scoring. ';
+    html += 'Δ is the signed timing error relative to the beat (negative = early, positive = late).';
+    html += '</div>';
+
+    statsDiv.innerHTML = html;
+  }
+
+  // === Engine start/stop + analytics ===
+  function startPressed(mode) {
+    if (!state.rows.length) { alert('No rows loaded.'); return; }
+    if (state.phase !== 'idle') return;
+    state.mode = (mode === 'demo') ? 'demo' : 'play';
+    requestWakeLock();
+
+    state.keybindCaptureBell = null;
+    rebuildKeybindPanel();
+
+    const playId = rid('p_');
+    state.currentPlay = { playId, began: false, mode: state.mode };
+
+    const tempoBpm = clamp(parseInt(bpmInput.value, 10) || 80, 1, 240);
+    state.bpm = tempoBpm;
+    bpmInput.value = String(state.bpm);
+    syncGameHeaderMeta();
+    const beatMs = 60000 / state.bpm;
+
+    const pathMode = getPathMode();
+    const pathBellsStr = (pathMode === 'custom')
+      ? state.pathBells.slice().sort((a,b)=>a-b).join(',')
+      : (pathMode === 'all')
+        ? Array.from({length: state.stage}, (_,i)=>i+1).join(',')
+        : '';
+
+    analytics.track('play_start', {
+      play_id: playId,
+      session_id: analytics.sessionId,
+      method: state.method,
+      method_label: methodLabel(),
+      stage: state.stage,
+      live_count: state.liveCount,
+      live_bells: state.liveBells.slice().sort((a,b)=>a-b).join(','),
+      tempo_bpm: tempoBpm,
+      hit_window_ms: Math.round(beatMs / 2),
+      view_display: viewDisplay.checked ? 1 : 0,
+      view_spotlight: viewSpotlight.checked ? 1 : 0,
+      view_notation: viewNotation.checked ? 1 : 0,
+      view_stats: viewStats.checked ? 1 : 0,
+      path_mode: pathMode,
+      path_bells: pathMode === 'none' ? '' : pathBellsStr,
+      treble_tone: currentTrebleToneLabel(),
+      octave: currentOctaveLabel(),
+      bell_root_type: state.scaleKey === 'custom_hz' ? 'custom' : 'scale',
+      bell_custom_hz: state.scaleKey === 'custom_hz' ? getBellRootFrequency() : null,
+      drone_root_type: state.droneScaleKey === 'custom_hz' ? 'custom' : 'scale',
+      drone_custom_hz: state.droneScaleKey === 'custom_hz' ? getDroneRootFrequency() : null
+    });
+
+    if (state.mode === 'demo') stopMicCapture();
+    ensureAudio();
+    if (state.mode === 'play' && state.micEnabled && !state.micActive && getMicControlledBells().length) startMicCapture();
+
+    const now = perfNow();
+
+    state.phase = 'countdown';
+    state.pausePrevPhase = '';
+    state.pauseAtMs = 0;
+    state.elapsedMs = 0;
+    state.runStartPerfMs = 0;
+    state.schedBeatIndex = 0;
+    state.execBeatIndex = 0;
+    state.targets.length = 0;
+    resetStats();
+
+    state.countFirstBeatMs = now + beatMs;
+    state.countExec = 0;
+    state.countSched = 0;
+    state.countdownBeats = state.stage; // rounds: 1..stage
+    state.methodStartMs = state.countFirstBeatMs + state.countdownBeats * beatMs;
+
+    // Build all scoring targets upfront for row-based scoring.
+    if (state.mode === 'play') buildAllTargets(beatMs);
+
+    startBtn.disabled = true;
+    if (pauseBtn) {
+      pauseBtn.textContent = 'Pause';
+      pauseBtn.disabled = false;
+    }
+    stopBtn.disabled = false;
+    if (demoBtn) demoBtn.disabled = true;
+    markDirty();
+    kickLoop();
+  }
+
+  function buildPlayEndPayload(nowMs, endReason) {
+    updateMisses(nowMs);
+    finalizePendingAsMisses(nowMs);
+
+    const live = state.liveBells.slice().sort((a,b)=>a-b);
+    let totalHits = 0, totalMisses = 0, sumAbs = 0, sumSigned = 0, scoreTotal = 0;
+
+    for (const b of live) {
+      const s = state.statsByBell[b];
+      totalHits += s.hits;
+      totalMisses += s.misses;
+      sumAbs += s.sumAbsDelta;
+      sumSigned += s.sumSignedDelta;
+      scoreTotal += s.score;
+    }
+    const totalTargets = totalHits + totalMisses;
+    const accuracyPct = totalTargets > 0 ? (totalHits / totalTargets) * 100 : 0;
+
+    const meanAbs = totalHits > 0 ? Math.round(sumAbs / totalHits) : 0;
+    const meanSigned = totalHits > 0 ? Math.round(sumSigned / totalHits) : 0;
+
+    const totalBeats = state.rows.length * state.stage;
+    const beatsExecuted = clamp(state.execBeatIndex, 0, totalBeats);
+    const rowsCompleted = Math.min(Math.floor(beatsExecuted / state.stage), state.rows.length);
+
+    const durationMs = Math.max(0, Math.round(state.elapsedMs));
+
+    const parts = [];
+    for (const b of live) {
+      const s = state.statsByBell[b];
+      const targets = s.hits + s.misses;
+      const ma = s.hits > 0 ? Math.round(s.sumAbsDelta / s.hits) : 0;
+      const ms = s.hits > 0 ? Math.round(s.sumSignedDelta / s.hits) : 0;
+      const msStr = (ms > 0 ? '+' + ms : (ms < 0 ? '' + ms : '0'));
+      parts.push('b' + b +
+        ':h' + s.hits +
+        'm' + s.misses +
+        't' + targets +
+        's' + Math.round(s.score) +
+        'ma' + ma +
+        'ms' + msStr +
+        'cb' + s.comboBest
+      );
+    }
+
+    return {
+      play_id: state.currentPlay ? state.currentPlay.playId : '',
+      session_id: analytics.sessionId,
+      end_reason: endReason,
+      duration_ms: durationMs,
+      rows_completed: rowsCompleted,
+      total_targets: totalTargets,
+      total_hits: totalHits,
+      total_misses: totalMisses,
+      accuracy_pct: Math.round(accuracyPct * 10) / 10,
+      mean_abs_delta_ms: meanAbs,
+      mean_signed_delta_ms: meanSigned,
+      score_total: Math.round(scoreTotal),
+      combo_best_global: state.comboBestGlobal,
+      bell_stats: parts.join('|'),
+      treble_tone: currentTrebleToneLabel(),
+      octave: currentOctaveLabel(),
+      bell_root_type: state.scaleKey === 'custom_hz' ? 'custom' : 'scale',
+      bell_custom_hz: state.scaleKey === 'custom_hz' ? getBellRootFrequency() : null,
+      drone_root_type: state.droneScaleKey === 'custom_hz' ? 'custom' : 'scale',
+      drone_custom_hz: state.droneScaleKey === 'custom_hz' ? getDroneRootFrequency() : null
+    };
+  }
+
+  function updateVisitorTotals(playEndPayload) {
+    const t = analytics.totals;
+    t.plays_total += 1;
+    t.seconds_total += Math.round((playEndPayload.duration_ms || 0) / 1000);
+    t.targets_total += Number(playEndPayload.total_targets || 0);
+    t.hits_total += Number(playEndPayload.total_hits || 0);
+    t.misses_total += Number(playEndPayload.total_misses || 0);
+    t.score_total += Number(playEndPayload.score_total || 0);
+
+    const combo = Number(playEndPayload.combo_best_global || 0);
+    if (combo > t.pr_combo_global) t.pr_combo_global = combo;
+
+    analytics.saveTotals();
+    analytics.setUserProps({
+      plays_total: t.plays_total,
+      seconds_total: t.seconds_total,
+      targets_total: t.targets_total,
+      hits_total: t.hits_total,
+      misses_total: t.misses_total,
+      score_total: t.score_total,
+      pr_combo_global: t.pr_combo_global
+    });
+  }
+
+  function stopPressed(endReason) {
+    const now = perfNow();
+    if (state.phase === 'running') state.elapsedMs += (now - state.runStartPerfMs);
+
+    // Stop any already-scheduled future bell/tick strikes immediately.
+    // (Important when the AudioContext stays alive for the drone / mic, especially in Demo where we may schedule far ahead.)
+    cancelScheduledBellAudioNow();
+
+    const hadPlay = !!state.currentPlay;
+    const runMode = (state.currentPlay && state.currentPlay.mode) || state.mode;
+
+    state.phase = 'idle';
+    state.pausePrevPhase = '';
+    state.pauseAtMs = 0;
+    if (pauseBtn) {
+      pauseBtn.textContent = 'Pause';
+      pauseBtn.disabled = true;
+    }
+    scheduledBellNodes.length = 0;
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+    if (demoBtn) demoBtn.disabled = false;
+
+    if (hadPlay) {
+      const payload = buildPlayEndPayload(now, endReason);
+      payload.mode = runMode;
+      analytics.track('play_end', payload);
+      if (runMode === 'play') updateVisitorTotals(payload);
+      state.currentPlay = null;
+    }
+
+    closeAudio();
+    state.mode = 'play';
+    syncGameHeaderMeta();
+    markDirty();
+  }
+
+  // Prompt 6: pause/resume (does not pause the AudioContext; drone continues)
+  function togglePause() {
+    if (state.phase === 'paused') {
+      const nowMs = perfNow();
+      const pausedDurMs = Math.max(0, nowMs - (state.pauseAtMs || nowMs));
+      const prev = (state.pausePrevPhase === 'countdown' || state.pausePrevPhase === 'running') ? state.pausePrevPhase : 'running';
+
+      state.phase = prev;
+      state.methodStartMs += pausedDurMs;
+
+      if (prev === 'countdown') {
+        state.countFirstBeatMs += pausedDurMs;
+        state.countSched = state.countExec;
+      } else {
+        state.runStartPerfMs = nowMs;
+        state.schedBeatIndex = state.execBeatIndex;
+      }
+
+      // Shift unjudged scoring targets only (play mode)
+      if (state.mode === 'play' && Array.isArray(state.targets) && pausedDurMs > 0) {
+        for (let i = 0; i < state.targets.length; i++) {
+          const t = state.targets[i];
+          if (t && !t.judged) t.timeMs += pausedDurMs;
+        }
+      }
+
+      state.pausePrevPhase = '';
+      state.pauseAtMs = 0;
+      if (pauseBtn) pauseBtn.textContent = 'Pause';
+
+      syncGameHeaderMeta();
+      markDirty();
+      kickLoop();
+      return;
+    }
+
+    if (state.phase !== 'countdown' && state.phase !== 'running') return;
+    const nowMs = perfNow();
+
+    state.pausePrevPhase = state.phase;
+    state.pauseAtMs = nowMs;
+    if (state.phase === 'running') {
+      state.elapsedMs += (nowMs - state.runStartPerfMs);
+    }
+
+    state.phase = 'paused';
+
+    // Stop auto-ringing immediately by canceling already-scheduled future strikes.
+    cancelScheduledBellAudioNow();
+
+    // Align sched pointers so Resume can reschedule cleanly.
+    state.schedBeatIndex = state.execBeatIndex;
+    state.countSched = state.countExec;
+
+    if (pauseBtn) {
+      pauseBtn.textContent = 'Resume';
+      pauseBtn.disabled = false;
+    }
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
+    if (demoBtn) demoBtn.disabled = true;
+
+    syncGameHeaderMeta();
+    markDirty();
+    kickLoop();
+  }
+
+  function resyncDemoToNow(nowMs) {
+    if (state.mode !== 'demo') return;
+    if (state.phase === 'idle') return;
+    if (state.phase === 'paused') return;
+
+    const beatMs = 60000 / state.bpm;
+    const totalBeats = (state.rows && state.rows.length ? state.rows.length * state.stage : 0);
+    if (!totalBeats) return;
+
+    if (nowMs >= state.methodStartMs) {
+      if (state.phase !== 'running') {
+        state.phase = 'running';
+        state.runStartPerfMs = state.methodStartMs;
+
+        if (state.currentPlay && !state.currentPlay.began) {
+          state.currentPlay.began = true;
+          analytics.track('play_begin', {
+            mode: state.mode,
+            play_id: state.currentPlay.playId,
+            session_id: analytics.sessionId,
+            tempo_bpm: state.bpm,
+            treble_tone: currentTrebleToneLabel(),
+            octave: currentOctaveLabel(),
+            bell_root_type: state.scaleKey === 'custom_hz' ? 'custom' : 'scale',
+            bell_custom_hz: state.scaleKey === 'custom_hz' ? getBellRootFrequency() : null,
+            drone_root_type: state.droneScaleKey === 'custom_hz' ? 'custom' : 'scale',
+            drone_custom_hz: state.droneScaleKey === 'custom_hz' ? getDroneRootFrequency() : null
+          });
+        }
+      }
+
+      let elapsedBeats = Math.floor((nowMs - state.methodStartMs) / beatMs) + 1;
+      if (!Number.isFinite(elapsedBeats)) elapsedBeats = 0;
+      elapsedBeats = clamp(elapsedBeats, 0, totalBeats);
+
+      state.execBeatIndex = elapsedBeats;
+      state.schedBeatIndex = Math.max(state.schedBeatIndex, state.execBeatIndex);
+
+      if (state.execBeatIndex > 0) {
+        const lastStrike = clamp(state.execBeatIndex - 1, 0, Math.max(0, totalBeats - 1));
+        const bell = getBellForStrikeIndex(lastStrike);
+        const tMs = state.methodStartMs + lastStrike * beatMs;
+        markRung(bell, tMs);
+      }
+
+      if (state.execBeatIndex >= totalBeats) {
+        stopPressed('completed');
+        return;
+      }
+    }
+  }
+
+
+    function scheduleCountdown(nowMs) {
+    if (state.phase === 'paused') return;
+    if (state.phase !== 'countdown') return;
+    const beatMs = 60000 / state.bpm;
+    const total = state.countdownBeats || state.stage;
+
+    const isDemo = state.mode === 'demo';
+    const horizonMs = isDemo ? demoEffectiveHorizonMs() : Math.max(LOOKAHEAD_MS, getMaintenanceIntervalMs());
+    let schedThisPass = 0;
+
+    // Rounds: ring 1..stage on each beat.
+    while (state.countSched < total) {
+      const tMs = state.countFirstBeatMs + state.countSched * beatMs;
+      if (tMs <= nowMs + horizonMs && (!isDemo || schedThisPass < DEMO_SCHED_MAX_PER_PASS)) {
+        const bell = (state.countSched % state.stage) + 1; // 1..stage
+        playBellAt(bell, tMs);
+        state.countSched += 1;
+        if (isDemo) schedThisPass += 1;
+      } else break;
+    }
+
+    // Do not advance demo visuals/state while hidden (we resync on return).
+    if (isDemo && document.hidden) return;
+
+    while (state.countExec < total) {
+      const tMs = state.countFirstBeatMs + state.countExec * beatMs;
+      if (nowMs >= tMs) state.countExec += 1; else break;
+    }
+
+    if (state.countExec >= total && nowMs >= state.methodStartMs) {
+      state.phase = 'running';
+      state.runStartPerfMs = state.methodStartMs;
+
+      if (state.currentPlay && !state.currentPlay.began) {
+        state.currentPlay.began = true;
+        analytics.track('play_begin', {
+          mode: state.mode,
+          play_id: state.currentPlay.playId,
+          session_id: analytics.sessionId,
+          tempo_bpm: state.bpm,
+          treble_tone: currentTrebleToneLabel(),
+          octave: currentOctaveLabel(),
+          bell_root_type: state.scaleKey === 'custom_hz' ? 'custom' : 'scale',
+          bell_custom_hz: state.scaleKey === 'custom_hz' ? getBellRootFrequency() : null,
+          drone_root_type: state.droneScaleKey === 'custom_hz' ? 'custom' : 'scale',
+          drone_custom_hz: state.droneScaleKey === 'custom_hz' ? getDroneRootFrequency() : null
+        });
+      }
+    }
+  }
+
+
+    function scheduleMethod(nowMs) {
+    if (state.phase === 'paused') return;
+    if (state.phase !== 'running' && !(state.mode === 'demo' && state.phase === 'countdown')) return;
+    const beatMs = 60000 / state.bpm;
+    const totalBeats = state.rows.length * state.stage;
+    const liveSet = new Set(state.liveBells);
+
+    const isDemo = state.mode === 'demo';
+    const horizonMs = isDemo ? demoEffectiveHorizonMs() : Math.max(LOOKAHEAD_MS, getMaintenanceIntervalMs());
+    let schedThisPass = 0;
+
+    while (state.schedBeatIndex < totalBeats) {
+      const tMs = state.methodStartMs + state.schedBeatIndex * beatMs;
+      if (tMs <= nowMs + horizonMs && (!isDemo || schedThisPass < DEMO_SCHED_MAX_PER_PASS)) {
+        const bell = getBellForStrikeIndex(state.schedBeatIndex);
+        if (state.mode === 'demo' || !liveSet.has(bell)) playBellAt(bell, tMs);
+        state.schedBeatIndex += 1;
+        if (isDemo) schedThisPass += 1;
+      } else break;
+    }
+
+    if (state.phase !== 'running') return;
+
+    // Do not advance demo visuals/state while hidden (we resync on return).
+    if (isDemo && document.hidden) return;
+
+    while (state.execBeatIndex < totalBeats) {
+      const tMs = state.methodStartMs + state.execBeatIndex * beatMs;
+      if (nowMs >= tMs) {
+        const bell = getBellForStrikeIndex(state.execBeatIndex);
+        markRung(bell, tMs);
+        state.execBeatIndex += 1;
+      } else break;
+    }
+
+    if (state.execBeatIndex >= totalBeats) stopPressed('completed');
+  }
+
+
+  function loop() {
+    const nowMs = perfNow();
+
+    // === Maintenance tick (logic + audio scheduling only) ===
+    const prevExecBeatIndex = state.execBeatIndex;
+    const prevCountExec = state.countExec;
+    const prevPhase = state.phase;
+
+    const dprNow = window.devicePixelRatio || 1;
+    if (dprNow !== lastKnownDPR) {
+      lastKnownDPR = dprNow;
+      markDirty();
+    }
+
+    scheduleCountdown(nowMs);
+    scheduleMethod(nowMs);
+    updateMicAnalysis(nowMs);
+    if (state.phase === 'running') updateMisses(nowMs);
+
+    // Beat-aligned / phase-aligned redraw triggers (esp. low BPM)
+    if (state.execBeatIndex !== prevExecBeatIndex) markDirty();
+    if (state.countExec !== prevCountExec) markDirty();
+    if (state.phase !== prevPhase) markDirty();
+
+    // === Rendering (only when needed) ===
+    const useRAF = shouldUseRAFForRender();
+
+    const screenIsGame = (ui && ui.screen === 'game');
+
+    if (screenIsGame && (needsRedraw || useRAF)) {
+      renderCountdownOverlay(nowMs);
+
+      if (viewDisplay.checked) drawDisplay(nowMs);
+      if (viewSpotlight.checked) drawSpotlight(nowMs);
+      if (viewNotation.checked) drawNotation();
+      if (viewStats.checked) renderStats(nowMs);
+      needsRedraw = false;
+    } else if (!screenIsGame && needsRedraw) {
+      // Game screen is hidden; avoid zero-size canvas layout work until shown.
+      needsRedraw = false;
+    }
+
+    // === Scheduler (choose ONE mechanism per tick) ===
+    if (useRAF) {
+      lastTickWasRAF = true;
+      loopTimer = null;
+      loopRAF = window.requestAnimationFrame(loop);
+    } else {
+      lastTickWasRAF = false;
+      loopRAF = null;
+      loopTimer = window.setTimeout(loop, getMaintenanceIntervalMs());
+    }
+  }
+
+  // === Inputs ===
+  document.addEventListener('keydown', (e) => {
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+
+    const k = normalizeBindKey(e.key);
+
+    // Capture mode: bind the next key pressed to the chosen bell.
+    if (state.keybindCaptureBell != null) {
+      e.preventDefault();
+      if (k === 'Escape') {
+        state.keybindCaptureBell = null;
+        rebuildKeybindPanel();
+        return;
+      }
+      if (!isAllowedBindKey(k)) return;
+
+      for (const b of state.liveBells) {
+        if (b === state.keybindCaptureBell) continue;
+        if (state.keyBindings[b] === k) {
+          alert('That key is already bound to bell ' + b + '. Choose a different key.');
+          return;
+        }
+      }
+
+      state.keyBindings[state.keybindCaptureBell] = k;
+      saveKeyBindings();
+      state.keybindCaptureBell = null;
+      rebuildKeybindPanel();
+      return;
+    }
+
+    // Default extra keys: if exactly one live bell is selected, Space and Enter also ring it.
+    if (state.liveBells.length === 1 && (k === 'Space' || k === 'Enter')) {
+      e.preventDefault();
+      ringBell(state.liveBells[0]);
+      return;
+    }
+
+    // Keybinding match for live bells (ignore conflicts).
+    let found = null;
+    for (const b of state.liveBells) {
+      if (state.keyBindings[b] === k) {
+        if (found != null) { found = null; break; }
+        found = b;
+      }
+    }
+    if (found != null) {
+      if (k === 'Space') e.preventDefault();
+      ringBell(found);
+      return;
+    }
+  });
+
+  // Spotlight is intentionally NOT clickable in v10.
+  displayCanvas.addEventListener('pointerdown', (e) => {
+    const bell = displayHitTest(e.clientX, e.clientY);
+    if (bell != null) { e.preventDefault(); ringBell(bell); }
+  });
+
+
+  // Spotlight top-row tap: ring the tapped bell (non-keyboard alternative control).
+  spotlightCanvas.addEventListener('pointerdown', (e) => {
+    const rect = spotlightCanvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    if (x < 0 || y < 0 || x > rect.width || y > rect.height) return;
+
+    const stage = state.stage;
+
+    // Default Spotlight tap (unchanged): only the top row is tappable.
+    if (!state.spotlightSwapsView) {
+      // Mirror drawSpotlight's layout math (CSS pixels).
+      const padX = 14, padY = 12, gapY = 10;
+      const rowBlockH = (rect.height - padY * 2 - gapY) / 2;
+      const topRowY = padY;
+
+      // Only accept taps in the top row body (not the title area).
+      if (y < topRowY || y > topRowY + rowBlockH) return;
+      if (x < padX || x > rect.width - padX) return;
+
+      const cellW = (rect.width - padX * 2) / stage;
+      const idx = Math.max(0, Math.min(stage - 1, Math.floor((x - padX) / cellW)));
+
+      if (!state.rows.length) return;
+
+      const totalBeats = state.rows.length * stage;
+      const strikeIdx = clamp(state.execBeatIndex - 1, 0, Math.max(0, totalBeats - 1));
+      const rowIdx = Math.floor(strikeIdx / stage);
+      const currentRow = state.rows[rowIdx] || state.rows[0];
+      const bell = currentRow[idx];
+      if (bell != null) {
+        e.preventDefault();
+        ringBell(bell);
+      }
+      return;
+    }
+
+    // Swaps View: keep taps aligned with the current row (N) to avoid misleading input.
+    if (!state.spotlightShowN) return;
+    if (!state.rows.length) return;
+
+    const padX = 14, padY = 12;
+    const gapY = 8;
+    const diagramH = 18;
+
+    const totalBeats = state.rows.length * stage;
+    const strikeIdx = clamp(state.execBeatIndex - 1, 0, Math.max(0, totalBeats - 1));
+    const rowIdx = Math.floor(strikeIdx / stage);
+    const currentRow = state.rows[rowIdx] || state.rows[0];
+
+    const show1 = !!state.spotlightShowN1 && (rowIdx + 1 < state.rows.length);
+    const show2 = !!state.spotlightShowN2 && (rowIdx + 2 < state.rows.length);
+
+    const rowCount = 1 + (show1 ? 1 : 0) + (show2 ? 1 : 0);
+    const diagramCount = (show1 ? 1 : 0) + ((show1 && show2) ? 1 : 0);
+    const itemsLen = rowCount + diagramCount;
+
+    const availH = rect.height - padY * 2;
+    const gapsH = Math.max(0, (itemsLen - 1) * gapY);
+    let rowBlockH = (availH - diagramCount * diagramH - gapsH) / rowCount;
+    if (!isFinite(rowBlockH) || rowBlockH <= 0) rowBlockH = Math.max(34, (availH - diagramCount * diagramH) / rowCount);
+
+    const topRowY = padY;
+
+    if (y < topRowY || y > topRowY + rowBlockH) return;
+    if (x < padX || x > rect.width - padX) return;
+
+    const cellW = (rect.width - padX * 2) / stage;
+    const idx = Math.max(0, Math.min(stage - 1, Math.floor((x - padX) / cellW)));
+
+    const bell = currentRow[idx];
+    if (bell != null) {
+      e.preventDefault();
+      ringBell(bell);
+    }
+  });
+
+  // Prompt 6: Play settings changes restart (stop current run first).
+  function ensureIdleForPlayChange() {
+    if (state.phase === 'idle') return;
+    if (state.phase === 'paused') {
+      cancelScheduledBellAudioNow();
+      state.schedBeatIndex = state.execBeatIndex;
+      state.countSched = state.countExec;
+    }
+    stopPressed('play_change');
+  }
+
+
+  methodSelect.addEventListener('change', () => {
+    ensureIdleForPlayChange();
+    const v = methodSelect.value;
+    state.method = v;
+
+    if (v !== 'custom') {
+      state.customRows = null;
+      state.methodSource = 'built_in';
+      state.methodMeta = null;
+    } else {
+      // Selecting "Custom" from the dropdown is not a library claim.
+      if (state.methodSource !== 'library') {
+        state.methodSource = 'custom_rows';
+        state.methodMeta = null;
+      }
+    }
+
+    computeRows(); resetStats();
+    syncGameHeaderMeta();
+  });
+
+  bellCountSelect.addEventListener('change', () => {
+    ensureIdleForPlayChange();
+    state.stage = clamp(parseInt(bellCountSelect.value,10)||6, 4, 12);
+    if (state.method === 'custom') { state.method = 'plainhunt'; methodSelect.value='plainhunt'; state.customRows=null; state.methodSource='built_in'; state.methodMeta=null; }
+    rebuildLiveCountOptions(); ensureLiveBells(); rebuildBellPicker();
+    ensurePathBells(); rebuildPathPicker(); computeRows(); resetStats(); rebuildBellFrequencies();
+      syncGameHeaderMeta();
+  });
+
+  liveCountSelect.addEventListener('change', () => {
+    ensureIdleForPlayChange();
+    state.liveCount = clamp(parseInt(liveCountSelect.value,10)||1, 1, state.stage);
+    ensureLiveBells(); rebuildBellPicker(); resetStats();
+  });
+
+  bpmInput.addEventListener('change', () => {
+    ensureIdleForPlayChange();
+    state.bpm = clamp(parseInt(bpmInput.value,10)||80, 1, 240);
+    bpmInput.value = String(state.bpm);
+    syncGameHeaderMeta();
+  });
+
+  // Mic controls
+  if (micToggleBtn) {
+    micToggleBtn.addEventListener('click', () => {
+      if (state.mode === 'demo') { setMicUiStatus('Mic disabled in Demo'); return; }
+      if (state.micEnabled) {
+        if (state.micActive) setMicEnabled(false);
+        else startMicCapture();
+      } else {
+        setMicEnabled(true);
+        startMicCapture();
+      }
+    });
+  }
+  if (micCalibrateBtn) {
+    micCalibrateBtn.addEventListener('click', () => {
+      calibrateMicThreshold();
+    });
+  }
+  if (micCooldown) {
+    micCooldown.addEventListener('input', () => {
+      state.micCooldownMs = clamp(parseFloat(micCooldown.value), 100, 400);
+      safeSetLS(LS_MIC_COOLDOWN_MS, String(state.micCooldownMs));
+      syncMicSlidersUI();
+    });
+  }
+
+  [viewDisplay, viewSpotlight, viewNotation, viewStats, viewMic].forEach(cb => cb.addEventListener('change', syncViewLayout));
+
+  // Layout preset selector (persisted)
+  if (layoutPresetSelect) {
+    layoutPresetSelect.addEventListener('change', () => {
+      const v = String(layoutPresetSelect.value || 'auto');
+      safeSetLS(LS_LAYOUT_PRESET, v);
+      applyLayoutPreset(v);
+    });
+  }
+
+  // Auto preset responsiveness: re-evaluate on resize (throttled)
+  {
+    let layoutAutoResizeQueued = false;
+    window.addEventListener('resize', () => {
+      if (!layoutPresetSelect || layoutPresetSelect.value !== 'auto') return;
+      if (layoutAutoResizeQueued) return;
+      layoutAutoResizeQueued = true;
+      window.requestAnimationFrame(() => {
+        layoutAutoResizeQueued = false;
+        if (layoutPresetSelect && layoutPresetSelect.value === 'auto') applyLayoutPreset('auto');
+      });
+    });
+  }
+
+  // Display live bells only toggle (persisted)
+  if (displayLiveOnly) {
+    displayLiveOnly.addEventListener('change', () => {
+      state.displayLiveBellsOnly = !!displayLiveOnly.checked;
+      safeSetBoolLS(LS_DISPLAY_LIVE_BELLS_ONLY, state.displayLiveBellsOnly);
+      syncViewMenuSelectedUI();
+    });
+  }
+
+  // Spotlight swaps view + row controls
+  if (spotlightSwapsView) {
+    spotlightSwapsView.addEventListener('change', () => {
+      state.spotlightSwapsView = spotlightSwapsView.checked;
+      safeSetBoolLS(LS_SPOTLIGHT_SWAPS_VIEW, state.spotlightSwapsView);
+      syncSpotlightSwapRowTogglesUI();
+    });
+  }
+
+  function syncSpotlightRowPrefsFromUI() {
+    if (spotlightShowN) state.spotlightShowN = !!spotlightShowN.checked;
+    if (spotlightShowN1) state.spotlightShowN1 = !!spotlightShowN1.checked;
+    if (spotlightShowN2) state.spotlightShowN2 = !!spotlightShowN2.checked;
+
+    if (!state.spotlightShowN && !state.spotlightShowN1 && !state.spotlightShowN2) {
+      state.spotlightShowN = true;
+      if (spotlightShowN) spotlightShowN.checked = true;
+    }
+
+    safeSetBoolLS(LS_SPOTLIGHT_SHOW_N, state.spotlightShowN);
+    safeSetBoolLS(LS_SPOTLIGHT_SHOW_N1, state.spotlightShowN1);
+    safeSetBoolLS(LS_SPOTLIGHT_SHOW_N2, state.spotlightShowN2);
+    syncViewMenuSelectedUI();
+    markDirty();
+  }
+
+  if (spotlightShowN) spotlightShowN.addEventListener('change', syncSpotlightRowPrefsFromUI);
+  if (spotlightShowN1) spotlightShowN1.addEventListener('change', syncSpotlightRowPrefsFromUI);
+  if (spotlightShowN2) spotlightShowN2.addEventListener('change', syncSpotlightRowPrefsFromUI);
+
+  // Notation swaps overlay
+  if (notationSwapsOverlay) {
+    notationSwapsOverlay.addEventListener('change', () => {
+      state.notationSwapsOverlay = notationSwapsOverlay.checked;
+      safeSetBoolLS(LS_NOTATION_SWAPS_OVERLAY, state.notationSwapsOverlay);
+      syncViewMenuSelectedUI();
+      markDirty();
+    });
+  }
+
+
+  pathNoneBtn.addEventListener('click', setPathNone);
+  pathAllBtn.addEventListener('click', setPathAll);
+
+  // Prompt 6: Sound changes apply without restart; reschedule auto-bells quickly if active.
+  function onBellTuningChanged() {
+    if (state.phase === 'running' || state.phase === 'countdown' || state.phase === 'paused') {
+      cancelScheduledBellAudioNow();
+      state.schedBeatIndex = state.execBeatIndex;
+      state.countSched = state.countExec;
+    }
+    markDirty();
+    kickLoop();
+  }
+
+  scaleSelect.addEventListener('change', () => {
+    state.scaleKey = scaleSelect.value;
+    syncBellCustomHzUI();
+    rebuildBellFrequencies();
+    onBellTuningChanged();
+  });
+
+  octaveSelect.addEventListener('change', () => {
+    state.octaveC = parseInt(octaveSelect.value, 10) || 3;
+    rebuildBellFrequencies();
+    onBellTuningChanged();
+  });
+
+
+  // Bell Custom (Hz) root controls
+  if (bellCustomHzInput) {
+    bellCustomHzInput.addEventListener('input', () => {
+      setBellCustomHzFromUI(bellCustomHzInput.value, false);
+    });
+
+    const commitBellCustomHz = () => {
+      setBellCustomHzFromUI(bellCustomHzInput.value, true);
+      syncBellCustomHzUI();
+    };
+    bellCustomHzInput.addEventListener('change', commitBellCustomHz);
+    bellCustomHzInput.addEventListener('blur', commitBellCustomHz);
+  }
+
+  if (bellCustomHzSlider) {
+    bellCustomHzSlider.addEventListener('input', () => {
+      setBellCustomHzFromUI(bellCustomHzSlider.value, true);
+      syncBellCustomHzUI();
+    });
+  }
+
+  bellVolume.addEventListener('input', () => {
+    state.bellVolume = clamp(parseInt(bellVolume.value, 10) || 0, 0, 100);
+    applyBellMasterGain();
+  });
+
+  droneTypeSelect.addEventListener('change', () => {
+    state.droneType = droneTypeSelect.value;
+    if (state.droneType === 'off') {
+      state.dronePaused = false;
+      stopDrone();
+    } else {
+      startDrone();
+    }
+    syncDronePauseBtnUI();
+  });
+
+  droneScaleSelect.addEventListener('change', () => {
+    state.droneScaleKey = droneScaleSelect.value;
+    syncDroneCustomHzUI();
+    if (state.droneType !== 'off') refreshDrone();
+  });
+
+  droneOctaveSelect.addEventListener('change', () => {
+    state.droneOctaveC = parseInt(droneOctaveSelect.value, 10) || 3;
+    if (state.droneType !== 'off') refreshDrone();
+  });
+
+
+  // Drone Custom (Hz) root controls
+  if (droneCustomHzInput) {
+    droneCustomHzInput.addEventListener('input', () => {
+      setDroneCustomHzFromUI(droneCustomHzInput.value, false);
+    });
+
+    const commitDroneCustomHz = () => {
+      setDroneCustomHzFromUI(droneCustomHzInput.value, true);
+      syncDroneCustomHzUI();
+    };
+    droneCustomHzInput.addEventListener('change', commitDroneCustomHz);
+    droneCustomHzInput.addEventListener('blur', commitDroneCustomHz);
+  }
+
+  if (droneCustomHzSlider) {
+    droneCustomHzSlider.addEventListener('input', () => {
+      setDroneCustomHzFromUI(droneCustomHzSlider.value, true);
+      syncDroneCustomHzUI();
+    });
+  }
+
+  droneVolume.addEventListener('input', () => {
+    state.droneVolume = clamp(parseInt(droneVolume.value, 10) || 0, 0, 100);
+    applyDroneMasterGain();
+  });
+
+  fileInput.addEventListener('change', () => {
+    if (state.phase !== 'idle') return;
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const parsed = parseCustom(String(ev.target.result));
+        state.method = 'custom';
+        methodSelect.value = 'custom';
+        state.customRows = parsed.rows.slice();
+        state.stage = clamp(parsed.stage, 4, 12);
+
+        state.methodSource = 'custom_rows';
+        state.methodMeta = { fileName: file.name || '' };
+
+        if (bellCountSelect) bellCountSelect.value = String(state.stage);
+
+        rebuildLiveCountOptions();
+        ensureLiveBells();
+        rebuildBellPicker();
+        ensurePathBells();
+        rebuildPathPicker();
+        computeRows();
+        resetStats();
+        rebuildBellFrequencies();
+
+        syncGameHeaderMeta();
+
+        alert('Custom method loaded: ' + parsed.rows.length + ' rows on ' + parsed.stage + ' bells.');
+      } catch (err) {
+        alert('Could not load custom method: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+  });
+
+  if (xmlInput) {
+    xmlInput.addEventListener('change', async (e) => {
+      if (state.phase !== 'idle') return;
+
+      const files = e.target && e.target.files ? Array.from(e.target.files) : [];
+      for (const file of files) {
+        const name = file && file.name ? String(file.name) : '';
+        const lower = name.toLowerCase();
+        try {
+          if (lower.endsWith('.zip')) {
+            await parseZipArchive(file);
+          } else if (lower.endsWith('.xml')) {
+            const text = await file.text();
+            const before = RG.methods.length;
+            parseCCCBR(text, name);
+            const added = RG.methods.length - before;
+            if (added > 0 && typeof analytics !== 'undefined' && analytics && typeof analytics.track === 'function') {
+              try {
+                analytics.track('cccbr_load', {
+                  source: 'xml',
+                  methods_added: added,
+                  filename: name.slice(0, 80)
+                });
+              } catch (_) {}
+            }
+          }
+        } catch (err) {
+          console.error('CCCBR load failed', err);
+          alert('Could not load ' + name + ': ' + (err && err.message ? err.message : err));
+        }
+      }
+
+      try { e.target.value = ''; } catch (_) {}
+    });
+  }
+
+  startBtn.addEventListener('click', () => startPressed('play'));
+  if (pauseBtn) pauseBtn.addEventListener('click', togglePause);
+  if (demoBtn) demoBtn.addEventListener('click', () => startPressed('demo'));
+  stopBtn.addEventListener('click', () => stopPressed('stopped'));
+  if (dronePauseBtn) dronePauseBtn.addEventListener('click', toggleDronePaused);
+
+  if (keybindResetBtn) {
+    keybindResetBtn.addEventListener('click', () => {
+      if (state.phase !== 'idle') return;
+      state.keybindCaptureBell = null;
+      resetKeyBindingsToDefaults();
+      rebuildKeybindPanel();
+    });
+  }
+
+
+  // === Boot ===
+  function boot() {
+    mountMenuControls();
+
+    // Play defaults (non-persisted)
+    state.method = 'plainhunt';
+    if (methodSelect) methodSelect.value = 'plainhunt';
+
+    state.methodSource = 'built_in';
+    state.methodMeta = null;
+
+    state.stage = 6;
+    if (bellCountSelect) bellCountSelect.value = '6';
+
+    state.liveCount = 1;
+    state.liveBells = [1];
+
+    state.bpm = 120;
+    if (bpmInput) bpmInput.value = String(state.bpm);
+
+    loadKeyBindings();
+
+    // swaps view settings (persisted)
+    state.spotlightSwapsView = safeGetBoolLS(LS_SPOTLIGHT_SWAPS_VIEW, true);
+    state.spotlightShowN = safeGetBoolLS(LS_SPOTLIGHT_SHOW_N, true);
+    state.spotlightShowN1 = safeGetBoolLS(LS_SPOTLIGHT_SHOW_N1, false);
+    state.spotlightShowN2 = safeGetBoolLS(LS_SPOTLIGHT_SHOW_N2, true);
+    state.notationSwapsOverlay = safeGetBoolLS(LS_NOTATION_SWAPS_OVERLAY, true);
+    state.displayLiveBellsOnly = safeGetBoolLS(LS_DISPLAY_LIVE_BELLS_ONLY, isMobileLikely());
+
+    loadMicPrefs();
+
+    if (!state.spotlightShowN && !state.spotlightShowN1 && !state.spotlightShowN2) state.spotlightShowN = true;
+
+    if (spotlightSwapsView) spotlightSwapsView.checked = state.spotlightSwapsView;
+    if (spotlightShowN) spotlightShowN.checked = state.spotlightShowN;
+    if (spotlightShowN1) spotlightShowN1.checked = state.spotlightShowN1;
+    if (spotlightShowN2) spotlightShowN2.checked = state.spotlightShowN2;
+    if (notationSwapsOverlay) notationSwapsOverlay.checked = state.notationSwapsOverlay;
+    if (displayLiveOnly) displayLiveOnly.checked = state.displayLiveBellsOnly;
+
+
+    syncSpotlightSwapRowTogglesUI();
+    syncSpotlightRowPrefsFromUI();
+
+    scaleSelect.innerHTML = '';
+    {
+      const opt = document.createElement('option');
+      opt.value = 'custom_hz';
+      opt.textContent = 'Custom (Hz)';
+      scaleSelect.appendChild(opt);
+    }
+    for (const s of SCALE_LIBRARY) {
+      const opt = document.createElement('option');
+      opt.value = s.key;
+      opt.textContent = s.label;
+      scaleSelect.appendChild(opt);
+    }
+    // Sound defaults (non-persisted)
+    state.scaleKey = (SCALE_LIBRARY.find(s => s.key === 'Fs_major') ? 'Fs_major' : SCALE_LIBRARY[0].key);
+    scaleSelect.value = state.scaleKey;
+
+    // Drone scale (same option set as bells)
+    droneScaleSelect.innerHTML = '';
+    {
+      const opt = document.createElement('option');
+      opt.value = 'custom_hz';
+      opt.textContent = 'Custom (Hz)';
+      droneScaleSelect.appendChild(opt);
+    }
+    for (const s of SCALE_LIBRARY) {
+      const opt = document.createElement('option');
+      opt.value = s.key;
+      opt.textContent = s.label;
+      droneScaleSelect.appendChild(opt);
+    }
+    state.droneScaleKey = (SCALE_LIBRARY.find(s => s.key === 'Fs_major') ? 'Fs_major' : state.scaleKey);
+    droneScaleSelect.value = state.droneScaleKey;
+
+    octaveSelect.innerHTML = '';
+    for (let o = 1; o <= 6; o++) {
+      const opt = document.createElement('option');
+      opt.value = String(o);
+      opt.textContent = 'C' + String(o);
+      octaveSelect.appendChild(opt);
+    }
+    state.octaveC = 4;
+    octaveSelect.value = String(state.octaveC);
+
+    // Drone octave (same option set as bells)
+    droneOctaveSelect.innerHTML = '';
+    for (let o = 1; o <= 6; o++) {
+      const opt = document.createElement('option');
+      opt.value = String(o);
+      opt.textContent = 'C' + String(o);
+      droneOctaveSelect.appendChild(opt);
+    }
+    state.droneOctaveC = 4;
+    droneOctaveSelect.value = String(state.droneOctaveC);
+
+    // Sliders/defaults
+    bellVolume.value = String(state.bellVolume);
+    droneTypeSelect.value = state.droneType;
+    droneVolume.value = String(state.droneVolume);
+
+    // Custom Hz controls
+    syncBellCustomHzUI();
+    syncDroneCustomHzUI();
+
+    rebuildLiveCountOptions();
+    ensureLiveBells();
+    rebuildBellPicker();
+
+    // View default: line (blue line) = bell 1
+    state.pathBells = [1];
+    rebuildPathPicker();
+
+    computeRows();
+    resetStats();
+    rebuildBellFrequencies();
+    syncViewLayout();
+
+    analytics.configure();
+    analytics.setUserProps({
+      plays_total: analytics.totals.plays_total,
+      seconds_total: analytics.totals.seconds_total,
+      targets_total: analytics.totals.targets_total,
+      hits_total: analytics.totals.hits_total,
+      misses_total: analytics.totals.misses_total,
+      score_total: analytics.totals.score_total,
+      pr_combo_global: analytics.totals.pr_combo_global
+    });
+    analytics.track('game_start', { session_id: analytics.sessionId, site_version: SITE_VERSION });
+
+    window.addEventListener('pagehide', stopMicCapture);
+    window.addEventListener('beforeunload', stopMicCapture);
+    window.addEventListener('pagehide', stopDrone);
+    window.addEventListener('beforeunload', stopDrone);
+
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        releaseWakeLock();
+        if (state.phase !== 'idle') {
+          if (state.mode === 'play') {
+            stopPressed('sleep');
+          } else if (state.mode === 'demo') {
+            const nowMs = perfNow();
+            scheduleCountdown(nowMs);
+
+            const beatMs = 60000 / state.bpm;
+            const horizonMs = demoEffectiveHorizonMs();
+            const totalBeats = state.rows.length * state.stage;
+
+            let passes = 0;
+            const maxPasses = Math.ceil(DEMO_MAX_AHEAD_STRIKES / DEMO_SCHED_MAX_PER_PASS) + 4;
+            while (passes < maxPasses) {
+              const before = state.schedBeatIndex;
+              scheduleMethod(nowMs);
+              passes += 1;
+
+              if (state.schedBeatIndex === before) break;
+              if (state.schedBeatIndex >= totalBeats) break;
+
+              const nextT = state.methodStartMs + state.schedBeatIndex * beatMs;
+              if (nextT > nowMs + horizonMs) break;
+            }
+          }
+        }
+      } else {
+        if (state.phase !== 'idle') {
+          requestWakeLock();
+          if (state.mode === 'demo') {
+            const nowMs = perfNow();
+            resyncDemoToNow(nowMs);
+            scheduleCountdown(nowMs);
+            scheduleMethod(nowMs);
+          }
+        }
+        markDirty();
+      }
+    });
+
+    window.addEventListener('resize', () => { markDirty(); });
+
+    syncGameHeaderMeta();
+    syncDronePauseBtnUI();
+
+    // Default to Home screen; game initializes normally in the background.
+    setScreen('home');
+
+    loop();
+
+    // View: layout presets (persisted; safe after loop has started)
+    syncLayoutPresetUI();
+  }
+
+  boot();
+})();
+    
