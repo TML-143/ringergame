@@ -285,7 +285,8 @@ select option { background-color: #0b1026; color: #e8eeff; }
   height:260px;
 }
 #displayCanvas{height:240px}
-#notationCanvas{height:540px;cursor:pointer;touch-action:manipulation}
+/* v06_p13_notation_touch_polish: prevent iOS tap highlight/selection and enable reliable drag */
+#notationCanvas{height:540px;cursor:pointer;touch-action:none;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
 
 /* v06_p12a_notation_paging_arrows */
 .notation-wrap{position:relative}

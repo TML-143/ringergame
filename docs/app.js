@@ -72,7 +72,7 @@
 
   // === Analytics (GA4) ===
   const GA_ID = 'G-7TEG531231';
-  const SITE_VERSION = 'v06_p12d_library_browser';
+  const SITE_VERSION = 'v06_p13_notation_touch_polish';
 
   function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
   function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
@@ -292,6 +292,11 @@
     // v06_p12b_notation_tap_to_ring
     notationTapFlash: null,
     notationCursorRow: null,
+
+    // v06_p13_notation_touch_polish
+    notationDragActive: false,
+    notationDragPointerId: null,
+    notationDragLastKey: null,
 
     // v06_p12d_library_browser
     libraryIndex: null,
@@ -4260,7 +4265,9 @@
         nctx.fillText(label, x0 + 10, y0 + 8);
       }
 
-      const contentTop = y0 + titleH + 12;
+      // v06_p13_notation_touch_polish: labels removed, so don't reserve header height.
+      const labelH = label ? titleH : 0;
+      const contentTop = y0 + labelH + 12;
       const contentBottom = y0 + h0 - 12;
       const contentH = contentBottom - contentTop;
 
@@ -4457,7 +4464,8 @@
     const lineH = 24;
     const pageSize = Math.max(1, Number(state.notationPageSize) || 1);
 
-    const contentTop = y0 + titleH + 12;
+    // v06_p13_notation_touch_polish: labels removed, so don't reserve header height.
+    const contentTop = y0 + 12;
     const contentBottom = y0 + pageH - 12;
     if (y < contentTop || y > contentBottom) return null;
 
@@ -5146,10 +5154,30 @@
     if (bell != null) { e.preventDefault(); ringBell(bell); }
   });
 
-  // v06_p12b_notation_tap_to_ring: tap/click bells in notation (both pages)
+  // v06_p13_notation_touch_polish: tap + drag-across-to-ring on notation (both pages)
+  function endNotationDrag(evt) {
+    if (!ui.notationDragActive) return;
+    if (evt && ui.notationDragPointerId != null && evt.pointerId !== ui.notationDragPointerId) return;
+    const pid = ui.notationDragPointerId;
+    ui.notationDragActive = false;
+    ui.notationDragPointerId = null;
+    ui.notationDragLastKey = null;
+    if (pid != null) {
+      try { notationCanvas.releasePointerCapture(pid); } catch (_) {}
+    }
+  }
+
   notationCanvas.addEventListener('pointerdown', (e) => {
     const hit = hitTestNotation(e, null);
     if (!hit) return;
+
+    // If another pointer is already dragging, ignore additional touches.
+    if (ui.notationDragActive && ui.notationDragPointerId != null && e.pointerId !== ui.notationDragPointerId) return;
+
+    ui.notationDragActive = true;
+    ui.notationDragPointerId = e.pointerId;
+    ui.notationDragLastKey = hit.rowIndex + ':' + hit.bell;
+    try { notationCanvas.setPointerCapture(e.pointerId); } catch (_) {}
 
     // Optional library hook: remember last tapped row.
     ui.notationCursorRow = hit.rowIndex;
@@ -5158,9 +5186,43 @@
     ui.notationTapFlash = { rowIndex: hit.rowIndex, bell: hit.bell, untilMs: perfNow() + 150 };
 
     // Ring audibly (and score via the existing input path when applicable).
-    if (e.pointerType === 'touch') e.preventDefault();
     ringBell(hit.bell);
+
+    // Prevent tap highlight / selection only while actively tracking a notation gesture.
+    e.preventDefault();
   });
+
+  notationCanvas.addEventListener('pointermove', (e) => {
+    if (!ui.notationDragActive) return;
+    if (ui.notationDragPointerId != null && e.pointerId !== ui.notationDragPointerId) return;
+
+    const hit = hitTestNotation(e, null);
+    if (!hit) {
+      // Keep the last key so jitter off-grid doesn't cause repeat rings on re-entry.
+      e.preventDefault();
+      return;
+    }
+
+    const key = hit.rowIndex + ':' + hit.bell;
+    if (key === ui.notationDragLastKey) {
+      e.preventDefault();
+      return;
+    }
+    ui.notationDragLastKey = key;
+
+    ui.notationCursorRow = hit.rowIndex;
+    ui.notationTapFlash = { rowIndex: hit.rowIndex, bell: hit.bell, untilMs: perfNow() + 150 };
+    ringBell(hit.bell);
+
+    e.preventDefault();
+  });
+
+  notationCanvas.addEventListener('pointerup', endNotationDrag);
+  notationCanvas.addEventListener('pointercancel', endNotationDrag);
+
+  // Safety net: if capture fails, still end the gesture when the pointer finishes elsewhere.
+  window.addEventListener('pointerup', endNotationDrag);
+  window.addEventListener('pointercancel', endNotationDrag);
 
 
   // Spotlight top-row tap: ring the tapped bell (non-keyboard alternative control).
