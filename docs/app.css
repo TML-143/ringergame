@@ -618,6 +618,39 @@ select option { background-color: #0b1026; color: #e8eeff; }
 @media (max-width: 860px){
   #screenLibrary .rg-library-layout{
     grid-template-columns:1fr;
+    grid-template-areas:
+      "details"
+      "browse";
+  }
+
+  #screenLibrary .rg-library-browse{ grid-area:browse; }
+  #screenLibrary .rg-library-details{ grid-area:details; }
+}
+
+
+#screenLibrary .rg-library-anchor{
+  display:block;
+  height:0;
+  scroll-margin-top:12px;
+}
+
+#screenLibrary .rg-library-jump-row{
+  display:none;
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap;
+  margin-top:10px;
+  margin-bottom:10px;
+}
+
+#screenLibrary .rg-library-jump-pill{
+  padding:6px 10px;
+  font-size:12px;
+}
+
+@media (max-width: 700px){
+  #screenLibrary .rg-library-jump-row{
+    display:flex;
   }
 }
 

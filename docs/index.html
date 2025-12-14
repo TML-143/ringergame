@@ -119,6 +119,12 @@
           <div class="pane-title"><span>Method Library</span></div>
           <div class="rg-screen-body">
             <div class="rg-muted rg-library-loaded">Loaded library: <span id="libraryFileName">none</span></div>
+
+            <div id="libraryJumpRow" class="rg-library-jump-row hidden" aria-label="Jump">
+              <button id="libraryJumpDetailsBtn" class="pill rg-library-jump-pill" type="button">Details</button>
+              <button id="libraryJumpBrowseBtn" class="pill rg-library-jump-pill" type="button">Browse</button>
+            </div>
+
             <div id="libraryNotationPlaceholder" aria-label="Library notation placeholder">
               <div id="libraryNotLoadedNotice" class="rg-library-notice hidden">
                 <div class="rg-muted rg-library-notice-title">No CCCBR library loaded yet.</div>
@@ -132,6 +138,7 @@
 
               <div id="libraryLayout" class="rg-library-layout">
                 <div class="rg-library-col rg-library-browse" aria-label="Browse">
+                  <div id="libraryBrowseAnchor" class="rg-library-anchor" aria-hidden="true"></div>
                   <div class="rg-library-col-head">
                     <div class="rg-library-col-title">Browse</div>
                     <input id="librarySearchInput" type="search" placeholder="Search open groups…" autocomplete="off" />
@@ -140,6 +147,7 @@
                 </div>
 
                 <div class="rg-library-col rg-library-details" aria-label="Details">
+                  <div id="libraryDetailsAnchor" class="rg-library-anchor" aria-hidden="true"></div>
                   <div id="libraryDetailsEmpty" class="rg-muted">Select a method to see details.</div>
                   <div id="libraryDetailsPanel" class="hidden">
                     <div id="librarySelectedTitle" class="rg-library-selected-title"></div>

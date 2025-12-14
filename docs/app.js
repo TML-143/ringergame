@@ -72,7 +72,7 @@
 
   // === Analytics (GA4) ===
   const GA_ID = 'G-7TEG531231';
-  const SITE_VERSION = 'v06_p13_notation_touch_polish';
+  const SITE_VERSION = 'v06_p14a_library_mobile_layout';
 
   function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
   function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
@@ -771,6 +771,7 @@
     const hasLib = !!(state && state.libraryLoaded && RG && RG.methods && RG.methods.length);
     libraryNotLoadedNotice.classList.toggle('hidden', hasLib);
     libraryLayout.classList.toggle('hidden', !hasLib);
+    if (libraryJumpRow) libraryJumpRow.classList.toggle('hidden', !hasLib);
 
     if (libraryGoSetupBtn) {
       libraryGoSetupBtn.disabled = (ui.screen !== 'library');
@@ -1016,6 +1017,13 @@
   const libraryGoSetupBtn = document.getElementById('libraryGoSetupBtn');
   const libraryLayout = document.getElementById('libraryLayout');
 
+  // v06_p14a_library_mobile_layout: Library mobile jump helpers
+  const libraryJumpRow = document.getElementById('libraryJumpRow');
+  const libraryJumpBrowseBtn = document.getElementById('libraryJumpBrowseBtn');
+  const libraryJumpDetailsBtn = document.getElementById('libraryJumpDetailsBtn');
+  const libraryBrowseAnchor = document.getElementById('libraryBrowseAnchor');
+  const libraryDetailsAnchor = document.getElementById('libraryDetailsAnchor');
+
   function wireUniversalMenuNav() {
     // Universal nav buttons (Home / Setup / View / Sound) across menu screens.
     document.addEventListener('click', (e) => {
@@ -1096,6 +1104,18 @@
   }
   if (libraryPlaySelectedBtn) libraryPlaySelectedBtn.addEventListener('click', () => libraryEnterWithSelected('play'));
   if (libraryDemoSelectedBtn) libraryDemoSelectedBtn.addEventListener('click', () => libraryEnterWithSelected('demo'));
+
+  // v06_p14a_library_mobile_layout: Jump buttons (mobile-only via CSS)
+  function scrollToLibraryAnchor(anchorEl) {
+    if (!anchorEl || !anchorEl.scrollIntoView) return;
+    try {
+      anchorEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (_) {
+      try { anchorEl.scrollIntoView(true); } catch (_) {}
+    }
+  }
+  if (libraryJumpBrowseBtn) libraryJumpBrowseBtn.addEventListener('click', () => scrollToLibraryAnchor(libraryBrowseAnchor));
+  if (libraryJumpDetailsBtn) libraryJumpDetailsBtn.addEventListener('click', () => scrollToLibraryAnchor(libraryDetailsAnchor));
 
   // Home: tapping the bell logo rings bell 1 (treble) once (UI-only).
   function ringHomeLogoBell1() {
