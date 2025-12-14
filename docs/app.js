@@ -72,7 +72,7 @@
 
   // === Analytics (GA4) ===
   const GA_ID = 'G-7TEG531231';
-  const SITE_VERSION = 'v06_p14c_library_details_study_controls';
+  const SITE_VERSION = 'v06_p15_notation_single_page_mode';
 
   function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
   function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
@@ -289,6 +289,8 @@
     screen: 'home',
     notationPage: 0,
     notationFollow: true,
+    // v06_p15_notation_single_page_mode
+    notationLayout: 'two_page',
     // v06_p12b_notation_tap_to_ring
     notationTapFlash: null,
     notationCursorRow: null,
@@ -1545,6 +1547,8 @@
 
   // View: layout presets
   const layoutPresetSelect = document.getElementById('layoutPresetSelect');
+  // v06_p15_notation_single_page_mode
+  const notationLayoutSelect = document.getElementById('notationLayoutSelect');
 
 
   // swaps view controls
@@ -1570,6 +1574,9 @@
 
   // layout preset localStorage key
   const LS_LAYOUT_PRESET = 'rg_layout_preset';
+
+  // v06_p15_notation_single_page_mode
+  const LS_NOTATION_LAYOUT = 'rg_notation_layout';
 
   // mic localStorage keys
   const LS_MIC_ENABLED = 'rg_mic_enabled';
@@ -3497,6 +3504,21 @@
     applyLayoutPreset(v);
   }
 
+  // v06_p15_notation_single_page_mode
+  function syncNotationLayoutUI() {
+    let v = safeGetLS(LS_NOTATION_LAYOUT);
+    if (!v) v = isMobileLikely() ? 'one_page' : 'two_page';
+    v = String(v);
+    if (!(v === 'two_page' || v === 'one_page')) v = isMobileLikely() ? 'one_page' : 'two_page';
+
+    ui.notationLayout = v;
+    if (notationLayoutSelect) notationLayoutSelect.value = v;
+
+    // Layout affects paging step and geometry.
+    markDirty();
+    kickLoop();
+  }
+
   // v06_p9b_view_menu_selected_states: Selected/on UI for View menu toggles & button groups.
   // Pure UI: reads existing inputs/state as the source of truth; no new persistence.
   function syncViewMenuSelectedUI() {
@@ -4553,50 +4575,49 @@
     if (totalPages <= 1) lastLeft = 0;
     else lastLeft = (totalPages % 2 === 1) ? (totalPages - 1) : (totalPages - 2);
     lastLeft = Math.max(0, lastLeft);
-    return { pageSize, totalPages, lastLeft };
+    const lastPage = Math.max(0, totalPages - 1);
+    return { pageSize, totalPages, lastLeft, lastPage };
   }
 
   function syncNotationPagingUI() {
     if (!notationPrevBtn || !notationNextBtn) return;
 
-    const { totalPages, lastLeft } = getNotationPagingMeta();
+    const { totalPages, lastLeft, lastPage } = getNotationPagingMeta();
+    const onePage = (ui.notationLayout === 'one_page');
     let changed = false;
 
     const prevPage = ui.notationPage;
     let p = Number(ui.notationPage) || 0;
-    p = Math.floor(p / 2) * 2;
-    if (p < 0) p = 0;
-    if (p > lastLeft) p = lastLeft;
+    if (onePage) {
+      if (p < 0) p = 0;
+      if (p > lastPage) p = lastPage;
+    } else {
+      p = Math.floor(p / 2) * 2;
+      if (p < 0) p = 0;
+      if (p > lastLeft) p = lastLeft;
+    }
     if (p !== prevPage) { ui.notationPage = p; changed = true; }
 
-    const showPrev = p > 0;
-    const showNext = p < lastLeft;
+    const canPrev = p > 0;
+    const canNext = onePage ? (p < lastPage) : (p < lastLeft);
+    const showButtons = totalPages > 1;
 
     const prevHidden = notationPrevBtn.classList.contains('hidden');
     const nextHidden = notationNextBtn.classList.contains('hidden');
 
-    if (showPrev) {
-      if (prevHidden) changed = true;
+    if (showButtons) {
+      if (prevHidden || nextHidden) changed = true;
       notationPrevBtn.classList.remove('hidden');
-      notationPrevBtn.disabled = false;
-    } else {
-      if (!prevHidden) changed = true;
-      notationPrevBtn.classList.add('hidden');
-      notationPrevBtn.disabled = true;
-    }
-
-    if (showNext) {
-      if (nextHidden) changed = true;
       notationNextBtn.classList.remove('hidden');
-      notationNextBtn.disabled = false;
+      notationPrevBtn.disabled = !canPrev;
+      notationNextBtn.disabled = !canNext;
     } else {
-      if (!nextHidden) changed = true;
+      if (!prevHidden || !nextHidden) changed = true;
+      notationPrevBtn.classList.add('hidden');
       notationNextBtn.classList.add('hidden');
+      notationPrevBtn.disabled = true;
       notationNextBtn.disabled = true;
     }
-
-    // totalPages is currently informational (kept for clarity)
-    void totalPages;
 
     if (changed) {
       markDirty();
@@ -4606,16 +4627,20 @@
 
   function notationPrevPressed() {
     ui.notationFollow = false;
-    ui.notationPage = (Number(ui.notationPage) || 0) - 2;
+    const delta = (ui.notationLayout === 'one_page') ? 1 : 2;
+    ui.notationPage = (Number(ui.notationPage) || 0) - delta;
     if (ui.notationPage < 0) ui.notationPage = 0;
     syncNotationPagingUI();
   }
 
   function notationNextPressed() {
     ui.notationFollow = false;
-    const { lastLeft } = getNotationPagingMeta();
-    ui.notationPage = (Number(ui.notationPage) || 0) + 2;
-    if (ui.notationPage > lastLeft) ui.notationPage = lastLeft;
+    const { lastLeft, lastPage } = getNotationPagingMeta();
+    const onePage = (ui.notationLayout === 'one_page');
+    const delta = onePage ? 1 : 2;
+    const maxP = onePage ? lastPage : lastLeft;
+    ui.notationPage = (Number(ui.notationPage) || 0) + delta;
+    if (ui.notationPage > maxP) ui.notationPage = maxP;
     syncNotationPagingUI();
   }
 
@@ -4634,29 +4659,47 @@
     const strikeIdx = clamp(state.execBeatIndex - 1, 0, Math.max(0, totalBeats - 1));
     const activeRowIdx = Math.floor(strikeIdx / stage);
 
-    const pad = 14, gap = 14;
-    const pageW = (W - pad * 2 - gap) / 2;
+    const onePage = (ui.notationLayout === 'one_page');
+    const pad = 14;
+    const gap = onePage ? 0 : 14;
+    const pageW = onePage ? (W - pad * 2) : ((W - pad * 2 - gap) / 2);
     const pageH = H - pad * 2;
     const titleH = 18;
 
     const lineH = 24;
     const fontSize = 20;
-    const usable = pageH - titleH - 18;
 
     // Page size is computed from available height, but stored so the paging UI can reason about total pages.
-    const computedPageSize = clamp(Math.floor(usable / lineH), 10, 24);
+    // Single-page mode reserves space for a 2-row peek strip.
+    let computedPageSize = 10;
+    if (onePage) {
+      const peekRows = 2;
+      const peekTopPad = 6;
+      const peekLabelH = 14;
+      const peekLabelPad = 8;
+      const peekBottomPad = 12;
+      const peekAreaH = peekRows * lineH + peekTopPad + peekLabelH + peekLabelPad + peekBottomPad;
+      const contentTop = pad + 12;
+      const dividerY = pad + pageH - peekAreaH;
+      const contentBottom = dividerY - 8;
+      const usableMain = contentBottom - contentTop;
+      computedPageSize = clamp(Math.floor(usableMain / lineH), 8, 24);
+    } else {
+      const usable = pageH - titleH - 18;
+      computedPageSize = clamp(Math.floor(usable / lineH), 10, 24);
+    }
     if (state.notationPageSize !== computedPageSize) {
       state.notationPageSize = computedPageSize;
       syncNotationPagingUI();
     }
     const pageSize = state.notationPageSize;
 
-    // Auto-follow (default): keep the active row visible within a two-page spread.
+    // Auto-follow (default): keep the active row visible within the current layout.
     if (ui.notationFollow && (state.phase === 'running' || state.phase === 'countdown')) {
       const activePage = Math.floor(activeRowIdx / pageSize);
-      const desiredLeft = Math.floor(activePage / 2) * 2;
-      if (ui.notationPage !== desiredLeft) {
-        ui.notationPage = desiredLeft;
+      const desired = onePage ? activePage : (Math.floor(activePage / 2) * 2);
+      if (ui.notationPage !== desired) {
+        ui.notationPage = desired;
         syncNotationPagingUI();
       }
     }
@@ -4837,8 +4880,298 @@
       nctx.restore();
     }
 
-    drawPage(pageAStart, pad, pad, '', true);
-    drawPage(pageBStart, pad + pageW + gap, pad, '', false);
+    // v06_p15_notation_single_page_mode: full-width page + 2-row peek of next page
+    function drawOnePageWithPeek(pageStartRow, x0, y0) {
+      const w0 = pageW, h0 = pageH;
+      nctx.save();
+      nctx.fillStyle = 'rgba(255,255,255,0.03)';
+      nctx.strokeStyle = 'rgba(255,255,255,0.08)';
+      roundRect(nctx, x0, y0, w0, h0, 16);
+      nctx.fill(); nctx.stroke();
+
+      const peekRows = 2;
+      const peekTopPad = 6;
+      const peekLabelH = 14;
+      const peekLabelPad = 8;
+      const peekBottomPad = 12;
+      const peekAreaH = peekRows * lineH + peekTopPad + peekLabelH + peekLabelPad + peekBottomPad;
+      const dividerY = y0 + h0 - peekAreaH;
+
+      const contentTop = y0 + 12;
+      const contentBottom = dividerY - 8;
+      const contentH = contentBottom - contentTop;
+
+      const maxColW = 60;
+      const baseColW = w0 / stage;
+      const colW = Math.min(baseColW, maxColW);
+      const gridW = colW * stage;
+      const left = x0 + (w0 - gridW) / 2;
+      const rowsToShow = pageSize;
+
+      // vertical grid (full height, including peek)
+      nctx.save();
+      nctx.strokeStyle = 'rgba(255,255,255,0.06)';
+      nctx.setLineDash([4,5]);
+      const gridTop = contentTop;
+      const gridBottom = y0 + h0 - 12;
+      for (let j = 0; j <= stage; j++) {
+        const x = left + j * colW;
+        nctx.beginPath(); nctx.moveTo(x, gridTop); nctx.lineTo(x, gridBottom); nctx.stroke();
+      }
+      nctx.setLineDash([]);
+      nctx.restore();
+
+      // main clip
+      nctx.save();
+      nctx.beginPath();
+      nctx.rect(x0 + 2, contentTop, w0 - 4, contentH);
+      nctx.clip();
+
+      // swaps overlay (optional)
+      if (state.notationSwapsOverlay) {
+        nctx.save();
+
+        nctx.lineWidth = 1;
+        nctx.strokeStyle = 'rgba(255,255,255,0.06)';
+        nctx.beginPath();
+        for (let i = 0; i < rowsToShow - 1; i++) {
+          const beforeIdx = pageStartRow + i;
+          const afterIdx = beforeIdx + 1;
+          if (afterIdx >= rows.length) break;
+          const before = rows[beforeIdx];
+          const after = rows[afterIdx];
+          const y1 = contentTop + i * lineH + lineH / 2;
+          const y2 = contentTop + (i + 1) * lineH + lineH / 2;
+
+          for (let p = 0; p < stage; p++) {
+            const bell = before[p];
+            if (liveSet.has(bell)) continue;
+            const j = after.indexOf(bell);
+            if (j < 0) continue;
+            const x1 = left + p * colW + colW / 2;
+            const x2 = left + j * colW + colW / 2;
+            nctx.moveTo(x1, y1);
+            nctx.lineTo(x2, y2);
+          }
+        }
+        nctx.stroke();
+
+        nctx.lineWidth = 1.25;
+        nctx.strokeStyle = 'rgba(249,199,79,0.16)';
+        nctx.beginPath();
+        for (let i = 0; i < rowsToShow - 1; i++) {
+          const beforeIdx = pageStartRow + i;
+          const afterIdx = beforeIdx + 1;
+          if (afterIdx >= rows.length) break;
+          const before = rows[beforeIdx];
+          const after = rows[afterIdx];
+          const y1 = contentTop + i * lineH + lineH / 2;
+          const y2 = contentTop + (i + 1) * lineH + lineH / 2;
+
+          for (let p = 0; p < stage; p++) {
+            const bell = before[p];
+            if (!liveSet.has(bell)) continue;
+            const j = after.indexOf(bell);
+            if (j < 0) continue;
+            const x1 = left + p * colW + colW / 2;
+            const x2 = left + j * colW + colW / 2;
+            nctx.moveTo(x1, y1);
+            nctx.lineTo(x2, y2);
+          }
+        }
+        nctx.stroke();
+
+        nctx.restore();
+      }
+
+      // paths terminate per page (main section)
+      bellsForPath.forEach((bell, bi) => {
+        nctx.strokeStyle = '#f9c74f';
+        nctx.lineWidth = 2;
+        nctx.setLineDash(PATH_STYLES[bi % PATH_STYLES.length]);
+        let prev = null;
+        for (let i = 0; i < rowsToShow; i++) {
+          const rowIdx = pageStartRow + i;
+          if (rowIdx >= rows.length) break;
+          const row = rows[rowIdx];
+          const pos = row.indexOf(bell);
+          if (pos < 0) continue;
+          const x = left + pos * colW + colW / 2;
+          const y = contentTop + i * lineH + lineH / 2;
+          if (prev) { nctx.beginPath(); nctx.moveTo(prev.x, prev.y); nctx.lineTo(x, y); nctx.stroke(); }
+          prev = { x, y };
+        }
+        nctx.setLineDash([]);
+      });
+
+      // digits (main)
+      let fs = fontSize;
+      if (stage >= 10) fs = Math.min(fs, Math.max(10, Math.floor(colW * 0.85)));
+      nctx.font = fs + 'px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
+      nctx.textAlign = 'center';
+      nctx.textBaseline = 'middle';
+
+      for (let i = 0; i < rowsToShow; i++) {
+        const rowIdx = pageStartRow + i;
+        if (rowIdx >= rows.length) break;
+        const row = rows[rowIdx];
+        const y = contentTop + i * lineH + lineH / 2;
+        const isActive = (rowIdx === activeRowIdx);
+
+        if (isActive) {
+          nctx.fillStyle = 'rgba(249,199,79,0.14)';
+          roundRect(nctx, x0 + 8, y - lineH / 2 + 2, w0 - 16, lineH - 4, 10);
+          nctx.fill();
+        }
+
+        for (let p = 0; p < stage; p++) {
+          const bell = row[p];
+          const isLive = state.liveBells.includes(bell);
+          const x = left + p * colW + colW / 2;
+
+          if (tapFlash && tapFlash.rowIndex === rowIdx && tapFlash.bell === bell) {
+            const rw = colW - 8;
+            const rh = lineH - 6;
+            if (rw > 2 && rh > 2) {
+              nctx.save();
+              nctx.fillStyle = 'rgba(249,199,79,0.20)';
+              roundRect(nctx, left + p * colW + 4, y - lineH / 2 + 3, rw, rh, 8);
+              nctx.fill();
+              nctx.restore();
+            }
+          }
+
+          nctx.fillStyle = isActive ? (isLive ? '#ffffff' : '#c6cbe0') : (isLive ? '#dde8ff' : '#9aa2bb');
+          nctx.fillText(String(bell), x, y);
+        }
+      }
+
+      nctx.restore(); // main clip
+
+      // Peek strip: only if a next page exists.
+      const { totalPages } = getNotationPagingMeta();
+      const curPage = Number(ui.notationPage) || 0;
+      const hasNext = (curPage + 1) < totalPages;
+      if (hasNext) {
+        // divider
+        nctx.save();
+        nctx.strokeStyle = 'rgba(255,255,255,0.22)';
+        nctx.lineWidth = 1;
+        nctx.beginPath();
+        nctx.moveTo(x0 + 8, dividerY);
+        nctx.lineTo(x0 + w0 - 8, dividerY);
+        nctx.stroke();
+        nctx.restore();
+
+        // peek frame
+        const peekY0 = dividerY + 2;
+        const peekH = (y0 + h0) - peekY0 - 2;
+        nctx.save();
+        nctx.fillStyle = 'rgba(255,255,255,0.02)';
+        nctx.strokeStyle = 'rgba(255,255,255,0.10)';
+        roundRect(nctx, x0 + 6, peekY0, w0 - 12, peekH, 12);
+        nctx.fill(); nctx.stroke();
+        nctx.restore();
+
+        // label
+        nctx.save();
+        nctx.font = '11px system-ui, -apple-system, "Segoe UI", sans-serif';
+        nctx.fillStyle = 'rgba(200,210,235,0.92)';
+        nctx.textAlign = 'left';
+        nctx.textBaseline = 'top';
+        nctx.fillText('Next page', x0 + 14, dividerY + peekTopPad);
+        nctx.restore();
+
+        const peekContentTop = dividerY + peekTopPad + peekLabelH + peekLabelPad;
+        const peekContentBottom = y0 + h0 - 12;
+        const peekContentH = peekContentBottom - peekContentTop;
+
+        // peek digits (clipped)
+        nctx.save();
+        nctx.beginPath();
+        nctx.rect(x0 + 2, peekContentTop, w0 - 4, peekContentH);
+        nctx.clip();
+
+        const nextStart = (curPage + 1) * pageSize;
+        for (let i = 0; i < peekRows; i++) {
+          const rowIdx = nextStart + i;
+          if (rowIdx >= rows.length) break;
+          const row = rows[rowIdx];
+          const y = peekContentTop + i * lineH + lineH / 2;
+          const isActive = (rowIdx === activeRowIdx);
+
+          if (isActive) {
+            nctx.fillStyle = 'rgba(249,199,79,0.14)';
+            roundRect(nctx, x0 + 8, y - lineH / 2 + 2, w0 - 16, lineH - 4, 10);
+            nctx.fill();
+          }
+
+          for (let p = 0; p < stage; p++) {
+            const bell = row[p];
+            const isLive = state.liveBells.includes(bell);
+            const x = left + p * colW + colW / 2;
+            nctx.fillStyle = isActive ? (isLive ? '#ffffff' : '#c6cbe0') : (isLive ? '#dde8ff' : 'rgba(154,162,187,0.92)');
+            nctx.fillText(String(bell), x, y);
+          }
+        }
+
+        nctx.restore();
+
+        // connectors for selected path bells into the peek rows
+        if (bellsForPath && bellsForPath.length) {
+          const visibleRows = Math.max(0, Math.min(pageSize, rows.length - pageStartRow));
+          const lastMainOffset = Math.max(0, visibleRows - 1);
+          const lastMainRowIdx = pageStartRow + lastMainOffset;
+          const yMain = contentTop + lastMainOffset * lineH + lineH / 2;
+          const yPeek0 = peekContentTop + 0 * lineH + lineH / 2;
+          const yPeek1 = peekContentTop + 1 * lineH + lineH / 2;
+
+          bellsForPath.forEach((bell, bi) => {
+            const rowMain = rows[lastMainRowIdx];
+            const row0 = rows[nextStart + 0];
+            if (!rowMain || !row0) return;
+            const posMain = rowMain.indexOf(bell);
+            const pos0 = row0.indexOf(bell);
+            if (posMain < 0 || pos0 < 0) return;
+            const xMain = left + posMain * colW + colW / 2;
+            const x0p = left + pos0 * colW + colW / 2;
+
+            nctx.save();
+            nctx.globalAlpha = 0.80;
+            nctx.strokeStyle = '#f9c74f';
+            nctx.lineWidth = 1.6;
+            nctx.setLineDash(PATH_STYLES[bi % PATH_STYLES.length]);
+            nctx.beginPath();
+            nctx.moveTo(xMain, yMain);
+            nctx.lineTo(x0p, yPeek0);
+            nctx.stroke();
+
+            const row1 = rows[nextStart + 1];
+            if (row1) {
+              const pos1 = row1.indexOf(bell);
+              if (pos1 >= 0) {
+                const x1p = left + pos1 * colW + colW / 2;
+                nctx.beginPath();
+                nctx.moveTo(x0p, yPeek0);
+                nctx.lineTo(x1p, yPeek1);
+                nctx.stroke();
+              }
+            }
+            nctx.setLineDash([]);
+            nctx.restore();
+          });
+        }
+      }
+
+      nctx.restore();
+    }
+
+    if (onePage) {
+      drawOnePageWithPeek(pageAStart, pad, pad);
+    } else {
+      drawPage(pageAStart, pad, pad, '', true);
+      drawPage(pageBStart, pad + pageW + gap, pad, '', false);
+    }
   }
 
   // v06_p12b_notation_tap_to_ring: hit-test a tap/click to (rowIndex, bell)
@@ -4857,13 +5190,17 @@
     const H = rect.height;
     const stage = state.stage;
 
-    const pad = 14, gap = 14;
-    const pageW = (W - pad * 2 - gap) / 2;
+    const onePage = (ui.notationLayout === 'one_page');
+    const pad = 14;
+    const gap = onePage ? 0 : 14;
+    const pageW = onePage ? (W - pad * 2) : ((W - pad * 2 - gap) / 2);
     const pageH = H - pad * 2;
     if (!(pageW > 10 && pageH > 10 && stage >= 1)) return null;
 
     let page = whichPage;
-    if (page == null) {
+    if (onePage) {
+      page = 0;
+    } else if (page == null) {
       if (x >= pad && x <= pad + pageW) page = 0;
       else if (x >= pad + pageW + gap && x <= pad + pageW + gap + pageW) page = 1;
       else return null;
@@ -4878,13 +5215,22 @@
     if (x < x0 || x > x0 + pageW) return null;
     if (y < y0 || y > y0 + pageH) return null;
 
-    const titleH = 18;
     const lineH = 24;
     const pageSize = Math.max(1, Number(state.notationPageSize) || 1);
 
     // v06_p13_notation_touch_polish: labels removed, so don't reserve header height.
     const contentTop = y0 + 12;
-    const contentBottom = y0 + pageH - 12;
+    let contentBottom = y0 + pageH - 12;
+    if (onePage) {
+      const peekRows = 2;
+      const peekTopPad = 6;
+      const peekLabelH = 14;
+      const peekLabelPad = 8;
+      const peekBottomPad = 12;
+      const peekAreaH = peekRows * lineH + peekTopPad + peekLabelH + peekLabelPad + peekBottomPad;
+      const dividerY = y0 + pageH - peekAreaH;
+      contentBottom = dividerY - 8;
+    }
     if (y < contentTop || y > contentBottom) return null;
 
     const maxColW = 60;
@@ -4901,7 +5247,7 @@
     if (col < 0 || col >= stage) return null;
 
     let basePage = Number(ui.notationPage) || 0;
-    basePage = Math.floor(basePage / 2) * 2;
+    if (!onePage) basePage = Math.floor(basePage / 2) * 2;
     if (basePage < 0) basePage = 0;
     const pageStartRow = (basePage + page) * pageSize;
     const rowIndex = pageStartRow + rowOffset;
@@ -5812,6 +6158,19 @@
     });
   }
 
+  // v06_p15_notation_single_page_mode: notation layout selector (persisted)
+  if (notationLayoutSelect) {
+    notationLayoutSelect.addEventListener('change', () => {
+      let v = String(notationLayoutSelect.value || 'two_page');
+      if (!(v === 'two_page' || v === 'one_page')) v = isMobileLikely() ? 'one_page' : 'two_page';
+      safeSetLS(LS_NOTATION_LAYOUT, v);
+      ui.notationLayout = v;
+      syncNotationPagingUI();
+      markDirty();
+      kickLoop();
+    });
+  }
+
   // Auto preset responsiveness: re-evaluate on resize (throttled)
   {
     let layoutAutoResizeQueued = false;
@@ -6286,6 +6645,9 @@
 
     // View: layout presets (persisted; safe after loop has started)
     syncLayoutPresetUI();
+
+    // v06_p15_notation_single_page_mode
+    syncNotationLayoutUI();
 
     syncNotationPagingUI();
 

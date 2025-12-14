@@ -289,16 +289,21 @@ select option { background-color: #0b1026; color: #e8eeff; }
 #notationCanvas{height:540px;cursor:pointer;touch-action:none;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
 
 /* v06_p12a_notation_paging_arrows */
-.notation-wrap{position:relative}
+.notation-wrap{position:relative;padding-bottom:56px}
 .pill.notation-page-nav{
   position:absolute;
   bottom:4px;
   z-index:5;
-  padding:2px 10px;
+  min-width:44px;
+  min-height:44px;
+  padding:10px 14px;
   font-size:14px;
   font-weight:800;
   line-height:1;
   user-select:none;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
 }
 #notationPrevBtn{left:18px}
 #notationNextBtn{right:18px}
