@@ -47,6 +47,15 @@
           <div class="pane-title"><span>Setup</span></div>
           <div class="rg-screen-body">
             <div id="playMenuControls" class="rg-controls" aria-label="Setup controls"></div>
+            <div id="setupCCCBRLibraryControl" class="control">
+              <label>CCCBR Library</label>
+              <a id="setupCCCBRDownloadLink" href="https://methods.cccbr.org.uk/xml/CCCBR_methods.xml.zip" target="_blank" rel="noopener">CCCBR methods library (download ZIP)</a>
+              <button id="setupLoadCCCBRWebBtn" class="pill" type="button">Download &amp; Load CCCBR library</button>
+              <span id="setupLoadCCCBRWebStatus" class="rg-muted"></span>
+            </div>
+            <div class="control">
+              <button id="setupExploreLibraryBtn" class="pill" type="button" disabled title="Load a CCCBR library XML/ZIP first">Explore library</button>
+            </div>
             <div class="stats-info">
               Scoring: each scored bell gets one chance per row. Ring in its window: middle third = 10, outer thirds = 9. Outside window = 0. Only the first ring per bell per row counts.
             </div>
@@ -100,6 +109,69 @@
               <button class="pill" type="button" data-go-screen="sound">Sound</button>
               <button id="soundBtnEnterGame" class="pill" type="button">Play</button>
               <button id="soundBtnDemo" class="pill" type="button">Demo</button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div id="screenLibrary" class="rg-screen" aria-hidden="true">
+        <section class="pane rg-splash">
+          <div class="pane-title"><span>Method Library</span></div>
+          <div class="rg-screen-body">
+            <div class="rg-muted rg-library-loaded">Loaded library: <span id="libraryFileName">none</span></div>
+            <div id="libraryNotationPlaceholder" aria-label="Library notation placeholder">
+              <div id="libraryNotLoadedNotice" class="rg-library-notice hidden">
+                <div class="rg-muted rg-library-notice-title">No CCCBR library loaded yet.</div>
+                <div class="rg-library-notice-actions">
+                  <button id="libraryGoSetupBtn" class="pill" type="button">Go to Setup</button>
+                </div>
+                <div class="rg-library-notice-links">
+                  <a href="https://methods.cccbr.org.uk/xml/CCCBR_methods.xml.zip" target="_blank" rel="noopener">CCCBR methods library (download ZIP)</a>
+                </div>
+              </div>
+
+              <div id="libraryLayout" class="rg-library-layout">
+                <div class="rg-library-col rg-library-browse" aria-label="Browse">
+                  <div class="rg-library-col-head">
+                    <div class="rg-library-col-title">Browse</div>
+                    <input id="librarySearchInput" type="search" placeholder="Search open groups…" autocomplete="off" />
+                  </div>
+                  <div id="libraryBrowseGroups" class="rg-library-groups"></div>
+                </div>
+
+                <div class="rg-library-col rg-library-details" aria-label="Details">
+                  <div id="libraryDetailsEmpty" class="rg-muted">Select a method to see details.</div>
+                  <div id="libraryDetailsPanel" class="hidden">
+                    <div id="librarySelectedTitle" class="rg-library-selected-title"></div>
+                    <div id="librarySelectedMeta" class="rg-library-selected-meta"></div>
+                    <div id="libraryGlossary" class="rg-library-section"></div>
+                    <div id="libraryNotes" class="rg-library-section"></div>
+
+                    <div class="rg-library-actions">
+                      <button id="libraryPlaySelectedBtn" class="pill" type="button" disabled>Play</button>
+                      <button id="libraryDemoSelectedBtn" class="pill" type="button" disabled>Demo</button>
+                    </div>
+
+                    <div class="rg-library-preview">
+                      <div class="rg-library-preview-head">
+                        <div class="rg-library-col-title">Preview</div>
+                        <div class="rg-library-line">
+                          <label for="libraryLineBellSelect" class="rg-muted">Line bell</label>
+                          <select id="libraryLineBellSelect"></select>
+                        </div>
+                      </div>
+                      <pre id="libraryPreview" class="rg-library-preview-pre"></pre>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="rg-nav">
+              <button class="pill" type="button" data-go-screen="play">Setup</button>
+              <button class="pill" type="button" data-go-screen="view">View</button>
+              <button class="pill" type="button" data-go-screen="sound">Sound</button>
+              <button id="libraryBtnEnterGame" class="pill" type="button">Play</button>
+              <button id="libraryBtnDemo" class="pill" type="button">Demo</button>
             </div>
           </div>
         </section>

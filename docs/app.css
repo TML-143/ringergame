@@ -57,7 +57,8 @@ body{
     /* Menu screens: lower nav row slightly (v06_p10_ui_home_menu_polish) */
     #screenPlay .rg-nav,
     #screenView .rg-nav,
-    #screenSound .rg-nav{margin-top:14px;padding-top:10px;flex-wrap:wrap;gap:10px;}
+    #screenSound .rg-nav,
+    #screenLibrary .rg-nav{margin-top:14px;padding-top:10px;flex-wrap:wrap;gap:10px;}
 .top-bar{
   display:flex;
   align-items:flex-start;
@@ -207,6 +208,8 @@ select option { background-color: #0b1026; color: #e8eeff; }
   font-weight:600;
 }
 .pill.active{border-color:rgba(249,199,79,0.45);box-shadow:0 0 0 3px rgba(249,199,79,0.12) inset}
+.pill:disabled,
+.pill.is-disabled{opacity:0.45;cursor:not-allowed}
 
 .bell-picker{
   display:grid;
@@ -580,4 +583,262 @@ select option { background-color: #0b1026; color: #e8eeff; }
 #screenView #viewMenuControls button[aria-pressed]:focus-visible{
   border-color:rgba(249,199,79,0.45);
   box-shadow:0 0 0 3px rgba(249,199,79,0.14);
+}
+
+
+/* v06_p12d_library_browser: Setup CCCBR Library helpers */
+#setupCCCBRLibraryControl a{
+  color:var(--accent);
+  text-decoration:none;
+}
+#setupCCCBRLibraryControl a:hover{
+  text-decoration:underline;
+}
+#setupLoadCCCBRWebStatus{
+  min-height:1em;
+  font-size:12px;
+}
+
+/* v06_p12d_library_browser: Library screen layout */
+#libraryNotationPlaceholder{
+  margin-top:12px;
+}
+
+#screenLibrary .rg-library-loaded{
+  margin-top:6px;
+}
+
+#screenLibrary .rg-library-layout{
+  display:grid;
+  grid-template-columns:1fr 1.15fr;
+  gap:14px;
+}
+
+@media (max-width: 860px){
+  #screenLibrary .rg-library-layout{
+    grid-template-columns:1fr;
+  }
+}
+
+#screenLibrary .rg-library-col{
+  border:1px solid rgba(255,255,255,0.12);
+  border-radius:16px;
+  background:rgba(255,255,255,0.03);
+  padding:12px;
+}
+
+#screenLibrary .rg-library-col-head{
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:10px;
+  flex-wrap:wrap;
+  margin-bottom:10px;
+}
+
+#screenLibrary .rg-library-col-title{
+  font-weight:800;
+  font-size:13px;
+  letter-spacing:0.2px;
+}
+
+#screenLibrary #librarySearchInput{
+  width:min(340px, 100%);
+  padding:8px 10px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,0.12);
+  background:rgba(0,0,0,0.20);
+  color:rgba(232,238,255,0.92);
+}
+
+#screenLibrary .rg-library-notice{
+  border:1px dashed rgba(255,255,255,0.18);
+  border-radius:16px;
+  padding:12px;
+  background:rgba(255,255,255,0.02);
+}
+
+#screenLibrary .rg-library-notice-title{
+  margin-bottom:10px;
+}
+
+#screenLibrary .rg-library-mt6{
+  margin-top:6px;
+}
+
+#screenLibrary details.rg-lib-stage,
+#screenLibrary details.rg-lib-class{
+  border:1px solid rgba(255,255,255,0.12);
+  border-radius:12px;
+  padding:8px 10px;
+  background:rgba(255,255,255,0.02);
+  margin-bottom:10px;
+}
+
+#screenLibrary details.rg-lib-class{
+  margin-bottom:8px;
+}
+
+#screenLibrary details.rg-lib-stage > summary{
+  font-weight:800;
+}
+
+#screenLibrary details.rg-lib-class > summary{
+  font-weight:700;
+}
+
+#screenLibrary details summary{
+  cursor:pointer;
+}
+
+#screenLibrary .rg-lib-method-list{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  padding-top:8px;
+}
+
+#screenLibrary button.rg-lib-method-btn{
+  width:100%;
+  text-align:left;
+  padding:8px 10px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,0.12);
+  background:rgba(255,255,255,0.03);
+  color:rgba(232,238,255,0.92);
+  font-weight:650;
+}
+
+#screenLibrary button.rg-lib-method-btn:hover{
+  border-color:rgba(249,199,79,0.45);
+}
+
+#screenLibrary button.rg-lib-method-btn.is-active{
+  border-color:rgba(249,199,79,0.55);
+  background:rgba(249,199,79,0.10);
+  box-shadow:0 0 0 3px rgba(249,199,79,0.10) inset;
+}
+
+#screenLibrary .rg-library-selected-title{
+  font-size:18px;
+  font-weight:900;
+  margin-bottom:8px;
+}
+
+#screenLibrary .rg-library-selected-meta{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  margin-bottom:10px;
+}
+
+#screenLibrary .rg-library-actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  margin:10px 0 8px 0;
+}
+
+#screenLibrary .rg-library-section-title{
+  font-weight:900;
+  margin-bottom:6px;
+}
+
+#screenLibrary .rg-library-section-body{
+  color:rgba(232,238,255,0.88);
+  font-size:13px;
+  line-height:1.35;
+}
+
+#screenLibrary .rg-library-mono{
+  font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size:12px;
+}
+
+#screenLibrary .rg-library-preview{
+  margin-top:12px;
+}
+
+#screenLibrary .rg-library-preview-head{
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:10px;
+  flex-wrap:wrap;
+  margin-bottom:8px;
+}
+
+#screenLibrary .rg-library-line{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+
+#screenLibrary #libraryLineBellSelect{
+  padding:6px 8px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,0.12);
+  background:rgba(0,0,0,0.20);
+  color:rgba(232,238,255,0.92);
+}
+
+#screenLibrary #libraryPreview{
+  max-height:340px;
+  overflow:auto;
+  white-space:pre;
+  border:1px solid rgba(255,255,255,0.12);
+  border-radius:14px;
+  padding:10px;
+  background:rgba(0,0,0,0.25);
+}
+
+/* v06_p12d_library_browser: Setup Method Library summary */
+#methodLibrary .rg-lib-summary{
+  flex:1 1 100%;
+  width:100%;
+  border:1px solid rgba(255,255,255,0.12);
+  border-radius:16px;
+  background:rgba(255,255,255,0.02);
+  padding:12px;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+
+#methodLibrary .rg-lib-summary-head{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  align-items:baseline;
+}
+
+#methodLibrary .rg-lib-stage-pills{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+}
+
+#methodLibrary .rg-lib-stage-pill{
+  border:1px solid rgba(255,255,255,0.12);
+  background:rgba(255,255,255,0.03);
+  border-radius:999px;
+  padding:6px 10px;
+  font-size:12px;
+  color:rgba(232,238,255,0.85);
+}
+
+#methodLibrary .rg-lib-summary-actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  align-items:center;
+}
+
+#methodLibrary .rg-lib-summary-actions .control{
+  min-width:auto;
+}
+
+#methodLibrary .rg-lib-summary-hint{
+  font-size:12px;
+  color:rgba(232,238,255,0.72);
 }

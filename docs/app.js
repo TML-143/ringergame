@@ -72,7 +72,7 @@
 
   // === Analytics (GA4) ===
   const GA_ID = 'G-7TEG531231';
-  const SITE_VERSION = 'v06_p12b_notation_tap_to_ring';
+  const SITE_VERSION = 'v06_p12d_library_browser';
 
   function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
   function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
@@ -282,6 +282,7 @@
   const screenPlay = document.getElementById('screenPlay');
   const screenView = document.getElementById('screenView');
   const screenSound = document.getElementById('screenSound');
+  const screenLibrary = document.getElementById('screenLibrary');
   const screenGame = document.getElementById('screenGame');
 
   const ui = {
@@ -290,14 +291,20 @@
     notationFollow: true,
     // v06_p12b_notation_tap_to_ring
     notationTapFlash: null,
-    notationCursorRow: null
+    notationCursorRow: null,
+
+    // v06_p12d_library_browser
+    libraryIndex: null,
+    librarySelectedIdx: null,
+    libraryPreviewBell: 1,
+    librarySearchTerm: ''
   };
 
   function setScreen(name) {
     const n = String(name || '').toLowerCase();
-    const next = (n === 'home' || n === 'play' || n === 'view' || n === 'sound' || n === 'game') ? n : 'home';
+    const next = (n === 'home' || n === 'play' || n === 'view' || n === 'sound' || n === 'library' || n === 'game') ? n : 'home';
 
-    const screens = { home: screenHome, play: screenPlay, view: screenView, sound: screenSound, game: screenGame };
+    const screens = { home: screenHome, play: screenPlay, view: screenView, sound: screenSound, library: screenLibrary, game: screenGame };
     for (const k in screens) {
       const el = screens[k];
       if (!el) continue;
@@ -312,10 +319,579 @@
       syncViewMenuSelectedUI();
     }
 
+    if (next === 'library') {
+      syncLibraryScreenUI();
+    }
+
     if (next === 'game') {
       markDirty();
       kickLoop();
       syncDronePauseBtnUI();
+    }
+  }
+
+  // v06_p12c_library_entry: enable/disable Setup entry + keep Library screen filename current
+  function syncLibraryEntryUI() {
+    const btn = document.getElementById('setupExploreLibraryBtn');
+    if (!btn) return;
+
+    const loaded = !!(state && state.libraryLoaded);
+    btn.disabled = !loaded;
+    btn.classList.toggle('is-disabled', !loaded);
+    if (!loaded) {
+      btn.title = 'Load a CCCBR library XML/ZIP first';
+    } else {
+      btn.title = '';
+    }
+  }
+
+  function syncLibraryScreenUI() {
+    const nameEl = document.getElementById('libraryFileName');
+    if (nameEl) {
+      if (state && state.libraryLoaded && state.libraryFileName) {
+        nameEl.textContent = String(state.libraryFileName);
+      } else {
+        nameEl.textContent = 'none';
+      }
+    }
+
+    // v06_p12d_library_browser: ensure Library screen renders (if present)
+    try { renderLibraryBrowser(); } catch (_) {}
+  }
+
+  // === v06_p12d_library_browser ===
+  const LIB_STAGE_INFO = {
+    4: { word: 'Minimus', bells: 4 },
+    5: { word: 'Doubles', bells: 5 },
+    6: { word: 'Minor', bells: 6 },
+    7: { word: 'Triples', bells: 7 },
+    8: { word: 'Major', bells: 8 },
+    9: { word: 'Caters', bells: 9 },
+    10: { word: 'Royal', bells: 10 },
+    11: { word: 'Cinques', bells: 11 },
+    12: { word: 'Maximus', bells: 12 },
+  };
+
+  function libStageWord(stage) {
+    const s = parseInt(stage, 10);
+    if (LIB_STAGE_INFO[s] && LIB_STAGE_INFO[s].word) return LIB_STAGE_INFO[s].word;
+    return String(stage || '');
+  }
+
+  function libStageMeaning(stage) {
+    const s = parseInt(stage, 10);
+    const w = libStageWord(s) || String(s || '');
+    return w + ' = ' + s + ' bells';
+  }
+
+  function bellToCCCBRChar(b) {
+    const n = parseInt(b, 10);
+    if (n >= 1 && n <= 9) return String(n);
+    if (n === 10) return '0';
+    if (n === 11) return 'E';
+    if (n === 12) return 'T';
+    return '?';
+  }
+
+  function buildLibraryIndex() {
+    const methods = (RG && RG.methods) ? RG.methods : [];
+    const stageOrder = [4,5,6,7,8,9,10,11,12];
+    const stageMap = {};
+
+    for (let i = 0; i < stageOrder.length; i++) {
+      const s = stageOrder[i];
+      stageMap[s] = {
+        stage: s,
+        word: libStageWord(s),
+        count: 0,
+        classMap: {},
+        classes: []
+      };
+    }
+
+    for (let i = 0; i < methods.length; i++) {
+      const m = methods[i];
+      if (!m) continue;
+
+      let s = parseInt(m.stage, 10);
+      if (!isFinite(s)) continue;
+      s = clamp(s, 4, 12);
+      if (s < 4 || s > 12) continue;
+
+      const st = stageMap[s];
+      if (!st) continue;
+      st.count += 1;
+
+      let cls = (m.class == null ? '' : String(m.class)).trim();
+      if (!cls) cls = '(Unclassified)';
+
+      const cKey = cls;
+      if (!st.classMap[cKey]) {
+        st.classMap[cKey] = {
+          name: cls,
+          count: 0,
+          methodIdxs: []
+        };
+      }
+
+      const cg = st.classMap[cKey];
+      cg.count += 1;
+      cg.methodIdxs.push(i);
+    }
+
+    for (let si = 0; si < stageOrder.length; si++) {
+      const s = stageOrder[si];
+      const st = stageMap[s];
+      if (!st) continue;
+
+      const classKeys = Object.keys(st.classMap || {});
+      classKeys.sort(function(a, b) { return String(a).localeCompare(String(b)); });
+
+      st.classes = classKeys.map(function(k) {
+        const cg = st.classMap[k];
+        if (cg && Array.isArray(cg.methodIdxs)) {
+          cg.methodIdxs.sort(function(ia, ib) {
+            const ta = (methods[ia] && methods[ia].title) ? String(methods[ia].title).toLowerCase() : '';
+            const tb = (methods[ib] && methods[ib].title) ? String(methods[ib].title).toLowerCase() : '';
+            if (ta < tb) return -1;
+            if (ta > tb) return 1;
+            return ia - ib;
+          });
+        }
+        return cg;
+      });
+    }
+
+    ui.libraryIndex = {
+      total: methods.length,
+      stageOrder: stageOrder.slice(),
+      stageMap: stageMap
+    };
+  }
+
+  function clearLibrarySelectionUI() {
+    ui.librarySelectedIdx = null;
+    if (libraryDetailsPanel) libraryDetailsPanel.classList.add('hidden');
+    if (libraryDetailsEmpty) libraryDetailsEmpty.classList.remove('hidden');
+    if (libraryPlaySelectedBtn) libraryPlaySelectedBtn.disabled = true;
+    if (libraryDemoSelectedBtn) libraryDemoSelectedBtn.disabled = true;
+    if (librarySelectedTitle) librarySelectedTitle.textContent = '';
+    if (librarySelectedMeta) librarySelectedMeta.innerHTML = '';
+    if (libraryGlossary) libraryGlossary.innerHTML = '';
+    if (libraryNotes) libraryNotes.innerHTML = '';
+    if (libraryPreview) libraryPreview.textContent = '';
+    try {
+      if (libraryBrowseGroups) {
+        const prev = libraryBrowseGroups.querySelector('button.rg-lib-method-btn.is-active');
+        if (prev) prev.classList.remove('is-active');
+      }
+    } catch (_) {}
+  }
+
+  function selectLibraryMethod(idx) {
+    const methods = (RG && RG.methods) ? RG.methods : [];
+    const i = parseInt(idx, 10);
+    if (!isFinite(i) || i < 0 || i >= methods.length) return;
+    const m = methods[i];
+    if (!m) return;
+
+    ui.librarySelectedIdx = i;
+
+    // Highlight selection in the browse list (if rendered)
+    try {
+      if (libraryBrowseGroups) {
+        const prev = libraryBrowseGroups.querySelector('button.rg-lib-method-btn.is-active');
+        if (prev) prev.classList.remove('is-active');
+        const cur = libraryBrowseGroups.querySelector('button.rg-lib-method-btn[data-method-idx="' + i + '"]');
+        if (cur) cur.classList.add('is-active');
+      }
+    } catch (_) {}
+
+    if (libraryDetailsEmpty) libraryDetailsEmpty.classList.add('hidden');
+    if (libraryDetailsPanel) libraryDetailsPanel.classList.remove('hidden');
+    if (libraryPlaySelectedBtn) libraryPlaySelectedBtn.disabled = false;
+    if (libraryDemoSelectedBtn) libraryDemoSelectedBtn.disabled = false;
+
+    const title = (m.title == null ? '' : String(m.title)).trim() || 'Untitled';
+    if (librarySelectedTitle) librarySelectedTitle.textContent = title;
+
+    let stage = parseInt(m.stage, 10);
+    if (!isFinite(stage)) stage = 0;
+    stage = clamp(stage, 4, 12);
+    const stageWord = libStageWord(stage);
+
+    const cls = (m.class == null ? '' : String(m.class)).trim();
+    const fam = (m.family == null ? '' : String(m.family)).trim();
+    const pn = (m.pn == null ? '' : String(m.pn)).trim();
+    const lh = (m.lh == null ? '' : String(m.lh)).trim();
+
+    if (librarySelectedMeta) {
+      const lines = [];
+      lines.push('<div><span class="rg-muted">Stage:</span> ' + stage + ' (' + stageWord + ')</div>');
+      lines.push('<div><span class="rg-muted">Class:</span> ' + (cls || '(Unclassified)') + '</div>');
+      if (fam) lines.push('<div><span class="rg-muted">Family:</span> ' + fam + '</div>');
+      if (lh) lines.push('<div><span class="rg-muted">Lead head:</span> ' + lh + '</div>');
+      librarySelectedMeta.innerHTML = lines.join('');
+    }
+
+    // Glossary
+    if (libraryGlossary) {
+      const parsed = (function() {
+        const w = stageWord;
+        const t = title;
+        const lower = t.toLowerCase();
+        const wl = (' ' + w).toLowerCase();
+        if (w && lower.endsWith(wl)) {
+          const name = t.slice(0, t.length - wl.length).trim();
+          return { name: name || t, stageWord: w };
+        }
+        return { name: t, stageWord: w };
+      })();
+
+      const gl = [];
+      gl.push('<div class="rg-library-section-title">Glossary</div>');
+      gl.push('<div class="rg-library-section-body">');
+      gl.push('<div><span class="rg-muted">Stage</span> is the bell-count word: <b>' + libStageMeaning(stage) + '</b>.</div>');
+      gl.push('<div class="rg-library-mt6"><span class="rg-muted">Class</span> (in CCCBR metadata) is a short category for the method type (e.g., Plain, Treble Bob, Surprise).</div>');
+      if (parsed && parsed.name) {
+        gl.push('<div class="rg-library-mt6"><span class="rg-muted">Name:</span> ' + (parsed.name || '') + '</div>');
+        gl.push('<div><span class="rg-muted">Stage:</span> ' + stageWord + ' (' + stage + ' bells)</div>');
+      }
+      gl.push('</div>');
+      libraryGlossary.innerHTML = gl.join('');
+    }
+
+    // Notes / preview
+    if (libraryNotes) {
+      const notes = [];
+      notes.push('<div class="rg-library-section-title">Notes</div>');
+      notes.push('<div class="rg-library-section-body">');
+      if (pn) {
+        notes.push('<div><span class="rg-muted">Place notation:</span> <span class="rg-library-mono">' + pn.replace(/</g,'&lt;') + '</span></div>');
+      } else {
+        notes.push('<div><span class="rg-muted">Place notation:</span> (not provided)</div>');
+      }
+      notes.push('</div>');
+      libraryNotes.innerHTML = notes.join('');
+    }
+
+    // Line bell selector
+    if (libraryLineBellSelect) {
+      libraryLineBellSelect.innerHTML = '';
+      for (let b = 1; b <= stage; b++) {
+        const opt = document.createElement('option');
+        opt.value = String(b);
+        opt.textContent = 'Bell ' + bellToCCCBRChar(b);
+        libraryLineBellSelect.appendChild(opt);
+      }
+      if (ui.libraryPreviewBell < 1 || ui.libraryPreviewBell > stage) ui.libraryPreviewBell = 1;
+      libraryLineBellSelect.value = String(ui.libraryPreviewBell);
+    }
+
+    updateLibraryPreview();
+  }
+
+  function updateLibraryPreview() {
+    if (!libraryPreview) return;
+    const methods = (RG && RG.methods) ? RG.methods : [];
+    const idx = ui.librarySelectedIdx;
+    if (idx == null || idx < 0 || idx >= methods.length) {
+      libraryPreview.textContent = '';
+      return;
+    }
+    const m = methods[idx];
+    if (!m) {
+      libraryPreview.textContent = '';
+      return;
+    }
+
+    let stage = parseInt(m.stage, 10);
+    if (!isFinite(stage)) stage = 0;
+    stage = clamp(stage, 4, 12);
+    const pn = (m.pn == null ? '' : String(m.pn)).trim();
+
+    const highlightBell = clamp(parseInt(ui.libraryPreviewBell, 10) || 1, 1, stage);
+    const N = 24;
+
+    let rows = null;
+    if (pn) {
+      try {
+        rows = cccbRowsFromPn(stage, pn, 2);
+      } catch (_) {
+        rows = null;
+      }
+    }
+    if (!rows || !rows.length) {
+      try {
+        rows = makePlainHunt(stage, 2);
+      } catch (_) {
+        rows = null;
+      }
+    }
+
+    if (!rows || !rows.length) {
+      libraryPreview.textContent = 'Preview not available for this method.';
+      return;
+    }
+
+    const lines = [];
+    if (pn) lines.push('PN: ' + pn);
+    else lines.push('PN: (none)');
+    lines.push('');
+
+    const max = Math.min(N, rows.length);
+    for (let i = 0; i < max; i++) {
+      const row = rows[i];
+      if (!row || !row.length) continue;
+      let s = '';
+      for (let j = 0; j < row.length; j++) {
+        const ch = bellToCCCBRChar(row[j]);
+        if (row[j] === highlightBell) s += '[' + ch + ']';
+        else s += ' ' + ch + ' ';
+      }
+      const n = String(i + 1).padStart(2, '0');
+      lines.push(n + ' ' + s.trimEnd());
+    }
+
+    libraryPreview.textContent = lines.join('\n');
+  }
+
+  function applyLibrarySearchFilter() {
+    if (!libraryBrowseGroups || !librarySearchInput) return;
+    const term = (librarySearchInput.value || '').trim().toLowerCase();
+    ui.librarySearchTerm = term;
+
+    const buttons = libraryBrowseGroups.querySelectorAll('button[data-method-idx]');
+    for (let i = 0; i < buttons.length; i++) {
+      const btn = buttons[i];
+      const txt = (btn.textContent || '').toLowerCase();
+      const ok = !term || (txt.indexOf(term) >= 0);
+      btn.classList.toggle('hidden', !ok);
+    }
+  }
+
+  function buildStageGroup(stage, stageEntry) {
+    const details = document.createElement('details');
+    details.className = 'rg-lib-stage';
+    details.dataset.stage = String(stage);
+    const summary = document.createElement('summary');
+    const word = stageEntry && stageEntry.word ? String(stageEntry.word) : libStageWord(stage);
+    const count = stageEntry && typeof stageEntry.count === 'number' ? stageEntry.count : 0;
+    summary.textContent = stage + ' — ' + word + ' (' + count + ')';
+    details.appendChild(summary);
+
+    const body = document.createElement('div');
+    body.className = 'rg-lib-stage-body';
+    details.appendChild(body);
+
+    details.addEventListener('toggle', () => {
+      if (!details.open) return;
+      if (details.dataset.built === '1') {
+        applyLibrarySearchFilter();
+        return;
+      }
+      details.dataset.built = '1';
+      buildStageClasses(stage, body);
+      applyLibrarySearchFilter();
+    });
+
+    return details;
+  }
+
+  function buildStageClasses(stage, destEl) {
+    if (!destEl || !ui.libraryIndex || !ui.libraryIndex.stageMap) return;
+    const st = ui.libraryIndex.stageMap[stage];
+    if (!st || !st.classes) return;
+
+    destEl.innerHTML = '';
+    for (let i = 0; i < st.classes.length; i++) {
+      const cg = st.classes[i];
+      if (!cg) continue;
+      const clsDetails = document.createElement('details');
+      clsDetails.className = 'rg-lib-class';
+      clsDetails.dataset.stage = String(stage);
+
+      const sum = document.createElement('summary');
+      sum.textContent = (cg.name || '(Unclassified)') + ' (' + (cg.count || 0) + ')';
+      clsDetails.appendChild(sum);
+
+      const body = document.createElement('div');
+      body.className = 'rg-lib-class-body';
+      clsDetails.appendChild(body);
+
+      clsDetails.addEventListener('toggle', () => {
+        if (!clsDetails.open) return;
+        if (clsDetails.dataset.built === '1') {
+          applyLibrarySearchFilter();
+          return;
+        }
+        clsDetails.dataset.built = '1';
+        buildClassMethodButtons(stage, cg, body);
+        applyLibrarySearchFilter();
+      });
+
+      destEl.appendChild(clsDetails);
+    }
+  }
+
+  function buildClassMethodButtons(stage, classGroup, destEl) {
+    if (!destEl || !classGroup) return;
+    const methods = (RG && RG.methods) ? RG.methods : [];
+    const idxs = Array.isArray(classGroup.methodIdxs) ? classGroup.methodIdxs : [];
+
+    const list = document.createElement('div');
+    list.className = 'rg-lib-method-list';
+
+    for (let i = 0; i < idxs.length; i++) {
+      const mi = idxs[i];
+      const m = methods[mi];
+      if (!m) continue;
+      const title = (m.title == null ? '' : String(m.title)).trim() || 'Untitled';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'rg-lib-method-btn';
+      btn.textContent = title;
+      btn.dataset.methodIdx = String(mi);
+      btn.addEventListener('click', () => selectLibraryMethod(mi));
+      if (ui.librarySelectedIdx === mi) btn.classList.add('is-active');
+      list.appendChild(btn);
+    }
+
+    destEl.appendChild(list);
+  }
+
+  function renderLibraryBrowser() {
+    if (!libraryBrowseGroups || !libraryLayout || !libraryNotLoadedNotice) return;
+
+    const hasLib = !!(state && state.libraryLoaded && RG && RG.methods && RG.methods.length);
+    libraryNotLoadedNotice.classList.toggle('hidden', hasLib);
+    libraryLayout.classList.toggle('hidden', !hasLib);
+
+    if (libraryGoSetupBtn) {
+      libraryGoSetupBtn.disabled = (ui.screen !== 'library');
+    }
+
+    if (!hasLib) {
+      clearLibrarySelectionUI();
+      try { libraryBrowseGroups.innerHTML = ''; } catch (_) {}
+      return;
+    }
+
+    // Index rebuild if needed
+    if (!ui.libraryIndex || ui.libraryIndex.total !== RG.methods.length) {
+      buildLibraryIndex();
+    }
+
+    const builtFor = libraryBrowseGroups.dataset && libraryBrowseGroups.dataset.builtFor ? String(libraryBrowseGroups.dataset.builtFor) : '';
+    const nowFor = String(RG.methods.length);
+    if (builtFor !== nowFor) {
+      libraryBrowseGroups.innerHTML = '';
+      if (librarySearchInput) {
+        try { librarySearchInput.value = ''; } catch (_) {}
+      }
+      ui.librarySearchTerm = '';
+
+      const stageOrder = (ui.libraryIndex && ui.libraryIndex.stageOrder) ? ui.libraryIndex.stageOrder : [4,5,6,7,8,9,10,11,12];
+      for (let si = 0; si < stageOrder.length; si++) {
+        const s = stageOrder[si];
+        const st = ui.libraryIndex.stageMap ? ui.libraryIndex.stageMap[s] : null;
+        if (!st) continue;
+        const stageDetails = buildStageGroup(s, st);
+        libraryBrowseGroups.appendChild(stageDetails);
+      }
+      libraryBrowseGroups.dataset.builtFor = nowFor;
+    }
+
+    // Keep details panel in sync
+    if (ui.librarySelectedIdx != null) {
+      if (ui.librarySelectedIdx < 0 || ui.librarySelectedIdx >= RG.methods.length) {
+        clearLibrarySelectionUI();
+      }
+    }
+  }
+
+  function libraryEnterWithSelected(mode) {
+    const idx = ui.librarySelectedIdx;
+    if (idx == null) return;
+
+    if (state.phase !== 'idle') {
+      alert('Stop the current game first.');
+      return;
+    }
+
+    const result = loadCCCBRMethod(idx);
+    if (!result) return;
+
+    setScreen('game');
+    if (mode === 'demo') {
+      try {
+        const methods = RG.methods || [];
+        const m = methods[idx];
+        if (typeof analytics !== 'undefined' && analytics && typeof analytics.track === 'function' && m) {
+          analytics.track('cccbr_demo_start', {
+            title: m.title || '',
+            stage: result.stage || 0,
+            family: m.family || '',
+            pn_present: !!(m.pn && String(m.pn).trim())
+          });
+        }
+      } catch (_) {}
+      requestAnimationFrame(() => startPressed('demo'));
+    }
+  }
+
+  const CCCBR_WEB_LIBRARY_URL = 'https://methods.cccbr.org.uk/xml/CCCBR_methods.xml.zip';
+  async function downloadAndLoadCCCBRLibraryFromWeb() {
+    if (!setupLoadCCCBRWebBtn) return;
+    if (state.phase !== 'idle') {
+      alert('Stop the current game first.');
+      return;
+    }
+
+    // Some browsers cannot unzip in-app; fall back immediately.
+    if (typeof DecompressionStream === 'undefined') {
+      alert('Could not download directly. Please use the download link and upload the ZIP file manually.');
+      return;
+    }
+
+    try {
+      setupLoadCCCBRWebBtn.disabled = true;
+      if (setupLoadCCCBRWebStatus) setupLoadCCCBRWebStatus.textContent = 'Loading…';
+
+      const resp = await fetch(CCCBR_WEB_LIBRARY_URL);
+      if (!resp || !resp.ok) throw new Error('HTTP ' + (resp ? resp.status : '0'));
+      const blob = await resp.blob();
+
+      const file = new File([blob], 'CCCBR_methods.xml.zip', { type: 'application/zip' });
+      const before = RG.methods.length;
+      await parseZipArchive(file);
+      const added = RG.methods.length - before;
+
+      if (added <= 0 && !RG.methods.length) {
+        throw new Error('No methods loaded');
+      }
+
+      if (added > 0) {
+        state.libraryLoaded = true;
+        state.libraryFileName = 'CCCBR_methods.xml.zip';
+        try { buildLibraryIndex(); } catch (_) {}
+      }
+
+      syncLibraryEntryUI();
+      syncLibraryScreenUI();
+      refreshMethodList();
+
+      if (setupLoadCCCBRWebStatus) {
+        setupLoadCCCBRWebStatus.textContent = 'Loaded ' + RG.methods.length + ' methods.';
+      }
+
+      // Prevent accidental double-loading (would duplicate methods).
+      setupLoadCCCBRWebBtn.disabled = true;
+    } catch (err) {
+      console.error('CCCBR web download+load failed', err);
+      try { setupLoadCCCBRWebBtn.disabled = false; } catch (_) {}
+      if (setupLoadCCCBRWebStatus) setupLoadCCCBRWebStatus.textContent = '';
+      alert('Could not download directly. Please use the download link and upload the ZIP file manually.');
     }
   }
 
@@ -347,6 +923,21 @@
     moveControlByChildId('micCooldown', playDest);
     moveControlByChildId('fileInput', playDest);
     moveControlByChildId('xmlInput', playDest);
+
+    // v06_p12d_library_browser: CCCBR web download + load control (place next to the XML/ZIP upload)
+    try {
+      const cccb = document.getElementById('setupCCCBRLibraryControl');
+      if (cccb && playDest) {
+        const xmlCtl = xmlInput ? xmlInput.closest('.control') : null;
+        if (xmlCtl && xmlCtl.parentElement === playDest) {
+          playDest.insertBefore(cccb, xmlCtl.nextSibling);
+        } else {
+          playDest.appendChild(cccb);
+        }
+      }
+    } catch (_) {}
+
+    moveControlByChildId('setupExploreLibraryBtn', playDest);
 
     // Move Method Library pane into Play screen (below controls)
     const playScreen = document.getElementById('screenPlay');
@@ -394,6 +985,32 @@
   const soundBtnEnterGame = document.getElementById('soundBtnEnterGame');
   const soundBtnDemo = document.getElementById('soundBtnDemo');
 
+  const libraryBtnEnterGame = document.getElementById('libraryBtnEnterGame');
+  const libraryBtnDemo = document.getElementById('libraryBtnDemo');
+
+  const setupExploreLibraryBtn = document.getElementById('setupExploreLibraryBtn');
+
+  // v06_p12d_library_browser: Setup CCCBR web download control
+  const setupLoadCCCBRWebBtn = document.getElementById('setupLoadCCCBRWebBtn');
+  const setupLoadCCCBRWebStatus = document.getElementById('setupLoadCCCBRWebStatus');
+
+  // v06_p12d_library_browser: Library screen browser UI
+  const librarySearchInput = document.getElementById('librarySearchInput');
+  const libraryBrowseGroups = document.getElementById('libraryBrowseGroups');
+  const libraryDetailsEmpty = document.getElementById('libraryDetailsEmpty');
+  const libraryDetailsPanel = document.getElementById('libraryDetailsPanel');
+  const librarySelectedTitle = document.getElementById('librarySelectedTitle');
+  const librarySelectedMeta = document.getElementById('librarySelectedMeta');
+  const libraryGlossary = document.getElementById('libraryGlossary');
+  const libraryNotes = document.getElementById('libraryNotes');
+  const libraryPlaySelectedBtn = document.getElementById('libraryPlaySelectedBtn');
+  const libraryDemoSelectedBtn = document.getElementById('libraryDemoSelectedBtn');
+  const libraryPreview = document.getElementById('libraryPreview');
+  const libraryLineBellSelect = document.getElementById('libraryLineBellSelect');
+  const libraryNotLoadedNotice = document.getElementById('libraryNotLoadedNotice');
+  const libraryGoSetupBtn = document.getElementById('libraryGoSetupBtn');
+  const libraryLayout = document.getElementById('libraryLayout');
+
   function wireUniversalMenuNav() {
     // Universal nav buttons (Home / Setup / View / Sound) across menu screens.
     document.addEventListener('click', (e) => {
@@ -408,6 +1025,7 @@
     if (playBtnEnterGame) playBtnEnterGame.addEventListener('click', () => setScreen('game'));
     if (viewBtnEnterGame) viewBtnEnterGame.addEventListener('click', () => setScreen('game'));
     if (soundBtnEnterGame) soundBtnEnterGame.addEventListener('click', () => setScreen('game'));
+    if (libraryBtnEnterGame) libraryBtnEnterGame.addEventListener('click', () => setScreen('game'));
 
     // Demo buttons (idle only).
     function wireDemo(btn) {
@@ -424,6 +1042,7 @@
     wireDemo(playBtnDemo);
     wireDemo(viewBtnDemo);
     wireDemo(soundBtnDemo);
+    wireDemo(libraryBtnDemo);
   }
 
   if (homeBtnPlay) homeBtnPlay.addEventListener('click', () => setScreen('play'));
@@ -443,6 +1062,35 @@
     setScreen('game');
     requestAnimationFrame(() => startPressed('demo'));
   });
+
+  // v06_p12c_library_entry: Setup -> Library screen entry
+  if (setupExploreLibraryBtn) setupExploreLibraryBtn.addEventListener('click', () => {
+    if (!state.libraryLoaded) {
+      alert('Load a CCCBR library first.');
+      return;
+    }
+    setScreen('library');
+  });
+
+  // v06_p12d_library_browser: Setup -> Download & load CCCBR library from the web
+  if (setupLoadCCCBRWebBtn) {
+    setupLoadCCCBRWebBtn.addEventListener('click', () => {
+      downloadAndLoadCCCBRLibraryFromWeb();
+    });
+  }
+
+  // v06_p12d_library_browser: Library screen interactions
+  if (libraryGoSetupBtn) libraryGoSetupBtn.addEventListener('click', () => setScreen('play'));
+  if (librarySearchInput) librarySearchInput.addEventListener('input', applyLibrarySearchFilter);
+  if (libraryLineBellSelect) {
+    libraryLineBellSelect.addEventListener('change', () => {
+      const v = parseInt(libraryLineBellSelect.value, 10);
+      ui.libraryPreviewBell = clamp(isFinite(v) ? v : 1, 1, 12);
+      updateLibraryPreview();
+    });
+  }
+  if (libraryPlaySelectedBtn) libraryPlaySelectedBtn.addEventListener('click', () => libraryEnterWithSelected('play'));
+  if (libraryDemoSelectedBtn) libraryDemoSelectedBtn.addEventListener('click', () => libraryEnterWithSelected('demo'));
 
   // Home: tapping the bell logo rings bell 1 (treble) once (UI-only).
   function ringHomeLogoBell1() {
@@ -643,6 +1291,10 @@
     micCooldownMs: 200,
     micBells: [],
     micError: '',
+
+    // v06_p12c_library_entry
+    libraryLoaded: false,
+    libraryFileName: '',
   };
 
   let audioCtx = null;
@@ -1904,80 +2556,66 @@
     lib.classList.remove('hidden');
     list.innerHTML = '';
 
-    const methods = RG.methods.slice();
+    // v06_p12d_library_browser: compact summary (avoid dumping thousands of methods in Setup)
+    const methods = RG.methods || [];
+    const filename = (state && state.libraryFileName) ? String(state.libraryFileName) : '';
 
+    const stageOrder = [4,5,6,7,8,9,10,11,12];
+    const counts = {};
+    for (let si = 0; si < stageOrder.length; si++) counts[stageOrder[si]] = 0;
     for (let i = 0; i < methods.length; i++) {
       const m = methods[i];
-      const card = document.createElement('div');
-      card.style.padding = '8px 10px 10px';
-      card.style.borderRadius = '12px';
-      card.style.border = '1px solid rgba(255,255,255,0.14)';
-      card.style.background = 'rgba(255,255,255,0.04)';
-      card.style.display = 'flex';
-      card.style.flexDirection = 'column';
-      card.style.gap = '4px';
-      card.style.minWidth = '180px';
-      card.style.maxWidth = '240px';
-      card.style.fontSize = '13px';
-
-      const titleEl = document.createElement('div');
-      titleEl.style.fontWeight = '700';
-      titleEl.style.marginBottom = '2px';
-      titleEl.textContent = (m.title && String(m.title).trim()) || 'Untitled';
-      card.appendChild(titleEl);
-
-      const metaEl = document.createElement('div');
-      metaEl.style.color = 'rgba(232,238,255,0.80)';
-      const stage = parseInt(m.stage, 10) || 0;
-      const fam = (m.family && String(m.family).trim()) || '';
-      let meta = stage ? (stage + ' bell' + (stage === 1 ? '' : 's')) : '';
-      if (fam) meta = meta ? (meta + ' • ' + fam) : fam;
-      metaEl.textContent = meta;
-      card.appendChild(metaEl);
-
-      if (m.class && String(m.class).trim()) {
-        const clsEl = document.createElement('div');
-        clsEl.style.color = 'rgba(154,162,187,0.92)';
-        clsEl.textContent = String(m.class).trim();
-        card.appendChild(clsEl);
-      }
-
-      const pnText = (m.pn && String(m.pn).trim()) || '';
-      const pnEl = document.createElement('div');
-      pnEl.style.color = 'rgba(232,238,255,0.80)';
-      pnEl.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
-      pnEl.style.fontSize = '12px';
-      pnEl.style.marginTop = '4px';
-      const pnLabel = 'PN: ';
-      if (!pnText) {
-        pnEl.textContent = pnLabel + '(none)';
-      } else {
-        let short = pnText;
-        if (short.length > 64) short = short.slice(0, 61) + '…';
-        pnEl.textContent = pnLabel + short;
-      }
-      card.appendChild(pnEl);
-
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.textContent = 'Demo';
-      btn.style.marginTop = '6px';
-      btn.style.padding = '6px 10px';
-      btn.style.borderRadius = '10px';
-      btn.style.border = '1px solid rgba(255,255,255,0.18)';
-      btn.style.background = 'rgba(255,255,255,0.06)';
-      btn.style.color = '#e8eeff';
-      btn.style.cursor = 'pointer';
-      btn.style.fontWeight = '600';
-      btn.style.fontSize = '12px';
-      btn.style.alignSelf = 'stretch';
-      btn.addEventListener('click', function () {
-        loadCCCBRMethod(i);
-      });
-      card.appendChild(btn);
-
-      list.appendChild(card);
+      const s = clamp(parseInt(m && m.stage, 10) || 0, 4, 12);
+      if (counts[s] != null) counts[s] += 1;
     }
+
+    const summary = document.createElement('div');
+    summary.className = 'rg-lib-summary';
+
+    const head = document.createElement('div');
+    head.className = 'rg-lib-summary-head';
+
+    const title = document.createElement('div');
+    title.className = 'rg-lib-summary-title';
+    title.textContent = 'Library loaded';
+    head.appendChild(title);
+
+    const meta = document.createElement('div');
+    meta.className = 'rg-lib-summary-meta rg-muted';
+    meta.textContent = (filename ? ('Loaded: ' + filename) : 'Loaded: (unnamed)');
+    head.appendChild(meta);
+    summary.appendChild(head);
+
+    const totals = document.createElement('div');
+    totals.className = 'rg-lib-summary-totals';
+    totals.innerHTML = '<span class="rg-muted">Total methods:</span> <b>' + methods.length + '</b>';
+    summary.appendChild(totals);
+
+    const stagePills = document.createElement('div');
+    stagePills.className = 'rg-lib-stage-pills';
+    for (let si = 0; si < stageOrder.length; si++) {
+      const s = stageOrder[si];
+      const pill = document.createElement('span');
+      pill.className = 'rg-lib-stage-pill';
+      pill.textContent = s + ' ' + libStageWord(s) + ': ' + (counts[s] || 0);
+      stagePills.appendChild(pill);
+    }
+    summary.appendChild(stagePills);
+
+    const hint = document.createElement('div');
+    hint.className = 'rg-lib-summary-hint rg-muted';
+    hint.textContent = 'Use Explore library to browse by stage/class, preview, then Play or Demo a selected method.';
+    summary.appendChild(hint);
+
+    const actions = document.createElement('div');
+    actions.className = 'rg-lib-summary-actions';
+    try {
+      const ctl = setupExploreLibraryBtn ? setupExploreLibraryBtn.closest('.control') : null;
+      if (ctl) actions.appendChild(ctl);
+    } catch (_) {}
+    summary.appendChild(actions);
+
+    list.appendChild(summary);
   }
 
   function loadCCCBRMethod(i) {
@@ -2043,19 +2681,8 @@
 
     syncGameHeaderMeta();
 
-    try {
-      if (typeof analytics !== 'undefined' && analytics && typeof analytics.track === 'function') {
-        analytics.track('cccbr_demo_start', {
-          title: m.title || '',
-          stage: stage,
-          family: m.family || '',
-          pn_present: !!(m.pn && String(m.pn).trim())
-        });
-      }
-    } catch (_) {}
-
-    alert('Loaded CCCBR method: ' + (m.title || 'Untitled') + ' (' + stage + ' bells). Starting Demo.');
-    startPressed('demo');
+    // Loaded into the existing pipeline; Play/Demo start is user-controlled from the UI.
+    return { title: m.title || '', stage: stage };
   }
   window.loadCCCBRMethod = loadCCCBRMethod;
 
@@ -4917,12 +5544,12 @@
       for (const file of files) {
         const name = file && file.name ? String(file.name) : '';
         const lower = name.toLowerCase();
+        const before = RG.methods.length;
         try {
           if (lower.endsWith('.zip')) {
             await parseZipArchive(file);
           } else if (lower.endsWith('.xml')) {
             const text = await file.text();
-            const before = RG.methods.length;
             parseCCCBR(text, name);
             const added = RG.methods.length - before;
             if (added > 0 && typeof analytics !== 'undefined' && analytics && typeof analytics.track === 'function') {
@@ -4939,7 +5566,27 @@
           console.error('CCCBR load failed', err);
           alert('Could not load ' + name + ': ' + (err && err.message ? err.message : err));
         }
+
+        const libAdded = RG.methods.length - before;
+        if (libAdded > 0) {
+          state.libraryLoaded = true;
+          state.libraryFileName = name;
+        } else if (!RG.methods || !RG.methods.length) {
+          state.libraryLoaded = false;
+          state.libraryFileName = '';
+        }
       }
+
+      // v06_p12d_library_browser: rebuild grouped browse index after load
+      if (state.libraryLoaded) {
+        try { buildLibraryIndex(); } catch (_) {}
+      }
+
+      // v06_p12d_library_browser: refresh the Setup summary (filename + counts)
+      try { refreshMethodList(); } catch (_) {}
+
+      syncLibraryEntryUI();
+      syncLibraryScreenUI();
 
       try { e.target.value = ''; } catch (_) {}
     });
@@ -5161,6 +5808,9 @@
     syncLayoutPresetUI();
 
     syncNotationPagingUI();
+
+    syncLibraryEntryUI();
+    syncLibraryScreenUI();
   }
 
   boot();
