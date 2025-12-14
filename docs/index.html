@@ -153,6 +153,7 @@
                     <div id="librarySelectedTitle" class="rg-library-selected-title"></div>
                     <div id="librarySelectedMeta" class="rg-library-selected-meta"></div>
                     <div id="libraryGlossary" class="rg-library-section"></div>
+                    <div id="libraryClassGlossary" class="rg-library-section"></div>
                     <div id="libraryNotes" class="rg-library-section"></div>
 
                     <div class="rg-library-actions">
@@ -168,7 +169,13 @@
                           <select id="libraryLineBellSelect"></select>
                         </div>
                       </div>
-                      <pre id="libraryPreview" class="rg-library-preview-pre"></pre>
+                      <div class="rg-library-preview-box">
+                        <pre id="libraryPreview" class="rg-library-preview-pre"></pre>
+                        <button id="libraryPreviewPrevBtn" class="pill rg-library-page-nav" type="button" aria-label="Previous pages">&lt;</button>
+                        <div id="libraryPreviewPageLabel" class="rg-library-preview-page-label rg-muted" aria-live="polite"></div>
+                        <button id="libraryPreviewNextBtn" class="pill rg-library-page-nav" type="button" aria-label="Next pages">&gt;</button>
+                      </div>
+                      <div id="libraryPreviewLimitNote" class="rg-library-preview-limit rg-muted hidden">Preview limit reached.</div>
                     </div>
                   </div>
                 </div>

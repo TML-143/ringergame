@@ -72,7 +72,7 @@
 
   // === Analytics (GA4) ===
   const GA_ID = 'G-7TEG531231';
-  const SITE_VERSION = 'v06_p14a_library_mobile_layout';
+  const SITE_VERSION = 'v06_p14c_library_details_study_controls';
 
   function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
   function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
@@ -302,6 +302,8 @@
     libraryIndex: null,
     librarySelectedIdx: null,
     libraryPreviewBell: 1,
+    // v06_p14c_library_details_study_controls
+    libraryPreview: null,
     librarySearchTerm: ''
   };
 
@@ -389,6 +391,10 @@
     return w + ' = ' + s + ' bells';
   }
 
+  // v06_p14c_library_details_study_controls: incremental preview paging
+  const LIB_PREVIEW_PAGE_SIZE = 18;
+  const LIB_PREVIEW_MAX_ROWS = 2000;
+
   function bellToCCCBRChar(b) {
     const n = parseInt(b, 10);
     if (n >= 1 && n <= 9) return String(n);
@@ -456,8 +462,8 @@
         const cg = st.classMap[k];
         if (cg && Array.isArray(cg.methodIdxs)) {
           cg.methodIdxs.sort(function(ia, ib) {
-            const ta = (methods[ia] && methods[ia].title) ? String(methods[ia].title).toLowerCase() : '';
-            const tb = (methods[ib] && methods[ib].title) ? String(methods[ib].title).toLowerCase() : '';
+            const ta = (methods[ia] && methods[ia].title != null) ? String(methods[ia].title).trim().toUpperCase() : '';
+            const tb = (methods[ib] && methods[ib].title != null) ? String(methods[ib].title).trim().toUpperCase() : '';
             if (ta < tb) return -1;
             if (ta > tb) return 1;
             return ia - ib;
@@ -474,6 +480,83 @@
     };
   }
 
+  // v06_p14c_library_details_study_controls: Class glossary (CCCBR terms)
+  const LIB_CLASS_DEFS = {
+    'alliance': 'A hunting method where the hunt bell follows an “alliance” path: regular and symmetric, but not the standard plain/treble-dodging/treble-place patterns.',
+    'bob': 'A plain method where the work includes dodging (so it is not limited to simple hunting and making places).',
+    'delight': 'A treble-dodging method where some cross-section changes make an internal place and some do not.',
+    'hybrid': 'A hunting method whose hunt-bell path does not fit the usual plain, treble-dodging, treble-place, or alliance patterns.',
+    'place': 'A plain method where all bells only hunt and make places (no dodging).',
+    'surprise': 'A treble-dodging method with an internal place at every cross-section change (between dodging sections).',
+    'treblebob': 'A treble-dodging method with no internal places at cross-section changes (pure “treble bob” crossings).',
+    'trebleplace': 'A method where the treble (or hunt bell) makes extra places during the lead (a treble-place path).',
+    'plain': 'A hunting method with a plain-hunt treble path (no treble dodging).'
+  };
+
+  function normalizeLibClassKey(cls) {
+    const raw = (cls == null ? '' : String(cls)).trim();
+    if (!raw) return '';
+    return raw.toLowerCase().replace(/[\s\-_/]+/g, '');
+  }
+
+  function libClassDefinition(cls) {
+    const k = normalizeLibClassKey(cls);
+    if (!k) return 'Definition not available yet.';
+    if (LIB_CLASS_DEFS[k]) return LIB_CLASS_DEFS[k];
+    // Try stripping common modifiers (e.g. "Little Surprise", "Differential Bob").
+    const stripped = k.replace(/^(little|differential|jump)+/, '');
+    if (LIB_CLASS_DEFS[stripped]) return LIB_CLASS_DEFS[stripped];
+    // Fall back to a suffix match.
+    const keys = Object.keys(LIB_CLASS_DEFS);
+    for (let i = 0; i < keys.length; i++) {
+      const base = keys[i];
+      if (base && k.endsWith(base)) return LIB_CLASS_DEFS[base];
+    }
+    return 'Definition not available yet.';
+  }
+
+  function updateLibraryClassGlossary(m, stage) {
+    if (!libraryClassGlossary) return;
+    const cls = (m && m.class != null ? String(m.class) : '').trim() || '(Unclassified)';
+    const def = (cls === '(Unclassified)') ? 'No class descriptor is set for this method in the CCCBR metadata.' : libClassDefinition(cls);
+
+    const out = [];
+    out.push('<div class="rg-library-section-title">Class glossary</div>');
+    out.push('<div class="rg-library-section-body">');
+    out.push('<div><span class="rg-muted">Selected:</span> <b>' + cls.replace(/</g,'&lt;') + '</b></div>');
+    out.push('<div class="rg-library-mt6">' + def.replace(/</g,'&lt;') + '</div>');
+
+    // Optional: other class terms present on this stage (collapsible)
+    const st = (ui.libraryIndex && ui.libraryIndex.stageMap) ? ui.libraryIndex.stageMap[stage] : null;
+    const clsList = (st && Array.isArray(st.classes)) ? st.classes.map(cg => (cg && cg.name ? String(cg.name) : '')).filter(Boolean) : [];
+    const unique = [];
+    for (let i = 0; i < clsList.length; i++) {
+      const name = clsList[i].trim();
+      if (!name) continue;
+      if (unique.indexOf(name) === -1) unique.push(name);
+    }
+    if (unique.length) {
+      unique.sort((a, b) => String(a).localeCompare(String(b)));
+      out.push('<details class="rg-library-mt6">');
+      out.push('<summary class="rg-muted">More definitions</summary>');
+      out.push('<div class="rg-library-section-body rg-library-mt6">');
+      const max = Math.min(unique.length, 18);
+      for (let i = 0; i < max; i++) {
+        const n = unique[i];
+        const d = (n === '(Unclassified)') ? 'No class descriptor set in CCCBR metadata.' : libClassDefinition(n);
+        out.push('<div class="rg-library-mt6"><b>' + n.replace(/</g,'&lt;') + ':</b> ' + d.replace(/</g,'&lt;') + '</div>');
+      }
+      if (unique.length > max) {
+        out.push('<div class="rg-library-mt6 rg-muted">(' + (unique.length - max) + ' more…)</div>');
+      }
+      out.push('</div>');
+      out.push('</details>');
+    }
+
+    out.push('</div>');
+    libraryClassGlossary.innerHTML = out.join('');
+  }
+
   function clearLibrarySelectionUI() {
     ui.librarySelectedIdx = null;
     if (libraryDetailsPanel) libraryDetailsPanel.classList.add('hidden');
@@ -483,8 +566,14 @@
     if (librarySelectedTitle) librarySelectedTitle.textContent = '';
     if (librarySelectedMeta) librarySelectedMeta.innerHTML = '';
     if (libraryGlossary) libraryGlossary.innerHTML = '';
+    if (libraryClassGlossary) libraryClassGlossary.innerHTML = '';
     if (libraryNotes) libraryNotes.innerHTML = '';
-    if (libraryPreview) libraryPreview.textContent = '';
+    if (libraryPreview) libraryPreview.innerHTML = '';
+    ui.libraryPreview = null;
+    if (libraryPreviewPageLabel) libraryPreviewPageLabel.textContent = '';
+    if (libraryPreviewLimitNote) libraryPreviewLimitNote.classList.add('hidden');
+    if (libraryPreviewPrevBtn) { libraryPreviewPrevBtn.disabled = true; libraryPreviewPrevBtn.classList.add('is-disabled'); }
+    if (libraryPreviewNextBtn) { libraryPreviewNextBtn.disabled = true; libraryPreviewNextBtn.classList.add('is-disabled'); }
     try {
       if (libraryBrowseGroups) {
         const prev = libraryBrowseGroups.querySelector('button.rg-lib-method-btn.is-active');
@@ -566,6 +655,13 @@
       libraryGlossary.innerHTML = gl.join('');
     }
 
+    // Class glossary (short definitions)
+    try {
+      updateLibraryClassGlossary(m, stage);
+    } catch (_) {
+      if (libraryClassGlossary) libraryClassGlossary.innerHTML = '';
+    }
+
     // Notes / preview
     if (libraryNotes) {
       const notes = [];
@@ -583,82 +679,209 @@
     // Line bell selector
     if (libraryLineBellSelect) {
       libraryLineBellSelect.innerHTML = '';
+      const noOpt = document.createElement('option');
+      noOpt.value = '0';
+      noOpt.textContent = 'No line';
+      libraryLineBellSelect.appendChild(noOpt);
       for (let b = 1; b <= stage; b++) {
         const opt = document.createElement('option');
         opt.value = String(b);
         opt.textContent = 'Bell ' + bellToCCCBRChar(b);
         libraryLineBellSelect.appendChild(opt);
       }
-      if (ui.libraryPreviewBell < 1 || ui.libraryPreviewBell > stage) ui.libraryPreviewBell = 1;
+      const prev = parseInt(ui.libraryPreviewBell, 10);
+      if (prev === 0) ui.libraryPreviewBell = 0;
+      else if (!isFinite(prev) || prev < 1 || prev > stage) ui.libraryPreviewBell = 1;
       libraryLineBellSelect.value = String(ui.libraryPreviewBell);
     }
 
     updateLibraryPreview();
   }
 
+  // v06_p14c_library_details_study_controls: incremental two-page preview
+  function libPreviewNumbersToRowString(nums) {
+    let s = '';
+    for (let i = 0; i < nums.length; i++) s += bellToCCCBRChar(nums[i]);
+    return s;
+  }
+
+  function libPreviewInitCache(methodIdx, m, stage) {
+    const pn = (m && m.pn != null ? String(m.pn) : '').trim();
+    const rounds = [];
+    for (let b = 1; b <= stage; b++) rounds.push(b);
+
+    const cache = {
+      methodIdx: methodIdx,
+      stage: stage,
+      pageSize: LIB_PREVIEW_PAGE_SIZE,
+      leftPage: 0,
+      rows: [],
+      done: false,
+      capped: false,
+      pn: pn,
+      tokens: null,
+      tokenIdx: 0,
+      curRow: rounds.slice(),
+      roundsStr: libPreviewNumbersToRowString(rounds),
+      huntUseX: true,
+      huntSteps: 0,
+      genMode: 'hunt'
+    };
+
+    if (pn) {
+      try {
+        const toks = cccbParsePnTokens(pn);
+        if (toks && toks.length) {
+          cache.tokens = toks.slice();
+          cache.genMode = 'pn';
+        }
+      } catch (_) {}
+    }
+
+    cache.rows.push(cache.roundsStr);
+    return cache;
+  }
+
+  function libPreviewGenerateTo(p, needRows) {
+    if (!p) return;
+    const target = clamp(parseInt(needRows, 10) || 0, 0, LIB_PREVIEW_MAX_ROWS);
+    while (p.rows.length < target && !p.done && p.rows.length < LIB_PREVIEW_MAX_ROWS) {
+      if (p.genMode === 'pn' && p.tokens && p.tokens.length) {
+        const tok = p.tokens[p.tokenIdx];
+        p.curRow = cccbApplyPn(p.curRow, p.stage, tok);
+        p.tokenIdx = (p.tokenIdx + 1) % p.tokens.length;
+        const s = libPreviewNumbersToRowString(p.curRow);
+        p.rows.push(s);
+        if (p.tokenIdx === 0 && p.rows.length > 1 && s === p.roundsStr) p.done = true;
+      } else {
+        p.curRow = p.huntUseX ? applyX(p.curRow, p.stage) : applyY(p.curRow, p.stage);
+        p.huntUseX = !p.huntUseX;
+        p.huntSteps += 1;
+        const s = libPreviewNumbersToRowString(p.curRow);
+        p.rows.push(s);
+        if (p.huntSteps >= p.stage * 2 && p.rows.length > 1 && s === p.roundsStr) p.done = true;
+      }
+    }
+
+    if ((needRows > LIB_PREVIEW_MAX_ROWS && p.rows.length >= LIB_PREVIEW_MAX_ROWS) || (p.rows.length >= LIB_PREVIEW_MAX_ROWS)) {
+      p.capped = true;
+    }
+  }
+
+  function libPreviewFormatRowHtml(rowStr, hiliteChar) {
+    if (!rowStr) return '';
+    const safe = rowStr.replace(/</g, '&lt;');
+    if (!hiliteChar) return safe;
+    const pos = safe.indexOf(hiliteChar);
+    if (pos < 0) return safe;
+    return safe.slice(0, pos) + '<span class="lineHilite">' + hiliteChar + '</span>' + safe.slice(pos + 1);
+  }
+
+  function libPreviewRenderSpread(p) {
+    if (!p || !libraryPreview) return;
+    const pageSize = p.pageSize;
+    const startRow = p.leftPage * pageSize;
+    const gap = '    ';
+
+    const hbRaw = parseInt(ui.libraryPreviewBell, 10);
+    const hb = (isFinite(hbRaw) && hbRaw > 0) ? clamp(hbRaw, 1, p.stage) : 0;
+    const hiliteChar = hb > 0 ? bellToCCCBRChar(hb) : '';
+
+    const maxDigits = String(Math.max(1, Math.min(LIB_PREVIEW_MAX_ROWS, p.rows.length || 1))).length;
+    const lines = [];
+
+    for (let i = 0; i < pageSize; i++) {
+      const li = startRow + i;
+      const ri = startRow + pageSize + i;
+      const lnum = (li < p.rows.length) ? String(li + 1).padStart(maxDigits, ' ') : ''.padStart(maxDigits, ' ');
+      const rnum = (ri < p.rows.length) ? String(ri + 1).padStart(maxDigits, ' ') : ''.padStart(maxDigits, ' ');
+      const lrow = (li < p.rows.length) ? libPreviewFormatRowHtml(p.rows[li], hiliteChar) : '';
+      const rrow = (ri < p.rows.length) ? libPreviewFormatRowHtml(p.rows[ri], hiliteChar) : '';
+      lines.push(lnum + ' ' + lrow + gap + rnum + ' ' + rrow);
+    }
+
+    libraryPreview.innerHTML = lines.join('\n');
+    try { libraryPreview.scrollTop = 0; libraryPreview.scrollLeft = 0; } catch (_) {}
+  }
+
+  function libPreviewSyncControls(p) {
+    if (!p) return;
+
+    let left = Math.max(0, (p.leftPage | 0));
+    left = left - (left % 2);
+    p.leftPage = left;
+
+    if (libraryPreviewPageLabel) {
+      const a = left + 1;
+      const b = left + 2;
+      libraryPreviewPageLabel.textContent = 'Pages ' + a + '–' + b;
+    }
+
+    if (libraryPreviewLimitNote) {
+      libraryPreviewLimitNote.classList.toggle('hidden', !p.capped);
+    }
+
+    const canPrev = (left > 0);
+    if (libraryPreviewPrevBtn) {
+      libraryPreviewPrevBtn.disabled = !canPrev;
+      libraryPreviewPrevBtn.classList.toggle('is-disabled', !canPrev);
+    }
+
+    let canNext = true;
+    const targetLeft = left + 2;
+    const targetStartRow = targetLeft * p.pageSize;
+    if (p.done || p.capped) {
+      canNext = (targetStartRow < p.rows.length);
+    }
+
+    if (libraryPreviewNextBtn) {
+      libraryPreviewNextBtn.disabled = !canNext;
+      libraryPreviewNextBtn.classList.toggle('is-disabled', !canNext);
+    }
+  }
+
   function updateLibraryPreview() {
     if (!libraryPreview) return;
     const methods = (RG && RG.methods) ? RG.methods : [];
     const idx = ui.librarySelectedIdx;
+
     if (idx == null || idx < 0 || idx >= methods.length) {
-      libraryPreview.textContent = '';
+      libraryPreview.innerHTML = '';
+      if (libraryPreviewPageLabel) libraryPreviewPageLabel.textContent = '';
+      if (libraryPreviewLimitNote) libraryPreviewLimitNote.classList.add('hidden');
+      if (libraryPreviewPrevBtn) { libraryPreviewPrevBtn.disabled = true; libraryPreviewPrevBtn.classList.add('is-disabled'); }
+      if (libraryPreviewNextBtn) { libraryPreviewNextBtn.disabled = true; libraryPreviewNextBtn.classList.add('is-disabled'); }
+      ui.libraryPreview = null;
       return;
     }
+
     const m = methods[idx];
     if (!m) {
-      libraryPreview.textContent = '';
+      libraryPreview.innerHTML = '';
+      ui.libraryPreview = null;
       return;
     }
 
     let stage = parseInt(m.stage, 10);
     if (!isFinite(stage)) stage = 0;
     stage = clamp(stage, 4, 12);
-    const pn = (m.pn == null ? '' : String(m.pn)).trim();
 
-    const highlightBell = clamp(parseInt(ui.libraryPreviewBell, 10) || 1, 1, stage);
-    const N = 24;
-
-    let rows = null;
-    if (pn) {
-      try {
-        rows = cccbRowsFromPn(stage, pn, 2);
-      } catch (_) {
-        rows = null;
-      }
-    }
-    if (!rows || !rows.length) {
-      try {
-        rows = makePlainHunt(stage, 2);
-      } catch (_) {
-        rows = null;
-      }
+    if (!ui.libraryPreview || ui.libraryPreview.methodIdx !== idx) {
+      ui.libraryPreview = libPreviewInitCache(idx, m, stage);
     }
 
-    if (!rows || !rows.length) {
-      libraryPreview.textContent = 'Preview not available for this method.';
-      return;
-    }
+    const p = ui.libraryPreview;
+    if (!p) return;
+    p.stage = stage;
+    if (p.pageSize == null) p.pageSize = LIB_PREVIEW_PAGE_SIZE;
+    if (p.leftPage == null || !isFinite(p.leftPage)) p.leftPage = 0;
+    p.leftPage = Math.max(0, (p.leftPage | 0));
+    p.leftPage = p.leftPage - (p.leftPage % 2);
 
-    const lines = [];
-    if (pn) lines.push('PN: ' + pn);
-    else lines.push('PN: (none)');
-    lines.push('');
-
-    const max = Math.min(N, rows.length);
-    for (let i = 0; i < max; i++) {
-      const row = rows[i];
-      if (!row || !row.length) continue;
-      let s = '';
-      for (let j = 0; j < row.length; j++) {
-        const ch = bellToCCCBRChar(row[j]);
-        if (row[j] === highlightBell) s += '[' + ch + ']';
-        else s += ' ' + ch + ' ';
-      }
-      const n = String(i + 1).padStart(2, '0');
-      lines.push(n + ' ' + s.trimEnd());
-    }
-
-    libraryPreview.textContent = lines.join('\n');
+    const neededForCurrent = Math.min(LIB_PREVIEW_MAX_ROWS, (p.leftPage + 2) * p.pageSize);
+    libPreviewGenerateTo(p, neededForCurrent);
+    libPreviewRenderSpread(p);
+    libPreviewSyncControls(p);
   }
 
   function applyLibrarySearchFilter() {
@@ -739,10 +962,33 @@
     }
   }
 
-  function buildClassMethodButtons(stage, classGroup, destEl) {
-    if (!destEl || !classGroup) return;
+  // v06_p14b_library_alphabetical_chunking: helpers
+  const LIB_LARGE_GROUP_THRESHOLD = 200;
+  const LIB_CHUNK_SIZE = 50;
+
+  function libTitleKeyFromMethod(m) {
+    const t = (m && m.title != null) ? String(m.title) : '';
+    const key = t.trim().toUpperCase();
+    return key || 'UNTITLED';
+  }
+
+  function libLetterBucketFromKey(titleKey) {
+    const ch = titleKey && titleKey.length ? titleKey.charAt(0) : '';
+    if (ch >= 'A' && ch <= 'Z') return ch;
+    return '#';
+  }
+
+  function libTruncateLabel(s, max) {
+    const t = (s == null ? '' : String(s)).trim();
+    const m = Math.max(8, parseInt(max, 10) || 24);
+    if (t.length <= m) return t;
+    return t.slice(0, Math.max(0, m - 1)).trimEnd() + '…';
+  }
+
+  function libBuildMethodButtons(methodIdxs, destEl) {
+    if (!destEl) return;
     const methods = (RG && RG.methods) ? RG.methods : [];
-    const idxs = Array.isArray(classGroup.methodIdxs) ? classGroup.methodIdxs : [];
+    const idxs = Array.isArray(methodIdxs) ? methodIdxs : [];
 
     const list = document.createElement('div');
     list.className = 'rg-lib-method-list';
@@ -763,6 +1009,120 @@
     }
 
     destEl.appendChild(list);
+  }
+
+  function libBuildLetterContents(letter, methodIdxs, destEl) {
+    if (!destEl) return;
+    const methods = (RG && RG.methods) ? RG.methods : [];
+    const idxs = Array.isArray(methodIdxs) ? methodIdxs : [];
+
+    destEl.innerHTML = '';
+    if (idxs.length <= LIB_CHUNK_SIZE) {
+      libBuildMethodButtons(idxs, destEl);
+      return;
+    }
+
+    for (let start = 0; start < idxs.length; start += LIB_CHUNK_SIZE) {
+      const chunkIdxs = idxs.slice(start, start + LIB_CHUNK_SIZE);
+      if (!chunkIdxs.length) continue;
+
+      const first = methods[chunkIdxs[0]];
+      const last = methods[chunkIdxs[chunkIdxs.length - 1]];
+      const firstTitle = (first && first.title != null) ? String(first.title).trim() : '';
+      const lastTitle = (last && last.title != null) ? String(last.title).trim() : '';
+      const label = letter + ': ' +
+        libTruncateLabel(firstTitle || 'Untitled', 26) + ' — ' +
+        libTruncateLabel(lastTitle || 'Untitled', 26) +
+        ' (' + chunkIdxs.length + ')';
+
+      const d = document.createElement('details');
+      d.className = 'lib-chunk';
+      d.dataset.chunkStart = String(start);
+      const s = document.createElement('summary');
+      s.textContent = label;
+      d.appendChild(s);
+
+      const body = document.createElement('div');
+      body.className = 'lib-chunk-body';
+      d.appendChild(body);
+
+      d._rgMethodIdxs = chunkIdxs;
+      d.addEventListener('toggle', () => {
+        if (!d.open) return;
+        if (d.dataset.built === '1') {
+          applyLibrarySearchFilter();
+          return;
+        }
+        d.dataset.built = '1';
+        body.innerHTML = '';
+        libBuildMethodButtons(d._rgMethodIdxs, body);
+        applyLibrarySearchFilter();
+      });
+
+      destEl.appendChild(d);
+    }
+  }
+
+  function buildClassMethodButtons(stage, classGroup, destEl) {
+    if (!destEl || !classGroup) return;
+    const methods = (RG && RG.methods) ? RG.methods : [];
+    const idxs = Array.isArray(classGroup.methodIdxs) ? classGroup.methodIdxs : [];
+
+    destEl.innerHTML = '';
+
+    // Small group: render a flat list as before (built lazily on open).
+    if (idxs.length <= LIB_LARGE_GROUP_THRESHOLD) {
+      libBuildMethodButtons(idxs, destEl);
+      return;
+    }
+
+    // Large group: A–Z + chunking (built lazily at each nested level).
+    const buckets = {};
+    for (let i = 0; i < idxs.length; i++) {
+      const mi = idxs[i];
+      const m = methods[mi];
+      if (!m) continue;
+      const key = libTitleKeyFromMethod(m);
+      const letter = libLetterBucketFromKey(key);
+      if (!buckets[letter]) buckets[letter] = [];
+      buckets[letter].push(mi);
+    }
+
+    const order = [];
+    for (let c = 65; c <= 90; c++) order.push(String.fromCharCode(c));
+    order.push('#');
+
+    for (let oi = 0; oi < order.length; oi++) {
+      const letter = order[oi];
+      const arr = buckets[letter];
+      if (!arr || !arr.length) continue;
+
+      const d = document.createElement('details');
+      d.className = 'lib-letter';
+      d.dataset.letter = letter;
+
+      const s = document.createElement('summary');
+      s.textContent = letter + ' (' + arr.length + ')';
+      d.appendChild(s);
+
+      const body = document.createElement('div');
+      body.className = 'lib-letter-body';
+      d.appendChild(body);
+
+      d._rgMethodIdxs = arr;
+      d.addEventListener('toggle', () => {
+        if (!d.open) return;
+        if (d.dataset.built === '1') {
+          applyLibrarySearchFilter();
+          return;
+        }
+        d.dataset.built = '1';
+        libBuildLetterContents(letter, d._rgMethodIdxs, body);
+        applyLibrarySearchFilter();
+      });
+
+      destEl.appendChild(d);
+    }
   }
 
   function renderLibraryBrowser() {
@@ -1008,10 +1368,15 @@
   const librarySelectedTitle = document.getElementById('librarySelectedTitle');
   const librarySelectedMeta = document.getElementById('librarySelectedMeta');
   const libraryGlossary = document.getElementById('libraryGlossary');
+  const libraryClassGlossary = document.getElementById('libraryClassGlossary');
   const libraryNotes = document.getElementById('libraryNotes');
   const libraryPlaySelectedBtn = document.getElementById('libraryPlaySelectedBtn');
   const libraryDemoSelectedBtn = document.getElementById('libraryDemoSelectedBtn');
   const libraryPreview = document.getElementById('libraryPreview');
+  const libraryPreviewPrevBtn = document.getElementById('libraryPreviewPrevBtn');
+  const libraryPreviewNextBtn = document.getElementById('libraryPreviewNextBtn');
+  const libraryPreviewPageLabel = document.getElementById('libraryPreviewPageLabel');
+  const libraryPreviewLimitNote = document.getElementById('libraryPreviewLimitNote');
   const libraryLineBellSelect = document.getElementById('libraryLineBellSelect');
   const libraryNotLoadedNotice = document.getElementById('libraryNotLoadedNotice');
   const libraryGoSetupBtn = document.getElementById('libraryGoSetupBtn');
@@ -1098,8 +1463,41 @@
   if (libraryLineBellSelect) {
     libraryLineBellSelect.addEventListener('change', () => {
       const v = parseInt(libraryLineBellSelect.value, 10);
-      ui.libraryPreviewBell = clamp(isFinite(v) ? v : 1, 1, 12);
+      ui.libraryPreviewBell = clamp(isFinite(v) ? v : 0, 0, 12);
       updateLibraryPreview();
+    });
+  }
+  if (libraryPreviewPrevBtn) {
+    libraryPreviewPrevBtn.addEventListener('click', () => {
+      const p = ui.libraryPreview;
+      if (!p) return;
+      const next = Math.max(0, (p.leftPage | 0) - 2);
+      if (next === p.leftPage) return;
+      p.leftPage = next;
+      libPreviewRenderSpread(p);
+      libPreviewSyncControls(p);
+    });
+  }
+  if (libraryPreviewNextBtn) {
+    libraryPreviewNextBtn.addEventListener('click', () => {
+      const p = ui.libraryPreview;
+      if (!p) return;
+      const pageSize = p.pageSize || LIB_PREVIEW_PAGE_SIZE;
+      const targetLeft = (p.leftPage | 0) + 2;
+      const targetStartRow = targetLeft * pageSize;
+      if ((p.done || p.capped) && targetStartRow >= p.rows.length) {
+        libPreviewSyncControls(p);
+        return;
+      }
+      const needRows = Math.min(LIB_PREVIEW_MAX_ROWS, (targetLeft + 2) * pageSize);
+      libPreviewGenerateTo(p, needRows);
+      if (targetStartRow >= p.rows.length) {
+        libPreviewSyncControls(p);
+        return;
+      }
+      p.leftPage = targetLeft;
+      libPreviewRenderSpread(p);
+      libPreviewSyncControls(p);
     });
   }
   if (libraryPlaySelectedBtn) libraryPlaySelectedBtn.addEventListener('click', () => libraryEnterWithSelected('play'));

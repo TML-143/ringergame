@@ -709,6 +709,38 @@ select option { background-color: #0b1026; color: #e8eeff; }
   margin-bottom:10px;
 }
 
+/* v06_p14b_library_alphabetical_chunking: nested letter/chunk details */
+#screenLibrary details.lib-letter,
+#screenLibrary details.lib-chunk{
+  border:1px solid rgba(255,255,255,0.10);
+  border-radius:12px;
+  padding:6px 10px;
+  background:rgba(255,255,255,0.015);
+  margin-top:8px;
+}
+
+#screenLibrary details.lib-letter{
+  margin-left:10px;
+}
+
+#screenLibrary details.lib-chunk{
+  margin-left:18px;
+}
+
+#screenLibrary details.lib-letter > summary,
+#screenLibrary details.lib-chunk > summary{
+  font-weight:650;
+  white-space:normal;
+}
+
+#screenLibrary .lib-letter-body{
+  padding-top:6px;
+}
+
+#screenLibrary .lib-chunk-body{
+  padding-top:6px;
+}
+
 #screenLibrary details.rg-lib-class{
   margin-bottom:8px;
 }
@@ -822,8 +854,54 @@ select option { background-color: #0b1026; color: #e8eeff; }
   white-space:pre;
   border:1px solid rgba(255,255,255,0.12);
   border-radius:14px;
-  padding:10px;
+  padding:10px 10px 64px 10px;
   background:rgba(0,0,0,0.25);
+  font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size:12px;
+}
+
+#screenLibrary .rg-library-preview-box{position:relative}
+
+#screenLibrary .pill.rg-library-page-nav{
+  position:absolute;
+  bottom:10px;
+  z-index:6;
+  min-width:44px;
+  min-height:44px;
+  padding:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:18px;
+  font-weight:900;
+  line-height:1;
+  user-select:none;
+}
+
+#screenLibrary #libraryPreviewPrevBtn{left:10px}
+#screenLibrary #libraryPreviewNextBtn{right:10px}
+
+#screenLibrary .rg-library-preview-page-label{
+  position:absolute;
+  bottom:20px;
+  left:50%;
+  transform:translateX(-50%);
+  z-index:6;
+  font-size:12px;
+  font-weight:700;
+  pointer-events:none;
+}
+
+#screenLibrary .rg-library-preview-limit{
+  margin-top:6px;
+  font-size:12px;
+}
+
+#screenLibrary .lineHilite{
+  background:rgba(249,199,79,0.22);
+  color:rgba(249,199,79,0.95);
+  border-radius:6px;
+  padding:0 2px;
 }
 
 /* v06_p12d_library_browser: Setup Method Library summary */
