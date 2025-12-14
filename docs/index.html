@@ -362,7 +362,11 @@
 
         <section id="notationPane" class="pane">
           <div class="pane-title"><span>Notation</span></div>
-          <canvas id="notationCanvas" aria-label="Notation"></canvas>
+          <div class="notation-wrap">
+            <canvas id="notationCanvas" aria-label="Notation"></canvas>
+            <button id="notationPrevBtn" class="pill notation-page-nav hidden" type="button" aria-label="Previous notation pages">&lt;</button>
+            <button id="notationNextBtn" class="pill notation-page-nav hidden" type="button" aria-label="Next notation pages">&gt;</button>
+          </div>
         </section>
 
         <section id="statsPane" class="pane pane-span">

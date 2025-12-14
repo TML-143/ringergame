@@ -44,6 +44,7 @@
 
   let loopTimer = null;
   let loopRAF = null;
+  let inLoopTick = false;
 
   function kickLoop() {
     if (loopRAF != null) {
@@ -71,7 +72,7 @@
 
   // === Analytics (GA4) ===
   const GA_ID = 'G-7TEG531231';
-  const SITE_VERSION = 'v06_p11_stats_scroll_safety';
+  const SITE_VERSION = 'v06_p12b_notation_tap_to_ring';
 
   function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
   function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
@@ -179,6 +180,9 @@
   const notationCanvas = document.getElementById('notationCanvas');
   const nctx = notationCanvas.getContext('2d');
 
+  const notationPrevBtn = document.getElementById('notationPrevBtn');
+  const notationNextBtn = document.getElementById('notationNextBtn');
+
   const methodSelect = document.getElementById('methodSelect');
   const bellCountSelect = document.getElementById('bellCount');
   const scaleSelect = document.getElementById('scaleSelect');
@@ -280,7 +284,14 @@
   const screenSound = document.getElementById('screenSound');
   const screenGame = document.getElementById('screenGame');
 
-  const ui = { screen: 'home' };
+  const ui = {
+    screen: 'home',
+    notationPage: 0,
+    notationFollow: true,
+    // v06_p12b_notation_tap_to_ring
+    notationTapFlash: null,
+    notationCursorRow: null
+  };
 
   function setScreen(name) {
     const n = String(name || '').toLowerCase();
@@ -614,6 +625,7 @@
     spotlightShowN1: false,
     spotlightShowN2: true,
     notationSwapsOverlay: true,
+    notationPageSize: 16,
     displayLiveBellsOnly: false,
 
     // mic input
@@ -1422,6 +1434,11 @@
   function computeRows() {
     if (state.method === 'custom' && state.customRows) state.rows = state.customRows.slice();
     else state.rows = makeLibraryRows(state.method, state.stage);
+
+    // v06_p12a_notation_paging_arrows: reset paging on row rebuild
+    ui.notationFollow = true;
+    ui.notationPage = 0;
+    syncNotationPagingUI();
   }
 
 
@@ -3478,10 +3495,88 @@
   // === Notation ===
   const PATH_STYLES = [[ ], [8,4], [2,6], [10,4,2,4], [4,4], [1,3], [12,5,3,5]];
 
+  function getNotationPagingMeta() {
+    const pageSize = Math.max(1, Number(state.notationPageSize) || 1);
+    const rowsLen = (state.rows && state.rows.length) ? state.rows.length : 0;
+    const totalPages = Math.ceil(rowsLen / pageSize);
+    let lastLeft = 0;
+    if (totalPages <= 1) lastLeft = 0;
+    else lastLeft = (totalPages % 2 === 1) ? (totalPages - 1) : (totalPages - 2);
+    lastLeft = Math.max(0, lastLeft);
+    return { pageSize, totalPages, lastLeft };
+  }
+
+  function syncNotationPagingUI() {
+    if (!notationPrevBtn || !notationNextBtn) return;
+
+    const { totalPages, lastLeft } = getNotationPagingMeta();
+    let changed = false;
+
+    const prevPage = ui.notationPage;
+    let p = Number(ui.notationPage) || 0;
+    p = Math.floor(p / 2) * 2;
+    if (p < 0) p = 0;
+    if (p > lastLeft) p = lastLeft;
+    if (p !== prevPage) { ui.notationPage = p; changed = true; }
+
+    const showPrev = p > 0;
+    const showNext = p < lastLeft;
+
+    const prevHidden = notationPrevBtn.classList.contains('hidden');
+    const nextHidden = notationNextBtn.classList.contains('hidden');
+
+    if (showPrev) {
+      if (prevHidden) changed = true;
+      notationPrevBtn.classList.remove('hidden');
+      notationPrevBtn.disabled = false;
+    } else {
+      if (!prevHidden) changed = true;
+      notationPrevBtn.classList.add('hidden');
+      notationPrevBtn.disabled = true;
+    }
+
+    if (showNext) {
+      if (nextHidden) changed = true;
+      notationNextBtn.classList.remove('hidden');
+      notationNextBtn.disabled = false;
+    } else {
+      if (!nextHidden) changed = true;
+      notationNextBtn.classList.add('hidden');
+      notationNextBtn.disabled = true;
+    }
+
+    // totalPages is currently informational (kept for clarity)
+    void totalPages;
+
+    if (changed) {
+      markDirty();
+      if (!inLoopTick && (loopTimer != null || loopRAF != null)) kickLoop();
+    }
+  }
+
+  function notationPrevPressed() {
+    ui.notationFollow = false;
+    ui.notationPage = (Number(ui.notationPage) || 0) - 2;
+    if (ui.notationPage < 0) ui.notationPage = 0;
+    syncNotationPagingUI();
+  }
+
+  function notationNextPressed() {
+    ui.notationFollow = false;
+    const { lastLeft } = getNotationPagingMeta();
+    ui.notationPage = (Number(ui.notationPage) || 0) + 2;
+    if (ui.notationPage > lastLeft) ui.notationPage = lastLeft;
+    syncNotationPagingUI();
+  }
+
   function drawNotation() {
+    const nowMs = perfNow();
     const { W, H } = fitCanvas(notationCanvas, nctx);
     nctx.clearRect(0, 0, W, H);
     if (!state.rows.length) return;
+
+    if (ui.notationTapFlash && nowMs >= ui.notationTapFlash.untilMs) ui.notationTapFlash = null;
+    const tapFlash = ui.notationTapFlash;
 
     const stage = state.stage;
     const rows = state.rows;
@@ -3497,11 +3592,27 @@
     const lineH = 24;
     const fontSize = 20;
     const usable = pageH - titleH - 18;
-    const pageSize = clamp(Math.floor(usable / lineH), 10, 24);
 
-    const pageStart = Math.floor(activeRowIdx / pageSize) * pageSize;
-    const pageAStart = pageStart;
-    const pageBStart = pageStart + pageSize;
+    // Page size is computed from available height, but stored so the paging UI can reason about total pages.
+    const computedPageSize = clamp(Math.floor(usable / lineH), 10, 24);
+    if (state.notationPageSize !== computedPageSize) {
+      state.notationPageSize = computedPageSize;
+      syncNotationPagingUI();
+    }
+    const pageSize = state.notationPageSize;
+
+    // Auto-follow (default): keep the active row visible within a two-page spread.
+    if (ui.notationFollow && (state.phase === 'running' || state.phase === 'countdown')) {
+      const activePage = Math.floor(activeRowIdx / pageSize);
+      const desiredLeft = Math.floor(activePage / 2) * 2;
+      if (ui.notationPage !== desiredLeft) {
+        ui.notationPage = desiredLeft;
+        syncNotationPagingUI();
+      }
+    }
+
+    const pageAStart = (Number(ui.notationPage) || 0) * pageSize;
+    const pageBStart = ((Number(ui.notationPage) || 0) + 1) * pageSize;
 
     const bellsForPath = state.pathBells.slice().sort((a,b)=>a-b);
     const liveSet = new Set(state.liveBells);
@@ -3514,11 +3625,13 @@
       roundRect(nctx, x0, y0, w0, h0, 16);
       nctx.fill(); nctx.stroke();
 
-      nctx.font = '11px system-ui, -apple-system, "Segoe UI", sans-serif';
-      nctx.fillStyle = isCurrent ? 'rgba(249,199,79,0.92)' : 'rgba(200,210,235,0.75)';
-      nctx.textAlign = 'left';
-      nctx.textBaseline = 'top';
-      nctx.fillText(label, x0 + 10, y0 + 8);
+      if (label) {
+        nctx.font = '11px system-ui, -apple-system, "Segoe UI", sans-serif';
+        nctx.fillStyle = isCurrent ? 'rgba(249,199,79,0.92)' : 'rgba(200,210,235,0.75)';
+        nctx.textAlign = 'left';
+        nctx.textBaseline = 'top';
+        nctx.fillText(label, x0 + 10, y0 + 8);
+      }
 
       const contentTop = y0 + titleH + 12;
       const contentBottom = y0 + h0 - 12;
@@ -3637,7 +3750,7 @@
         if (rowIdx >= rows.length) break;
         const row = rows[rowIdx];
         const y = contentTop + i * lineH + lineH / 2;
-        const isActive = isCurrent && (rowIdx === activeRowIdx);
+        const isActive = (rowIdx === activeRowIdx);
 
         if (isActive) {
           nctx.fillStyle = 'rgba(249,199,79,0.14)';
@@ -3649,6 +3762,20 @@
           const bell = row[p];
           const isLive = state.liveBells.includes(bell);
           const x = left + p * colW + colW / 2;
+
+          // v06_p12b_notation_tap_to_ring: brief tap highlight
+          if (tapFlash && tapFlash.rowIndex === rowIdx && tapFlash.bell === bell) {
+            const rw = colW - 8;
+            const rh = lineH - 6;
+            if (rw > 2 && rh > 2) {
+              nctx.save();
+              nctx.fillStyle = 'rgba(249,199,79,0.20)';
+              roundRect(nctx, left + p * colW + 4, y - lineH / 2 + 3, rw, rh, 8);
+              nctx.fill();
+              nctx.restore();
+            }
+          }
+
           nctx.fillStyle = isActive ? (isLive ? '#ffffff' : '#c6cbe0') : (isLive ? '#dde8ff' : '#9aa2bb');
           nctx.fillText(String(bell), x, y);
         }
@@ -3658,8 +3785,81 @@
       nctx.restore();
     }
 
-    drawPage(pageAStart, pad, pad, 'CURRENT PAGE', true);
-    drawPage(pageBStart, pad + pageW + gap, pad, 'NEXT PAGE', false);
+    drawPage(pageAStart, pad, pad, '', true);
+    drawPage(pageBStart, pad + pageW + gap, pad, '', false);
+  }
+
+  // v06_p12b_notation_tap_to_ring: hit-test a tap/click to (rowIndex, bell)
+  function hitTestNotation(evt, whichPage) {
+    if (!notationCanvas || !state.rows || !state.rows.length) return null;
+
+    const rect = notationCanvas.getBoundingClientRect();
+    if (!rect || rect.width <= 2 || rect.height <= 2) return null;
+
+    const x = evt.clientX - rect.left;
+    const y = evt.clientY - rect.top;
+    if (!isFinite(x) || !isFinite(y)) return null;
+    if (x < 0 || y < 0 || x > rect.width || y > rect.height) return null;
+
+    const W = rect.width;
+    const H = rect.height;
+    const stage = state.stage;
+
+    const pad = 14, gap = 14;
+    const pageW = (W - pad * 2 - gap) / 2;
+    const pageH = H - pad * 2;
+    if (!(pageW > 10 && pageH > 10 && stage >= 1)) return null;
+
+    let page = whichPage;
+    if (page == null) {
+      if (x >= pad && x <= pad + pageW) page = 0;
+      else if (x >= pad + pageW + gap && x <= pad + pageW + gap + pageW) page = 1;
+      else return null;
+    } else {
+      if (page === 'left') page = 0;
+      else if (page === 'right') page = 1;
+      page = (Number(page) || 0) ? 1 : 0;
+    }
+
+    const x0 = (page === 0) ? pad : (pad + pageW + gap);
+    const y0 = pad;
+    if (x < x0 || x > x0 + pageW) return null;
+    if (y < y0 || y > y0 + pageH) return null;
+
+    const titleH = 18;
+    const lineH = 24;
+    const pageSize = Math.max(1, Number(state.notationPageSize) || 1);
+
+    const contentTop = y0 + titleH + 12;
+    const contentBottom = y0 + pageH - 12;
+    if (y < contentTop || y > contentBottom) return null;
+
+    const maxColW = 60;
+    const baseColW = pageW / stage;
+    const colW = Math.min(baseColW, maxColW);
+    const gridW = colW * stage;
+    const left = x0 + (pageW - gridW) / 2;
+    if (x < left || x > left + gridW) return null;
+
+    const rowOffset = Math.floor((y - contentTop) / lineH);
+    if (rowOffset < 0 || rowOffset >= pageSize) return null;
+
+    const col = Math.floor((x - left) / colW);
+    if (col < 0 || col >= stage) return null;
+
+    let basePage = Number(ui.notationPage) || 0;
+    basePage = Math.floor(basePage / 2) * 2;
+    if (basePage < 0) basePage = 0;
+    const pageStartRow = (basePage + page) * pageSize;
+    const rowIndex = pageStartRow + rowOffset;
+    if (rowIndex < 0 || rowIndex >= state.rows.length) return null;
+
+    const row = state.rows[rowIndex];
+    if (!row) return null;
+    const bell = row[col];
+    if (bell == null || bell < 1 || bell > stage) return null;
+
+    return { rowIndex, bell };
   }
 
   // === Stats render (Mean Δ only + scale/octave) ===
@@ -3979,6 +4179,12 @@
 
     closeAudio();
     state.mode = 'play';
+
+    // v06_p12a_notation_paging_arrows: reset paging to follow mode
+    ui.notationFollow = true;
+    ui.notationPage = 0;
+    syncNotationPagingUI();
+
     syncGameHeaderMeta();
     markDirty();
   }
@@ -4196,6 +4402,7 @@
 
   function loop() {
     const nowMs = perfNow();
+    inLoopTick = true;
 
     // === Maintenance tick (logic + audio scheduling only) ===
     const prevExecBeatIndex = state.execBeatIndex;
@@ -4235,6 +4442,8 @@
       // Game screen is hidden; avoid zero-size canvas layout work until shown.
       needsRedraw = false;
     }
+
+    inLoopTick = false;
 
     // === Scheduler (choose ONE mechanism per tick) ===
     if (useRAF) {
@@ -4308,6 +4517,22 @@
   displayCanvas.addEventListener('pointerdown', (e) => {
     const bell = displayHitTest(e.clientX, e.clientY);
     if (bell != null) { e.preventDefault(); ringBell(bell); }
+  });
+
+  // v06_p12b_notation_tap_to_ring: tap/click bells in notation (both pages)
+  notationCanvas.addEventListener('pointerdown', (e) => {
+    const hit = hitTestNotation(e, null);
+    if (!hit) return;
+
+    // Optional library hook: remember last tapped row.
+    ui.notationCursorRow = hit.rowIndex;
+
+    // Minimal visual feedback: flash the tapped cell.
+    ui.notationTapFlash = { rowIndex: hit.rowIndex, bell: hit.bell, untilMs: perfNow() + 150 };
+
+    // Ring audibly (and score via the existing input path when applicable).
+    if (e.pointerType === 'touch') e.preventDefault();
+    ringBell(hit.bell);
   });
 
 
@@ -4720,6 +4945,9 @@
     });
   }
 
+  if (notationPrevBtn) notationPrevBtn.addEventListener('click', notationPrevPressed);
+  if (notationNextBtn) notationNextBtn.addEventListener('click', notationNextPressed);
+
   startBtn.addEventListener('click', () => startPressed('play'));
   if (pauseBtn) pauseBtn.addEventListener('click', togglePause);
   if (demoBtn) demoBtn.addEventListener('click', () => startPressed('demo'));
@@ -4931,6 +5159,8 @@
 
     // View: layout presets (persisted; safe after loop has started)
     syncLayoutPresetUI();
+
+    syncNotationPagingUI();
   }
 
   boot();

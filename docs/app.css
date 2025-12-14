@@ -282,7 +282,23 @@ select option { background-color: #0b1026; color: #e8eeff; }
   height:260px;
 }
 #displayCanvas{height:240px}
-#notationCanvas{height:540px}
+#notationCanvas{height:540px;cursor:pointer;touch-action:manipulation}
+
+/* v06_p12a_notation_paging_arrows */
+.notation-wrap{position:relative}
+.pill.notation-page-nav{
+  position:absolute;
+  bottom:4px;
+  z-index:5;
+  padding:2px 10px;
+  font-size:14px;
+  font-weight:800;
+  line-height:1;
+  user-select:none;
+}
+#notationPrevBtn{left:18px}
+#notationNextBtn{right:18px}
+
 
 .pane-span{grid-column:1 / -1}
 .pane-span #stats{padding:12px 14px}
