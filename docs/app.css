@@ -285,6 +285,8 @@ select option { background-color: #0b1026; color: #e8eeff; }
   height:260px;
 }
 #displayCanvas{height:240px}
+/* v06_p17_spotlight_tap_drag_to_ring: prevent iOS tap highlight/selection and enable reliable drag */
+#spotlightCanvas{cursor:pointer;touch-action:none;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
 /* v06_p13_notation_touch_polish: prevent iOS tap highlight/selection and enable reliable drag */
 #notationCanvas{height:540px;cursor:pointer;touch-action:none;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
 

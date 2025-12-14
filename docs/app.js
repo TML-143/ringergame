@@ -72,7 +72,7 @@
 
   // === Analytics (GA4) ===
   const GA_ID = 'G-7TEG531231';
-  const SITE_VERSION = 'v06_p15_notation_single_page_mode';
+  const SITE_VERSION = 'v06_p17_spotlight_tap_drag_to_ring';
 
   function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
   function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
@@ -300,6 +300,12 @@
     notationDragPointerId: null,
     notationDragLastKey: null,
 
+    // v06_p17_spotlight_tap_drag_to_ring
+    spotlightTapFlash: null,
+    spotlightDragActive: false,
+    spotlightDragPointerId: null,
+    spotlightDragLastKey: null,
+
     // v06_p12d_library_browser
     libraryIndex: null,
     librarySelectedIdx: null,
@@ -397,13 +403,30 @@
   const LIB_PREVIEW_PAGE_SIZE = 18;
   const LIB_PREVIEW_MAX_ROWS = 2000;
 
-  function bellToCCCBRChar(b) {
-    const n = parseInt(b, 10);
+  // === Bell glyph mapping (UI only) ===
+  function bellToGlyph(bellNum) {
+    const n = parseInt(bellNum, 10);
     if (n >= 1 && n <= 9) return String(n);
     if (n === 10) return '0';
     if (n === 11) return 'E';
     if (n === 12) return 'T';
     return '?';
+  }
+
+  function glyphToBell(ch) {
+    if (!ch) return null;
+    const c = String(ch).trim();
+    if (!c) return null;
+    const cc = c.length === 1 ? c : c[0];
+    if (cc >= '1' && cc <= '9') return cc.charCodeAt(0) - '0'.charCodeAt(0);
+    if (cc === '0') return 10;
+    if (cc === 'E' || cc === 'e') return 11;
+    if (cc === 'T' || cc === 't') return 12;
+    return null;
+  }
+
+  function bellToCCCBRChar(b) {
+    return bellToGlyph(b);
   }
 
   function buildLibraryIndex() {
@@ -2494,11 +2517,7 @@
     let stage = null;
 
     function charToBell(ch) {
-      if (ch >= '1' && ch <= '9') return ch.charCodeAt(0) - '0'.charCodeAt(0);
-      if (ch === '0') return 10;
-      if (ch === 'E' || ch === 'e') return 11;
-      if (ch === 'T' || ch === 't') return 12;
-      return null;
+      return glyphToBell(ch);
     }
 
     for (const line of lines) {
@@ -3247,7 +3266,7 @@
     for (let b = 1; b <= state.stage; b++) {
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.textContent = String(b);
+      btn.textContent = bellToGlyph(b);
       btn.addEventListener('click', () => {
         if (state.phase !== 'idle') ensureIdleForPlayChange();
         const max = state.liveCount;
@@ -3295,11 +3314,8 @@
   }
 
   function defaultBindKeyForBell(bell) {
-    if (bell >= 1 && bell <= 9) return String(bell);
-    if (bell === 10) return '0';
-    if (bell === 11) return 'E';
-    if (bell === 12) return 'T';
-    return '';
+    const g = bellToGlyph(bell);
+    return (g === '?') ? '' : g;
   }
 
   function loadKeyBindings() {
@@ -3373,7 +3389,7 @@
 
       const bellLabel = document.createElement('span');
       bellLabel.className = 'keybind-bell';
-      bellLabel.textContent = 'Bell ' + b;
+      bellLabel.textContent = 'Bell ' + bellToGlyph(b);
 
       const keyLabel = document.createElement('span');
       keyLabel.className = 'keybind-key';
@@ -3399,7 +3415,7 @@
       const micOn = (state.micBells || []).includes(b);
       micBtn.classList.toggle('mic-on', micOn);
       micBtn.setAttribute('aria-pressed', micOn ? 'true' : 'false');
-      micBtn.setAttribute('aria-label', micOn ? `Mic on for bell ${b}` : `Mic off for bell ${b}`);
+      micBtn.setAttribute('aria-label', micOn ? `Mic on for bell ${bellToGlyph(b)}` : `Mic off for bell ${bellToGlyph(b)}`);
       micBtn.addEventListener('click', () => {
         const set = new Set(state.micBells || []);
         if (set.has(b)) set.delete(b);
@@ -3449,7 +3465,7 @@
     for (let b = 1; b <= state.stage; b++) {
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.textContent = String(b);
+      btn.textContent = bellToGlyph(b);
       btn.addEventListener('click', () => {
         const list = state.pathBells.slice();
         const idx = list.indexOf(b);
@@ -3767,7 +3783,7 @@
         const on = Number.isFinite(bell) && (state.micBells || []).includes(bell);
         btn.classList.toggle('mic-on', on);
         btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-        btn.setAttribute('aria-label', on ? `Mic on for bell ${bell}` : `Mic off for bell ${bell}`);
+        btn.setAttribute('aria-label', on ? `Mic on for bell ${bellToGlyph(bell)}` : `Mic off for bell ${bellToGlyph(bell)}`);
       });
     } catch (_) {}
   }
@@ -4164,13 +4180,17 @@
   }
 
 
-  // === Spotlight (cue only; not clickable) ===
+  // === Spotlight (cue + touch input) ===
     function drawSpotlight(nowMs) {
       const { W, H } = fitCanvas(spotlightCanvas, sctx);
       sctx.clearRect(0, 0, W, H);
 
       const cd = countdownDisplay(nowMs);
       if (!state.rows.length) return;
+
+      // v06_p17_spotlight_tap_drag_to_ring: expire tap flash without timers.
+      if (ui.spotlightTapFlash && nowMs >= ui.spotlightTapFlash.untilMs) ui.spotlightTapFlash = null;
+      const tapFlash = ui.spotlightTapFlash;
 
       // countdown badge intentionally omitted (overlay handles count-in)
 
@@ -4189,7 +4209,7 @@
         const rowBlockH = (H - padY * 2 - gapY) / 2;
         const cellW = (W - padX * 2) / stage;
 
-        function drawRow(row, yTop, highlightPos, faded) {
+        function drawRow(row, yTop, highlightPos, faded, rowKind) {
           sctx.save();
           sctx.translate(padX, yTop);
           sctx.fillStyle = faded ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.05)';
@@ -4207,21 +4227,27 @@
             const y = rowBlockH / 2;
             const bell = row[i];
             const isLive = state.liveBells.includes(bell);
+            const flashOn = !!(tapFlash && tapFlash.rowKind === rowKind && tapFlash.bell === bell);
 
             if (!faded && i === highlightPos) {
               sctx.fillStyle = (cd === 'Ready') ? 'rgba(232,238,255,0.86)' : '#f9c74f';
               roundRect(sctx, i * cellW + 4, 6, cellW - 8, rowBlockH - 12, 10);
               sctx.fill();
               sctx.fillStyle = '#10162c';
+            } else if (flashOn) {
+              sctx.fillStyle = faded ? 'rgba(249,199,79,0.22)' : 'rgba(249,199,79,0.34)';
+              roundRect(sctx, i * cellW + 4, 6, cellW - 8, rowBlockH - 12, 10);
+              sctx.fill();
+              sctx.fillStyle = '#10162c';
             } else sctx.fillStyle = isLive ? '#e8eeff' : '#9aa2bb';
 
-            sctx.fillText(String(bell), x, y);
+            sctx.fillText(bellToGlyph(bell), x, y);
           }
           sctx.restore();
         }
 
-        drawRow(currentRow, padY, pos, false);
-        drawRow(nextRow, padY + rowBlockH + gapY, -1, true);
+        drawRow(currentRow, padY, pos, false, 'N');
+        drawRow(nextRow, padY + rowBlockH + gapY, -1, true, 'N1');
         return;
       }
 
@@ -4265,9 +4291,11 @@
       const cellW = (W - padX * 2) / stage;
       const liveSet = new Set(state.liveBells);
 
-      function drawRowBlock(row, yTop, highlightPos, faded) {
+      function drawRowBlock(row, yTop, highlightPos, faded, offset) {
         sctx.save();
         sctx.translate(padX, yTop);
+
+        const rowKind = (offset === 0) ? 'N' : ((offset === 1) ? 'N1' : 'N2');
         sctx.fillStyle = faded ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.05)';
         sctx.strokeStyle = 'rgba(255,255,255,0.08)';
         roundRect(sctx, 0, 0, W - padX * 2, rowBlockH, 12);
@@ -4286,15 +4314,21 @@
           const y = rowBlockH / 2;
           const bell = row[i];
           const isLive = liveSet.has(bell);
+          const flashOn = !!(tapFlash && tapFlash.rowKind === rowKind && tapFlash.bell === bell);
 
           if (!faded && i === highlightPos) {
             sctx.fillStyle = (cd === 'Ready') ? 'rgba(232,238,255,0.86)' : '#f9c74f';
             roundRect(sctx, i * cellW + 4, 6, cellW - 8, rowBlockH - 12, 10);
             sctx.fill();
             sctx.fillStyle = '#10162c';
+          } else if (flashOn) {
+            sctx.fillStyle = faded ? 'rgba(249,199,79,0.22)' : 'rgba(249,199,79,0.34)';
+            roundRect(sctx, i * cellW + 4, 6, cellW - 8, rowBlockH - 12, 10);
+            sctx.fill();
+            sctx.fillStyle = '#10162c';
           } else sctx.fillStyle = isLive ? '#e8eeff' : '#9aa2bb';
 
-          sctx.fillText(String(bell), x, y);
+          sctx.fillText(bellToGlyph(bell), x, y);
         }
 
         sctx.restore();
@@ -4331,7 +4365,7 @@
       for (let k = 0; k < items.length; k++) {
         const it = items[k];
         if (it.type === 'row') {
-          drawRowBlock(it.row, y, it.highlightPos, it.faded);
+          drawRowBlock(it.row, y, it.highlightPos, it.faded, it.offset);
           y += rowBlockH;
         } else {
           drawSwapDiagram(it.before, it.after, y);
@@ -4454,7 +4488,7 @@
       dctx.textAlign = 'center';
       dctx.textBaseline = 'middle';
       dctx.fillStyle = glow > 0.2 ? '#10162c' : '#e8eeff';
-      dctx.fillText(String(bell), cx, cy);
+      dctx.fillText(bellToGlyph(bell), cx, cy);
       dctx.restore();
     }
   }
@@ -4525,7 +4559,7 @@
       dctx.textAlign = 'center';
       dctx.textBaseline = 'middle';
       dctx.fillStyle = glow > 0.2 ? '#10162c' : (isLive ? '#e8eeff' : '#9aa2bb');
-      dctx.fillText(String(bell), p.x, p.y);
+      dctx.fillText(bellToGlyph(bell), p.x, p.y);
       dctx.restore();
     }
   }
@@ -4872,7 +4906,7 @@
           }
 
           nctx.fillStyle = isActive ? (isLive ? '#ffffff' : '#c6cbe0') : (isLive ? '#dde8ff' : '#9aa2bb');
-          nctx.fillText(String(bell), x, y);
+          nctx.fillText(bellToGlyph(bell), x, y);
         }
       }
 
@@ -5042,7 +5076,7 @@
           }
 
           nctx.fillStyle = isActive ? (isLive ? '#ffffff' : '#c6cbe0') : (isLive ? '#dde8ff' : '#9aa2bb');
-          nctx.fillText(String(bell), x, y);
+          nctx.fillText(bellToGlyph(bell), x, y);
         }
       }
 
@@ -5093,6 +5127,17 @@
         nctx.clip();
 
         const nextStart = (curPage + 1) * pageSize;
+
+        // v06_p15b_notation_peek_marker_only: per-row continuation markers (no cross-row connectors)
+        const pathSet = (bellsForPath && bellsForPath.length) ? new Set(bellsForPath) : null;
+        const markerW = Math.max(10, Math.min(colW - 10, colW * 0.55));
+        const markerDY = Math.min(9, Math.max(6, Math.floor(lineH * 0.32)));
+        if (pathSet) {
+          nctx.save();
+          nctx.strokeStyle = 'rgba(249,199,79,0.85)';
+          nctx.lineWidth = Math.max(2, Math.min(2.8, lineH * 0.10));
+          nctx.lineCap = 'round';
+        }
         for (let i = 0; i < peekRows; i++) {
           const rowIdx = nextStart + i;
           if (rowIdx >= rows.length) break;
@@ -5110,57 +5155,21 @@
             const bell = row[p];
             const isLive = state.liveBells.includes(bell);
             const x = left + p * colW + colW / 2;
+            if (pathSet && pathSet.has(bell)) {
+              const yMark = y + markerDY;
+              nctx.beginPath();
+              nctx.moveTo(x - markerW / 2, yMark);
+              nctx.lineTo(x + markerW / 2, yMark);
+              nctx.stroke();
+            }
             nctx.fillStyle = isActive ? (isLive ? '#ffffff' : '#c6cbe0') : (isLive ? '#dde8ff' : 'rgba(154,162,187,0.92)');
-            nctx.fillText(String(bell), x, y);
+            nctx.fillText(bellToGlyph(bell), x, y);
           }
         }
 
+        if (pathSet) nctx.restore();
+
         nctx.restore();
-
-        // connectors for selected path bells into the peek rows
-        if (bellsForPath && bellsForPath.length) {
-          const visibleRows = Math.max(0, Math.min(pageSize, rows.length - pageStartRow));
-          const lastMainOffset = Math.max(0, visibleRows - 1);
-          const lastMainRowIdx = pageStartRow + lastMainOffset;
-          const yMain = contentTop + lastMainOffset * lineH + lineH / 2;
-          const yPeek0 = peekContentTop + 0 * lineH + lineH / 2;
-          const yPeek1 = peekContentTop + 1 * lineH + lineH / 2;
-
-          bellsForPath.forEach((bell, bi) => {
-            const rowMain = rows[lastMainRowIdx];
-            const row0 = rows[nextStart + 0];
-            if (!rowMain || !row0) return;
-            const posMain = rowMain.indexOf(bell);
-            const pos0 = row0.indexOf(bell);
-            if (posMain < 0 || pos0 < 0) return;
-            const xMain = left + posMain * colW + colW / 2;
-            const x0p = left + pos0 * colW + colW / 2;
-
-            nctx.save();
-            nctx.globalAlpha = 0.80;
-            nctx.strokeStyle = '#f9c74f';
-            nctx.lineWidth = 1.6;
-            nctx.setLineDash(PATH_STYLES[bi % PATH_STYLES.length]);
-            nctx.beginPath();
-            nctx.moveTo(xMain, yMain);
-            nctx.lineTo(x0p, yPeek0);
-            nctx.stroke();
-
-            const row1 = rows[nextStart + 1];
-            if (row1) {
-              const pos1 = row1.indexOf(bell);
-              if (pos1 >= 0) {
-                const x1p = left + pos1 * colW + colW / 2;
-                nctx.beginPath();
-                nctx.moveTo(x0p, yPeek0);
-                nctx.lineTo(x1p, yPeek1);
-                nctx.stroke();
-              }
-            }
-            nctx.setLineDash([]);
-            nctx.restore();
-          });
-        }
       }
 
       nctx.restore();
@@ -5340,7 +5349,7 @@
       const meanSigned = s.hits > 0 ? Math.round(s.sumSignedDelta / s.hits) : null;
 
       html += '<tr>';
-      html += '<td>' + bell + '</td>';
+      html += '<td>' + bellToGlyph(bell) + '</td>';
       html += '<td>' + targets + '</td>';
       html += '<td>' + s.hits + '</td>';
       html += '<td>' + s.misses + '</td>';
@@ -5912,7 +5921,7 @@
     }
   });
 
-  // Spotlight is intentionally NOT clickable in v10.
+  // Display tap: ring the tapped bell (standard touch control).
   displayCanvas.addEventListener('pointerdown', (e) => {
     const bell = displayHitTest(e.clientX, e.clientY);
     if (bell != null) { e.preventDefault(); ringBell(bell); }
@@ -5988,83 +5997,169 @@
   window.addEventListener('pointerup', endNotationDrag);
   window.addEventListener('pointercancel', endNotationDrag);
 
-
-  // Spotlight top-row tap: ring the tapped bell (non-keyboard alternative control).
-  spotlightCanvas.addEventListener('pointerdown', (e) => {
+  // v06_p17_spotlight_tap_drag_to_ring: hit-test Spotlight rows (N/N+1/N+2)
+  function hitTestSpotlight(evt) {
     const rect = spotlightCanvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    if (x < 0 || y < 0 || x > rect.width || y > rect.height) return;
+    const x = evt.clientX - rect.left;
+    const y = evt.clientY - rect.top;
+    if (x < 0 || y < 0 || x > rect.width || y > rect.height) return null;
 
     const stage = state.stage;
-
-    // Default Spotlight tap (unchanged): only the top row is tappable.
-    if (!state.spotlightSwapsView) {
-      // Mirror drawSpotlight's layout math (CSS pixels).
-      const padX = 14, padY = 12, gapY = 10;
-      const rowBlockH = (rect.height - padY * 2 - gapY) / 2;
-      const topRowY = padY;
-
-      // Only accept taps in the top row body (not the title area).
-      if (y < topRowY || y > topRowY + rowBlockH) return;
-      if (x < padX || x > rect.width - padX) return;
-
-      const cellW = (rect.width - padX * 2) / stage;
-      const idx = Math.max(0, Math.min(stage - 1, Math.floor((x - padX) / cellW)));
-
-      if (!state.rows.length) return;
-
-      const totalBeats = state.rows.length * stage;
-      const strikeIdx = clamp(state.execBeatIndex - 1, 0, Math.max(0, totalBeats - 1));
-      const rowIdx = Math.floor(strikeIdx / stage);
-      const currentRow = state.rows[rowIdx] || state.rows[0];
-      const bell = currentRow[idx];
-      if (bell != null) {
-        e.preventDefault();
-        ringBell(bell);
-      }
-      return;
-    }
-
-    // Swaps View: keep taps aligned with the current row (N) to avoid misleading input.
-    if (!state.spotlightShowN) return;
-    if (!state.rows.length) return;
-
-    const padX = 14, padY = 12;
-    const gapY = 8;
-    const diagramH = 18;
+    if (!stage || stage < 1) return null;
+    if (!state.rows || !state.rows.length) return null;
 
     const totalBeats = state.rows.length * stage;
     const strikeIdx = clamp(state.execBeatIndex - 1, 0, Math.max(0, totalBeats - 1));
     const rowIdx = Math.floor(strikeIdx / stage);
-    const currentRow = state.rows[rowIdx] || state.rows[0];
 
-    const show1 = !!state.spotlightShowN1 && (rowIdx + 1 < state.rows.length);
-    const show2 = !!state.spotlightShowN2 && (rowIdx + 2 < state.rows.length);
+    // Default Spotlight: two stacked row blocks (N and N+1).
+    if (!state.spotlightSwapsView) {
+      const padX = 14, padY = 12, gapY = 10;
+      const rowBlockH = (rect.height - padY * 2 - gapY) / 2;
+      if (rowBlockH <= 0) return null;
 
-    const rowCount = 1 + (show1 ? 1 : 0) + (show2 ? 1 : 0);
-    const diagramCount = (show1 ? 1 : 0) + ((show1 && show2) ? 1 : 0);
-    const itemsLen = rowCount + diagramCount;
+      if (x < padX || x > rect.width - padX) return null;
+      const cellW = (rect.width - padX * 2) / stage;
+      if (cellW <= 0) return null;
+      const idx = clamp(Math.floor((x - padX) / cellW), 0, stage - 1);
 
+      const topY = padY;
+      const botY = padY + rowBlockH + gapY;
+
+      const inTop = (y >= topY && y <= topY + rowBlockH);
+      const inBot = (y >= botY && y <= botY + rowBlockH);
+      if (!inTop && !inBot) return null;
+
+      const row = inTop
+        ? (state.rows[rowIdx] || state.rows[0])
+        : (state.rows[Math.min(rowIdx + 1, state.rows.length - 1)] || state.rows[rowIdx] || state.rows[0]);
+
+      const bell = row ? row[idx] : null;
+      if (bell == null) return null;
+      return { bell, rowKind: inTop ? 'N' : 'N1' };
+    }
+
+    // Swaps view: stacked rows with optional swap diagrams in between.
+    const rows = state.rows;
+    const padX = 14, padY = 12;
+    const gapY = 8;
+    const diagramH = 18;
+
+    const show0 = !!state.spotlightShowN;
+    const show1 = !!state.spotlightShowN1 && (rowIdx + 1 < rows.length);
+    const show2 = !!state.spotlightShowN2 && (rowIdx + 2 < rows.length);
+
+    const row0 = rows[rowIdx] || rows[0];
+    const row1 = show1 ? rows[rowIdx + 1] : null;
+    const row2 = show2 ? rows[rowIdx + 2] : null;
+
+    const items = [];
+    if (show0) items.push({ type: 'row', row: row0, offset: 0 });
+    if (show0 && show1) items.push({ type: 'diagram' });
+    if (show1) items.push({ type: 'row', row: row1, offset: 1 });
+    if (show1 && show2) items.push({ type: 'diagram' });
+    if (show2) items.push({ type: 'row', row: row2, offset: 2 });
+
+    const rowCount = items.reduce((n, it) => n + (it.type === 'row' ? 1 : 0), 0);
+    if (!rowCount) return null;
+
+    const diagramCount = items.length - rowCount;
     const availH = rect.height - padY * 2;
-    const gapsH = Math.max(0, (itemsLen - 1) * gapY);
+    const gapsH = Math.max(0, (items.length - 1) * gapY);
     let rowBlockH = (availH - diagramCount * diagramH - gapsH) / rowCount;
     if (!isFinite(rowBlockH) || rowBlockH <= 0) rowBlockH = Math.max(34, (availH - diagramCount * diagramH) / rowCount);
 
-    const topRowY = padY;
-
-    if (y < topRowY || y > topRowY + rowBlockH) return;
-    if (x < padX || x > rect.width - padX) return;
-
+    if (x < padX || x > rect.width - padX) return null;
     const cellW = (rect.width - padX * 2) / stage;
-    const idx = Math.max(0, Math.min(stage - 1, Math.floor((x - padX) / cellW)));
+    if (cellW <= 0) return null;
+    const idx = clamp(Math.floor((x - padX) / cellW), 0, stage - 1);
 
-    const bell = currentRow[idx];
-    if (bell != null) {
-      e.preventDefault();
-      ringBell(bell);
+    let yy = padY;
+    for (let k = 0; k < items.length; k++) {
+      const it = items[k];
+      if (it.type === 'row') {
+        if (y >= yy && y <= yy + rowBlockH) {
+          const bell = it.row ? it.row[idx] : null;
+          if (bell == null) return null;
+          const rowKind = (it.offset === 0) ? 'N' : ((it.offset === 1) ? 'N1' : 'N2');
+          return { bell, rowKind };
+        }
+        yy += rowBlockH;
+      } else {
+        yy += diagramH;
+      }
+      if (k < items.length - 1) yy += gapY;
     }
+    return null;
+  }
+
+  function endSpotlightDrag(evt) {
+    if (!ui.spotlightDragActive) return;
+    if (evt && ui.spotlightDragPointerId != null && evt.pointerId !== ui.spotlightDragPointerId) return;
+    const pid = ui.spotlightDragPointerId;
+    ui.spotlightDragActive = false;
+    ui.spotlightDragPointerId = null;
+    ui.spotlightDragLastKey = null;
+    if (pid != null) {
+      try { spotlightCanvas.releasePointerCapture(pid); } catch (_) {}
+    }
+  }
+
+  spotlightCanvas.addEventListener('pointerdown', (e) => {
+    const hit = hitTestSpotlight(e);
+    if (!hit) return;
+
+    // If another pointer is already dragging, ignore additional touches.
+    if (ui.spotlightDragActive && ui.spotlightDragPointerId != null && e.pointerId !== ui.spotlightDragPointerId) return;
+
+    ui.spotlightDragActive = true;
+    ui.spotlightDragPointerId = e.pointerId;
+    ui.spotlightDragLastKey = hit.rowKind + ':' + hit.bell;
+    try { spotlightCanvas.setPointerCapture(e.pointerId); } catch (_) {}
+
+    ui.spotlightTapFlash = { rowKind: hit.rowKind, bell: hit.bell, untilMs: perfNow() + 150 };
+
+    // Ring audibly (and score via the existing input path when applicable).
+    ringBell(hit.bell);
+
+    // Ensure the flash is rendered promptly under the existing perf loop.
+    markDirty();
+
+    // Prevent tap highlight / selection only while actively tracking a Spotlight gesture.
+    e.preventDefault();
   });
+
+  spotlightCanvas.addEventListener('pointermove', (e) => {
+    if (!ui.spotlightDragActive) return;
+    if (ui.spotlightDragPointerId != null && e.pointerId !== ui.spotlightDragPointerId) return;
+
+    const hit = hitTestSpotlight(e);
+    if (!hit) {
+      // Keep the last key so jitter off-grid doesn't cause repeat rings on re-entry.
+      e.preventDefault();
+      return;
+    }
+
+    const key = hit.rowKind + ':' + hit.bell;
+    if (key === ui.spotlightDragLastKey) {
+      e.preventDefault();
+      return;
+    }
+    ui.spotlightDragLastKey = key;
+
+    ui.spotlightTapFlash = { rowKind: hit.rowKind, bell: hit.bell, untilMs: perfNow() + 150 };
+    ringBell(hit.bell);
+    markDirty();
+
+    e.preventDefault();
+  });
+
+  spotlightCanvas.addEventListener('pointerup', endSpotlightDrag);
+  spotlightCanvas.addEventListener('pointercancel', endSpotlightDrag);
+
+  // Safety net: if capture fails, still end the gesture when the pointer finishes elsewhere.
+  window.addEventListener('pointerup', endSpotlightDrag);
+  window.addEventListener('pointercancel', endSpotlightDrag);
 
   // Prompt 6: Play settings changes restart (stop current run first).
   function ensureIdleForPlayChange() {
