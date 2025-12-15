@@ -586,6 +586,28 @@ select option { background-color: #0b1026; color: #e8eeff; }
   box-shadow:0 0 0 3px rgba(249,199,79,0.10) inset;
 }
 
+
+
+/* Privacy consent: match View toggle checkbox styling */
+#screenPrivacy .rg-privacy-consent label.toggle input[type="checkbox"]{
+  appearance:auto;
+  -webkit-appearance:auto;
+  width:16px;
+  height:16px;
+  padding:0;
+  margin:0;
+  accent-color:var(--accent);
+  background:transparent;
+  border:none;
+  box-shadow:none;
+}
+
+/* Selected/on state */
+#screenPrivacy .rg-privacy-consent .is-selected{
+  border-color:rgba(249,199,79,0.55);
+  background:rgba(249,199,79,0.12);
+  box-shadow:0 0 0 3px rgba(249,199,79,0.10) inset;
+}
 /* Focus visibility for keyboard users */
 #screenView #viewMenuControls label.toggle:focus-within,
 #screenView #viewMenuControls button[aria-pressed]:focus-visible{
@@ -961,3 +983,156 @@ select option { background-color: #0b1026; color: #e8eeff; }
   font-size:12px;
   color:rgba(232,238,255,0.72);
 }
+
+
+/* v07_p01_privacy_audience_measurement_consent */
+
+.rg-consent-banner{
+  position:fixed;
+  left:10px;
+  right:10px;
+  bottom:calc(10px + env(safe-area-inset-bottom));
+  z-index:9999;
+}
+
+.rg-consent-inner{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  padding:12px 14px;
+  background:var(--panel2);
+  border:1px solid var(--stroke2);
+  border-radius:18px;
+  box-shadow:0 12px 26px rgba(0,0,0,0.35);
+}
+
+.rg-consent-text{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+
+.rg-consent-copy{
+  font-size:13px;
+  line-height:1.35;
+  color:var(--text);
+}
+
+.rg-link-button{
+  background:none;
+  border:none;
+  padding:0;
+  margin:0;
+  text-align:left;
+  color:var(--accent);
+  text-decoration:underline;
+  cursor:pointer;
+  font:inherit;
+}
+
+.rg-consent-actions{
+  display:flex;
+  gap:10px;
+}
+
+.rg-consent-actions .rg-consent-btn{
+  flex:1;
+}
+
+@media (min-width: 720px){
+  .rg-consent-inner{
+    flex-direction:row;
+    align-items:center;
+    justify-content:space-between;
+    gap:14px;
+  }
+  .rg-consent-text{
+    flex:1;
+  }
+  .rg-consent-actions{
+    flex:0 0 auto;
+    min-width:340px;
+  }
+}
+
+#screenPrivacy .rg-privacy-consent{
+  width:100%;
+  max-width:900px;
+  margin:0 auto 12px auto;
+}
+
+#screenPrivacy .rg-privacy-consent-control{
+  padding:12px 14px;
+  background:var(--panel2);
+  border:1px solid var(--stroke2);
+  border-radius:18px;
+}
+
+#screenPrivacy .rg-privacy-policy{
+  width:100%;
+  max-width:900px;
+  margin:0 auto;
+  padding:12px 14px;
+  background:var(--panel);
+  border:1px solid var(--stroke);
+  border-radius:18px;
+  color:var(--text);
+  font-size:14px;
+  line-height:1.55;
+}
+
+#screenPrivacy .rg-privacy-policy h2{
+  margin:0 0 10px 0;
+  font-size:18px;
+}
+
+#screenPrivacy .rg-privacy-policy h3{
+  margin:14px 0 6px 0;
+  font-size:15px;
+}
+
+#screenPrivacy .rg-privacy-policy p{
+  margin:0 0 10px 0;
+}
+
+#screenPrivacy .rg-privacy-policy ul{
+  margin:0 0 12px 18px;
+  padding:0;
+}
+
+#screenPrivacy .rg-privacy-policy li{
+  margin:0 0 6px 0;
+}
+
+#screenPrivacy .rg-nav{
+  margin-top:14px;
+}
+
+.rg-privacy-actions{
+  margin-top:10px;
+}
+
+.rg-footer-privacy{
+  max-width:1220px;
+  margin:8px auto 18px auto;
+  text-align:center;
+}
+
+.rg-footer-privacy-link{
+  background:transparent;
+  border:0;
+  padding:6px 10px;
+  color:rgba(232,238,255,0.78);
+  font:inherit;
+  font-size:12px;
+  text-decoration:underline;
+  cursor:pointer;
+}
+
+.rg-footer-privacy-link:focus{
+  outline:2px solid var(--accent);
+  outline-offset:2px;
+  border-radius:10px;
+}
+
+.rg-consent-head{margin-bottom:4px;}

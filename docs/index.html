@@ -8,15 +8,7 @@
 
     <link rel="icon" href="ringer_game_icon.png" />
     <link rel="manifest" href="manifest.webmanifest" />
-
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-7TEG531231"></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){ dataLayer.push(arguments); }
-      gtag('js', new Date());
-    </script>
-
-    <link rel="stylesheet" href="./app.css">
+<link rel="stylesheet" href="./app.css">
   </head>
   <body>
     <div id="app">
@@ -94,6 +86,14 @@
                   <option value="one_page">Single page (touch)</option>
                 </select>
               </div>
+              <div class="control view-control rg-privacy-control">
+                <label>Privacy</label>
+                <div class="rg-privacy-actions">
+                  <label class="toggle"><input id="privacyAudienceToggle" type="checkbox" /> Audience measurement</label>
+                  <button id="viewPrivacyPolicyBtn" class="pill" type="button" data-go-screen="privacy">Privacy</button>
+                </div>
+              </div>
+
             </div>
             <div class="rg-nav">
               <button class="pill" type="button" data-go-screen="play">Setup</button>
@@ -106,7 +106,58 @@
         </section>
       </div>
 
-      <div id="screenSound" class="rg-screen" aria-hidden="true">
+      
+      <div id="screenPrivacy" class="rg-screen" aria-hidden="true">
+        <section class="pane rg-splash">
+          <div class="pane-title"><span>Privacy</span></div>
+          <div class="rg-screen-body">
+            
+            <div class="rg-privacy-consent">
+              <div class="control rg-privacy-consent-control">
+                <div class="toggles toggles--mini" role="group" aria-label="Privacy toggles">
+                  <label class="toggle"><input id="privacyAudienceCheckbox" type="checkbox" /> Audience measurement</label>
+                </div>
+                <div class="control-note rg-muted">Optional. Counts site visits and page/screen views only.<br />No user profiles, no cross-visit tracking, no gameplay data.</div>
+              </div>
+            </div>
+
+            <div id="privacyPolicyPre" class="rg-privacy-policy" aria-label="Privacy policy">
+              <h2>Privacy &amp; Analytics</h2>
+              <p><strong>Ringer Game is a client-only web app.</strong></p>
+
+              <h3>What Ringer Game does not do</h3>
+              <ul>
+                <li>It does not create user profiles.</li>
+                <li>It does not assign persistent user IDs.</li>
+                <li>It does not track you across visits.</li>
+                <li>It does not record or transmit gameplay actions, scores, or timing data.</li>
+              </ul>
+
+              <h3>Audience measurement (optional)</h3>
+              <p>If you enable Audience measurement, Ringer Game uses Google Analytics 4 to measure overall site usage, such as page or screen views, approximate location at the country or region level, and coarse device or browser information.</p>
+              <p>This information is used only to understand audience size and general usage trends.</p>
+              <p>Ringer Game does not send gameplay events, scores, timing metrics, bell-by-bell data, or other run details to Google Analytics.</p>
+
+              <h3>Local gameplay data</h3>
+              <p>Gameplay statistics and preferences may be stored in your browser (for example, via localStorage) so the game can remember settings and show your performance stats. This data stays on your device.</p>
+
+              <h3>Your choice</h3>
+              <p>Audience measurement is off by default. You can enable or disable it at any time from the Privacy page. When disabled, Google Analytics is not loaded.</p>
+
+              <h3>Third party</h3>
+              <p>Google Analytics is provided by Google. Their processing of data is governed by Google’s own privacy terms.</p>
+            </div>
+            <div class="rg-nav">
+              <button class="pill" type="button" data-go-screen="view">View</button>
+              <button class="pill" type="button" data-go-screen="play">Setup</button>
+              <button class="pill" type="button" data-go-screen="sound">Sound</button>
+              <button class="pill" type="button" data-go-screen="home">Home</button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+<div id="screenSound" class="rg-screen" aria-hidden="true">
         <section class="pane rg-splash">
           <div class="pane-title"><span>Sound</span></div>
           <div class="rg-screen-body">
@@ -490,6 +541,28 @@
       </div>
 </div>
 
-    <script src="./app.js"></script>
+
+  <footer class="rg-footer-privacy" aria-label="Privacy">
+    <button id="footerPrivacyLink" class="rg-footer-privacy-link" type="button">Privacy</button>
+  </footer>
+
+    <div id="rgConsentBanner" class="rg-consent-banner hidden" aria-hidden="true" role="region" aria-label="Privacy and analytics consent">
+      <div class="rg-consent-inner">
+        <div class="rg-consent-text">
+          
+          <div class="rg-consent-copy">
+            <div class="rg-consent-head"><strong>Ringer Game does not track you or create user profiles.</strong></div>
+            <div class="rg-consent-body">With your permission, it can measure overall site visits (audience measurement).</div>
+          </div>
+          <button id="rgConsentPrivacyLink" class="rg-link-button" type="button">Privacy</button>
+        </div>
+        <div class="rg-consent-actions">
+          <button id="rgConsentAllow" class="pill rg-consent-btn" type="button">Allow audience measurement</button>
+          <button id="rgConsentDeny" class="pill rg-consent-btn" type="button">Essential only</button>
+        </div>
+      </div>
+    </div>
+
+<script src="./app.js"></script>
   </body>
 </html>

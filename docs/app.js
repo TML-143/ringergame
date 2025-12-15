@@ -71,8 +71,9 @@
   // Middle third = 10 points, outer thirds = 9 points, miss = 0.
 
   // === Analytics (GA4) ===
-  const GA_ID = 'G-7TEG531231';
-  const SITE_VERSION = 'v06_p17_spotlight_tap_drag_to_ring';
+  const GA_MEASUREMENT_ID = 'G-7TEG531231';
+  const GA_ID = GA_MEASUREMENT_ID;
+  const SITE_VERSION = 'v07_p02b_privacy_checkbox_sync';
 
   function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
   function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
@@ -87,6 +88,158 @@
   }
   function safeSetBoolLS(key, val) { safeSetLS(key, val ? '1' : '0'); }
 
+  // v07_p02_privacy_footer_policy_friendly_banner
+  const LS_CONSENT_AUDIENCE = 'rg_consent_audience_v1';
+
+  const PRIVACY_POLICY_TEXT = `Privacy & Analytics
+
+Ringer Game is a client-only web app.
+
+What Ringer Game does not do
+- It does not create user profiles.
+- It does not assign persistent user IDs.
+- It does not track you across visits.
+- It does not record or transmit gameplay actions, scores, or timing data.
+
+Audience measurement (optional)
+If you enable Audience measurement, Ringer Game uses Google Analytics 4 to measure overall site usage, such as page or screen views, approximate location at the country or region level, and coarse device or browser information.
+
+This information is used only to understand audience size and general usage trends.
+
+Ringer Game does not send gameplay events, scores, timing metrics, bell-by-bell data, or other run details to Google Analytics.
+
+Local gameplay data
+Gameplay statistics and preferences may be stored in your browser (for example, via localStorage) so the game can remember settings and show your performance stats. This data stays on your device.
+
+Your choice
+Audience measurement is off by default. You can enable or disable it at any time from the Privacy page. When disabled, Google Analytics is not loaded.
+
+Third party
+Google Analytics is provided by Google. Their processing of data is governed by Google’s own privacy terms.`;
+
+
+  function getAudienceConsent() {
+        const v = safeGetLS(LS_CONSENT_AUDIENCE);
+        return (v === '1' || v === '0') ? v : '';
+      }
+
+  function isAudienceMeasurementEnabled() { return getAudienceConsent() === '1'; }
+
+  function setAudienceConsent(val) {
+        const v = (val === '1') ? '1' : '0';
+        safeSetLS(LS_CONSENT_AUDIENCE, v);
+
+        // Side effects: GA is strictly opt-in and only ever records screen/page views.
+        showConsentBanner(false);
+        if (v === '1') {
+          try { window[gaDisableFlagKey()] = false; } catch (_) {}
+          try { loadGA4IfConsented(); } catch (_) {}
+          try { analytics.configure(); } catch (_) {}
+          // Ensure the current screen is counted for SPA usage (screen views only).
+          try { analytics.track('screen_view', { screen_name: analyticsScreenName(ui.screen) }); } catch (_) {}
+        } else {
+          // Stop sending hits best-effort, and clear GA cookies if present.
+          try { window[gaDisableFlagKey()] = true; } catch (_) {}
+          cleanupGACookiesBestEffort();
+        }
+
+        return v;
+      }
+
+  // GA4 dynamic loader (opt-in only)
+  let gaInjected = false;
+  let gaConfigured = false;
+  let gaScriptEl = null;
+
+  function gaDisableFlagKey() { return 'ga-disable-' + GA_ID; }
+
+  function applyGADisableFlagFromStoredChoice() {
+    const c = getAudienceConsent();
+    if (c === '') return;
+    try { window[gaDisableFlagKey()] = (c !== '1'); } catch (_) {}
+  }
+
+  function loadGA4IfConsented() {
+    if (!isAudienceMeasurementEnabled()) return false;
+
+    try { window[gaDisableFlagKey()] = false; } catch (_) {}
+
+    if (!gaInjected) {
+      try {
+        gaScriptEl = document.createElement('script');
+        gaScriptEl.async = true;
+        gaScriptEl.src = 'https://www.googletagmanager.com/gtag/js?id=' + GA_ID;
+        document.head.appendChild(gaScriptEl);
+        gaInjected = true;
+      } catch (_) {}
+    }
+
+    if (!window.dataLayer) window.dataLayer = [];
+    if (typeof window.gtag !== 'function') {
+      window.gtag = function(){ window.dataLayer.push(arguments); };
+    }
+
+    if (!gaConfigured) {
+      try { window.gtag('js', new Date()); } catch (_) {}
+      try {
+        window.gtag('config', GA_ID, {
+          allow_google_signals: false,
+          allow_ad_personalization_signals: false
+        });
+      } catch (_) {}
+      gaConfigured = true;
+    }
+
+    return true;
+  }
+
+  function deleteCookieEverywhere(name) {
+    if (!name) return;
+    const expires = 'Thu, 01 Jan 1970 00:00:00 GMT';
+    const base = name + '=; expires=' + expires + '; max-age=0; path=/;';
+    try { document.cookie = base; } catch (_) {}
+
+    const host = (location && location.hostname) ? String(location.hostname) : '';
+    const parts = host.split('.').filter(Boolean);
+    const domains = [];
+    if (host) {
+      domains.push(host);
+      domains.push('.' + host);
+      if (parts.length >= 3) {
+        for (let i = 1; i < parts.length - 1; i++) {
+          const d = parts.slice(i).join('.');
+          domains.push(d);
+          domains.push('.' + d);
+        }
+      }
+    }
+    for (const d of domains) {
+      try { document.cookie = base + ' domain=' + d + ';'; } catch (_) {}
+    }
+  }
+
+  function cleanupGACookiesBestEffort() {
+    try {
+      const raw = document.cookie ? document.cookie.split(';') : [];
+      const names = [];
+      for (const part of raw) {
+        const eq = part.indexOf('=');
+        const name = (eq >= 0 ? part.slice(0, eq) : part).trim();
+        if (!name) continue;
+        if (name === '_ga' || name.indexOf('_ga_') === 0) names.push(name);
+      }
+      for (const n of Array.from(new Set(names))) deleteCookieEverywhere(n);
+    } catch (_) {}
+  }
+
+
+
+  function analyticsScreenName(screenKey) {
+    const s = String(screenKey || '').toLowerCase();
+    if (s === 'play') return 'setup';
+    if (s === 'home' || s === 'view' || s === 'sound' || s === 'library' || s === 'game' || s === 'privacy') return s;
+    return 'home';
+  }
 
   function rid(prefix) {
     try {
@@ -102,16 +255,14 @@
   }
 
   const analytics = (function () {
-    const LS_VISITOR = 'rg_visitor_id_v1';
     const LS_TOTALS = 'rg_visitor_totals_v1';
 
+    // No stable visitor identifier is used or stored (privacy).
     const sessionId = rid('s_');
+    const visitorId = null;
 
-    let visitorId = safeGetLS(LS_VISITOR);
-    if (!visitorId) {
-      visitorId = rid('v_');
-      safeSetLS(LS_VISITOR, visitorId);
-    }
+    // Best-effort cleanup for legacy analytics visitor id key (if present).
+    try { localStorage.removeItem('rg_visitor_id_v1'); } catch (_) {}
 
     const defaults = {
       plays_total: 0,
@@ -134,27 +285,27 @@
     let totals = loadTotals();
 
     function configure() {
-      try {
-        if (typeof window.gtag === 'function') {
-          window.gtag('config', GA_ID, {
-            user_id: visitorId,
-            allow_google_signals: false,
-            allow_ad_personalization_signals: false
-          });
-        }
-      } catch (_) {}
+      try { loadGA4IfConsented(); } catch (_) {}
     }
 
     function track(name, params) {
       try {
-        if (typeof window.gtag === 'function') window.gtag('event', name, params || {});
+        if (!isAudienceMeasurementEnabled()) return;
+        const ev = String(name || '');
+        if (ev !== 'screen_view') return;
+
+        loadGA4IfConsented();
+        const sn = (params && params.screen_name != null) ? String(params.screen_name) : '';
+        if (!sn) return;
+
+        if (typeof window.gtag === 'function') {
+          window.gtag('event', 'screen_view', { screen_name: sn });
+        }
       } catch (_) {}
     }
 
-    function setUserProps(props) {
-      try {
-        if (typeof window.gtag === 'function') window.gtag('set', 'user_properties', props || {});
-      } catch (_) {}
+    function setUserProps(_) {
+      // Intentionally no-op: gameplay totals/preferences are never sent to analytics.
     }
 
     function saveTotals() { safeSetLS(LS_TOTALS, JSON.stringify(totals)); }
@@ -284,6 +435,7 @@
   const screenSound = document.getElementById('screenSound');
   const screenLibrary = document.getElementById('screenLibrary');
   const screenGame = document.getElementById('screenGame');
+  const screenPrivacy = document.getElementById('screenPrivacy');
 
   const ui = {
     screen: 'home',
@@ -317,9 +469,9 @@
 
   function setScreen(name) {
     const n = String(name || '').toLowerCase();
-    const next = (n === 'home' || n === 'play' || n === 'view' || n === 'sound' || n === 'library' || n === 'game') ? n : 'home';
+    const next = (n === 'home' || n === 'play' || n === 'view' || n === 'sound' || n === 'library' || n === 'game' || n === 'privacy') ? n : 'home';
 
-    const screens = { home: screenHome, play: screenPlay, view: screenView, sound: screenSound, library: screenLibrary, game: screenGame };
+    const screens = { home: screenHome, play: screenPlay, view: screenView, sound: screenSound, library: screenLibrary, game: screenGame, privacy: screenPrivacy };
     for (const k in screens) {
       const el = screens[k];
       if (!el) continue;
@@ -328,6 +480,13 @@
     }
 
     ui.screen = next;
+
+    // v07_p02_privacy_footer_policy_friendly_banner: audience measurement (screen views only)
+    try { analytics.track('screen_view', { screen_name: analyticsScreenName(next) }); } catch (_) {}
+
+    if (next === 'privacy') {
+      syncAudienceConsentUI();
+    }
 
     if (next === 'view') {
       // Ensure View menu selected-state UI is correct when revisiting the screen.
@@ -1215,18 +1374,6 @@
 
     setScreen('game');
     if (mode === 'demo') {
-      try {
-        const methods = RG.methods || [];
-        const m = methods[idx];
-        if (typeof analytics !== 'undefined' && analytics && typeof analytics.track === 'function' && m) {
-          analytics.track('cccbr_demo_start', {
-            title: m.title || '',
-            stage: result.stage || 0,
-            family: m.family || '',
-            pn_present: !!(m.pn && String(m.pn).trim())
-          });
-        }
-      } catch (_) {}
       requestAnimationFrame(() => startPressed('demo'));
     }
   }
@@ -1567,6 +1714,18 @@
   const viewStats = document.getElementById('viewStats');
   const viewMic = document.getElementById('viewMic');
   const displayLiveOnly = document.getElementById('displayLiveOnly');
+  // v07_p02_privacy_footer_policy_friendly_banner
+  const privacyAudienceToggle = document.getElementById('privacyAudienceToggle');
+      const privacyAudienceCheckbox = document.getElementById('privacyAudienceCheckbox');
+  const viewPrivacyPolicyBtn = document.getElementById('viewPrivacyPolicyBtn');
+  const privacyPolicyPre = document.getElementById('privacyPolicyPre');
+  const footerPrivacyLink = document.getElementById('footerPrivacyLink');
+
+  const consentBanner = document.getElementById('rgConsentBanner');
+  const consentAllowBtn = document.getElementById('rgConsentAllow');
+  const consentDenyBtn = document.getElementById('rgConsentDeny');
+  const consentPrivacyLink = document.getElementById('rgConsentPrivacyLink');
+
 
   // View: layout presets
   const layoutPresetSelect = document.getElementById('layoutPresetSelect');
@@ -2978,15 +3137,7 @@
       return;
     }
 
-    if (methodsAddedTotal > 0 && typeof analytics !== 'undefined' && analytics && typeof analytics.track === 'function') {
-      try {
-        analytics.track('cccbr_load', {
-          source: 'zip',
-          methods_added: methodsAddedTotal,
-          filename: cccbFamilyFromFilename(name).slice(0, 80)
-        });
-      } catch (_) {}
-    } else if (xmlCount && methodsAddedTotal === 0) {
+    if (xmlCount && methodsAddedTotal === 0) {
       alert('No supported 4–12 bell methods found in "' + name + '".');
     }
   }
@@ -5401,29 +5552,6 @@
         ? Array.from({length: state.stage}, (_,i)=>i+1).join(',')
         : '';
 
-    analytics.track('play_start', {
-      play_id: playId,
-      session_id: analytics.sessionId,
-      method: state.method,
-      method_label: methodLabel(),
-      stage: state.stage,
-      live_count: state.liveCount,
-      live_bells: state.liveBells.slice().sort((a,b)=>a-b).join(','),
-      tempo_bpm: tempoBpm,
-      hit_window_ms: Math.round(beatMs / 2),
-      view_display: viewDisplay.checked ? 1 : 0,
-      view_spotlight: viewSpotlight.checked ? 1 : 0,
-      view_notation: viewNotation.checked ? 1 : 0,
-      view_stats: viewStats.checked ? 1 : 0,
-      path_mode: pathMode,
-      path_bells: pathMode === 'none' ? '' : pathBellsStr,
-      treble_tone: currentTrebleToneLabel(),
-      octave: currentOctaveLabel(),
-      bell_root_type: state.scaleKey === 'custom_hz' ? 'custom' : 'scale',
-      bell_custom_hz: state.scaleKey === 'custom_hz' ? getBellRootFrequency() : null,
-      drone_root_type: state.droneScaleKey === 'custom_hz' ? 'custom' : 'scale',
-      drone_custom_hz: state.droneScaleKey === 'custom_hz' ? getDroneRootFrequency() : null
-    });
 
     if (state.mode === 'demo') stopMicCapture();
     ensureAudio();
@@ -5543,15 +5671,6 @@
     if (combo > t.pr_combo_global) t.pr_combo_global = combo;
 
     analytics.saveTotals();
-    analytics.setUserProps({
-      plays_total: t.plays_total,
-      seconds_total: t.seconds_total,
-      targets_total: t.targets_total,
-      hits_total: t.hits_total,
-      misses_total: t.misses_total,
-      score_total: t.score_total,
-      pr_combo_global: t.pr_combo_global
-    });
   }
 
   function stopPressed(endReason) {
@@ -5580,7 +5699,6 @@
     if (hadPlay) {
       const payload = buildPlayEndPayload(now, endReason);
       payload.mode = runMode;
-      analytics.track('play_end', payload);
       if (runMode === 'play') updateVisitorTotals(payload);
       state.currentPlay = null;
     }
@@ -5680,18 +5798,6 @@
 
         if (state.currentPlay && !state.currentPlay.began) {
           state.currentPlay.began = true;
-          analytics.track('play_begin', {
-            mode: state.mode,
-            play_id: state.currentPlay.playId,
-            session_id: analytics.sessionId,
-            tempo_bpm: state.bpm,
-            treble_tone: currentTrebleToneLabel(),
-            octave: currentOctaveLabel(),
-            bell_root_type: state.scaleKey === 'custom_hz' ? 'custom' : 'scale',
-            bell_custom_hz: state.scaleKey === 'custom_hz' ? getBellRootFrequency() : null,
-            drone_root_type: state.droneScaleKey === 'custom_hz' ? 'custom' : 'scale',
-            drone_custom_hz: state.droneScaleKey === 'custom_hz' ? getDroneRootFrequency() : null
-          });
         }
       }
 
@@ -5752,18 +5858,6 @@
 
       if (state.currentPlay && !state.currentPlay.began) {
         state.currentPlay.began = true;
-        analytics.track('play_begin', {
-          mode: state.mode,
-          play_id: state.currentPlay.playId,
-          session_id: analytics.sessionId,
-          tempo_bpm: state.bpm,
-          treble_tone: currentTrebleToneLabel(),
-          octave: currentOctaveLabel(),
-          bell_root_type: state.scaleKey === 'custom_hz' ? 'custom' : 'scale',
-          bell_custom_hz: state.scaleKey === 'custom_hz' ? getBellRootFrequency() : null,
-          drone_root_type: state.droneScaleKey === 'custom_hz' ? 'custom' : 'scale',
-          drone_custom_hz: state.droneScaleKey === 'custom_hz' ? getDroneRootFrequency() : null
-        });
       }
     }
   }
@@ -6486,15 +6580,6 @@
             const text = await file.text();
             parseCCCBR(text, name);
             const added = RG.methods.length - before;
-            if (added > 0 && typeof analytics !== 'undefined' && analytics && typeof analytics.track === 'function') {
-              try {
-                analytics.track('cccbr_load', {
-                  source: 'xml',
-                  methods_added: added,
-                  filename: name.slice(0, 80)
-                });
-              } catch (_) {}
-            }
           }
         } catch (err) {
           console.error('CCCBR load failed', err);
@@ -6546,6 +6631,85 @@
 
 
   // === Boot ===
+
+  // v07_p02_privacy_footer_policy_friendly_banner
+  function setPrivacyPolicyText() {
+    // v07_p02_privacy_footer_policy_friendly_banner: policy content is now semantic HTML in index.html
+  }
+
+  function showConsentBanner(show) {
+    if (!consentBanner) return;
+    consentBanner.classList.toggle('hidden', !show);
+    consentBanner.setAttribute('aria-hidden', show ? 'false' : 'true');
+  }
+
+  function syncAudienceConsentUI() {
+    const on = (getAudienceConsent() === '1');
+    if (privacyAudienceToggle) privacyAudienceToggle.checked = on;
+    if (privacyAudienceCheckbox) privacyAudienceCheckbox.checked = on;
+
+    // Reflect pill selected state (View menu uses label.toggle.is-selected).
+    try { syncViewMenuSelectedUI(); } catch (_) {}
+
+    const lblV = privacyAudienceToggle ? privacyAudienceToggle.closest('label.toggle') : null;
+    if (lblV) lblV.classList.toggle('is-selected', on);
+
+    const lblP = privacyAudienceCheckbox ? privacyAudienceCheckbox.closest('label.toggle') : null;
+    if (lblP) lblP.classList.toggle('is-selected', on);
+  }
+
+  function syncPrivacyToggleUI() { syncAudienceConsentUI(); }
+
+  function enableAudienceMeasurement() {
+    setAudienceConsent('1');
+    syncAudienceConsentUI();
+  }
+
+  function disableAudienceMeasurement() {
+    setAudienceConsent('0');
+    syncAudienceConsentUI();
+  }
+
+  function initPrivacyConsentUI() {
+    setPrivacyPolicyText();
+
+    const c = getAudienceConsent();
+    if (c === '') {
+      showConsentBanner(true);
+    } else {
+      showConsentBanner(false);
+    }
+
+    syncAudienceConsentUI();
+    applyGADisableFlagFromStoredChoice();
+
+    if (c === '1') {
+      analytics.configure();
+    }
+
+    if (consentAllowBtn) consentAllowBtn.addEventListener('click', enableAudienceMeasurement);
+    if (consentDenyBtn) consentDenyBtn.addEventListener('click', disableAudienceMeasurement);
+
+    if (consentPrivacyLink) consentPrivacyLink.addEventListener('click', () => setScreen('privacy'));
+
+    if (footerPrivacyLink) footerPrivacyLink.addEventListener('click', () => setScreen('privacy'));
+
+    if (privacyAudienceToggle) {
+          privacyAudienceToggle.addEventListener('change', () => {
+            setAudienceConsent(privacyAudienceToggle.checked ? '1' : '0');
+            syncAudienceConsentUI();
+          });
+        }
+
+        if (privacyAudienceCheckbox) {
+          privacyAudienceCheckbox.addEventListener('change', () => {
+            setAudienceConsent(privacyAudienceCheckbox.checked ? '1' : '0');
+            syncAudienceConsentUI();
+          });
+        }
+
+  }
+
   function boot() {
     mountMenuControls();
 
@@ -6667,17 +6831,10 @@
     rebuildBellFrequencies();
     syncViewLayout();
 
-    analytics.configure();
-    analytics.setUserProps({
-      plays_total: analytics.totals.plays_total,
-      seconds_total: analytics.totals.seconds_total,
-      targets_total: analytics.totals.targets_total,
-      hits_total: analytics.totals.hits_total,
-      misses_total: analytics.totals.misses_total,
-      score_total: analytics.totals.score_total,
-      pr_combo_global: analytics.totals.pr_combo_global
-    });
-    analytics.track('game_start', { session_id: analytics.sessionId, site_version: SITE_VERSION });
+    initPrivacyConsentUI();
+
+    // v07_p02b_privacy_checkbox_sync
+    syncAudienceConsentUI();
 
     window.addEventListener('pagehide', stopMicCapture);
     window.addEventListener('beforeunload', stopMicCapture);
