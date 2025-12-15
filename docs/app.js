@@ -73,7 +73,7 @@
   // === Analytics (GA4) ===
   const GA_MEASUREMENT_ID = 'G-7TEG531231';
   const GA_ID = GA_MEASUREMENT_ID;
-  const SITE_VERSION = 'v07_p02b_privacy_checkbox_sync';
+  const SITE_VERSION = 'v07_p02c_remove_view_menu_privacy_toggle';
 
   function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
   function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
@@ -1715,9 +1715,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   const viewMic = document.getElementById('viewMic');
   const displayLiveOnly = document.getElementById('displayLiveOnly');
   // v07_p02_privacy_footer_policy_friendly_banner
-  const privacyAudienceToggle = document.getElementById('privacyAudienceToggle');
-      const privacyAudienceCheckbox = document.getElementById('privacyAudienceCheckbox');
-  const viewPrivacyPolicyBtn = document.getElementById('viewPrivacyPolicyBtn');
+  const privacyAudienceCheckbox = document.getElementById('privacyAudienceCheckbox');
   const privacyPolicyPre = document.getElementById('privacyPolicyPre');
   const footerPrivacyLink = document.getElementById('footerPrivacyLink');
 
@@ -6645,18 +6643,13 @@ Google Analytics is provided by Google. Their processing of data is governed by 
 
   function syncAudienceConsentUI() {
     const on = (getAudienceConsent() === '1');
-    if (privacyAudienceToggle) privacyAudienceToggle.checked = on;
     if (privacyAudienceCheckbox) privacyAudienceCheckbox.checked = on;
-
-    // Reflect pill selected state (View menu uses label.toggle.is-selected).
-    try { syncViewMenuSelectedUI(); } catch (_) {}
-
-    const lblV = privacyAudienceToggle ? privacyAudienceToggle.closest('label.toggle') : null;
-    if (lblV) lblV.classList.toggle('is-selected', on);
 
     const lblP = privacyAudienceCheckbox ? privacyAudienceCheckbox.closest('label.toggle') : null;
     if (lblP) lblP.classList.toggle('is-selected', on);
   }
+
+
 
   function syncPrivacyToggleUI() { syncAudienceConsentUI(); }
 
@@ -6693,13 +6686,6 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     if (consentPrivacyLink) consentPrivacyLink.addEventListener('click', () => setScreen('privacy'));
 
     if (footerPrivacyLink) footerPrivacyLink.addEventListener('click', () => setScreen('privacy'));
-
-    if (privacyAudienceToggle) {
-          privacyAudienceToggle.addEventListener('change', () => {
-            setAudienceConsent(privacyAudienceToggle.checked ? '1' : '0');
-            syncAudienceConsentUI();
-          });
-        }
 
         if (privacyAudienceCheckbox) {
           privacyAudienceCheckbox.addEventListener('change', () => {
