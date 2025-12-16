@@ -75,7 +75,7 @@
   // === Analytics (GA4) ===
   const GA_MEASUREMENT_ID = 'G-7TEG531231';
   const GA_ID = GA_MEASUREMENT_ID;
-  const SITE_VERSION = 'v08_p08_defaults_and_ui_fixes';
+  const SITE_VERSION = 'v09_p01_home_logo_step_method';
 
   function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
   function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
@@ -1763,20 +1763,40 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   if (libraryJumpBrowseBtn) libraryJumpBrowseBtn.addEventListener('click', () => scrollToLibraryAnchor(libraryBrowseAnchor));
   if (libraryJumpDetailsBtn) libraryJumpDetailsBtn.addEventListener('click', () => scrollToLibraryAnchor(libraryDetailsAnchor));
 
-  // Home: tapping the bell logo rings bell 1 (treble) once (UI-only).
-  function ringHomeLogoBell1() {
+  // v09_p01_home_logo_step_method: Home logo steps through the current method (UI + audio only).
+  let homeMethodStepIndex = 0; // session-only
+
+  function ringHomeLogoStepOne() {
     try {
+      const stage = Math.max(1, Number(state.stage) || 1);
+      const rowsLen = (state.rows && state.rows.length) ? state.rows.length : 0;
+      const totalBeats = rowsLen * stage;
+      if (!totalBeats) {
+        ensureAudio();
+        playBellAt(1, perfNow());
+        return;
+      }
+
+      const idx = ((homeMethodStepIndex % totalBeats) + totalBeats) % totalBeats;
+      const bell = getBellForStrikeIndex(idx);
+
       ensureAudio();
-      playBellAt(1, perfNow());
+      playBellAt(bell, perfNow());
+
+      homeMethodStepIndex = idx + 1;
+      if (homeMethodStepIndex >= totalBeats) homeMethodStepIndex = 0;
     } catch (_) {}
   }
+
   if (homeBellLogo) {
-    homeBellLogo.addEventListener('click', () => ringHomeLogoBell1());
+    homeBellLogo.addEventListener('click', () => ringHomeLogoStepOne());
     homeBellLogo.addEventListener('keydown', (e) => {
       const k = e && e.key ? String(e.key) : '';
       if (k === 'Enter' || k === ' ' || k === 'Spacebar') {
-        try { e.preventDefault(); } catch (_) {}
-        ringHomeLogoBell1();
+        if (k === ' ' || k === 'Spacebar') {
+          try { e.preventDefault(); } catch (_) {}
+        }
+        ringHomeLogoStepOne();
       }
     });
   }
@@ -2846,6 +2866,9 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   function computeRows() {
     if (state.method === 'custom' && state.customRows) state.rows = state.customRows.slice();
     else state.rows = makeLibraryRows(state.method, state.stage);
+
+    // v09_p01_home_logo_step_method: reset Home logo method-step pointer when rows rebuild.
+    homeMethodStepIndex = 0;
 
     // v06_p12a_notation_paging_arrows: reset paging on row rebuild
     ui.notationFollow = true;
