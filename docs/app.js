@@ -75,7 +75,7 @@
   // === Analytics (GA4) ===
   const GA_MEASUREMENT_ID = 'G-7TEG531231';
   const GA_ID = GA_MEASUREMENT_ID;
-  const SITE_VERSION = 'v08_p07_drone_on_off_button';
+  const SITE_VERSION = 'v08_p08_defaults_and_ui_fixes';
 
   function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
   function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
@@ -1841,6 +1841,9 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   // v08_p07_drone_on_off_button localStorage key
   const LS_DRONE_ON = 'rg_drone_on_v1';
 
+  // v08_p08_defaults_and_ui_fixes: Drone register (octave) preference (C1..C6)
+  const LS_DRONE_OCTAVE_C = 'rg_drone_octave_c_v1';
+
   // mic localStorage keys
   const LS_MIC_ENABLED = 'rg_mic_enabled';
   const LS_MIC_BELLS = 'rg_mic_bells_v1';
@@ -1919,7 +1922,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     droneOn: false,
     droneType: 'single',
     droneScaleKey: 'Fs_major',
-    droneOctaveC: 4,
+    droneOctaveC: 3,
     droneCustomHz: 440, // used when droneScaleKey === 'custom_hz'
     droneVolume: 50, // 0..100
     dronePaused: false, // Prompt 7: mute/unmute drone without stopping
@@ -1969,7 +1972,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     // swaps view settings
     spotlightSwapsView: true,
     spotlightShowN: true,
-    spotlightShowN1: false,
+    spotlightShowN1: true,
     spotlightShowN2: true,
     notationSwapsOverlay: true,
     notationPageSize: 16,
@@ -3702,6 +3705,15 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   // === Selection ===
   function ensureLiveBells() {
     const max = state.liveCount;
+
+    // v08_p08_defaults_and_ui_fixes: if scoring all bells, auto-select all bells.
+    if (max >= state.stage) {
+      const all = [];
+      for (let b = 1; b <= state.stage; b++) all.push(b);
+      state.liveBells = all;
+      return;
+    }
+
     const chosen = [];
     for (const b of state.liveBells) {
       if (b >= 1 && b <= state.stage && !chosen.includes(b)) {
@@ -3878,10 +3890,12 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       micBtn.textContent = 'Mic';
       micBtn.setAttribute('data-mic-bell', String(b));
       micBtn.title = 'Toggle mic input for this bell';
-      const micOn = (state.micBells || []).includes(b);
-      micBtn.classList.toggle('mic-on', micOn);
-      micBtn.setAttribute('aria-pressed', micOn ? 'true' : 'false');
-      micBtn.setAttribute('aria-label', micOn ? `Mic on for bell ${bellToGlyph(b)}` : `Mic off for bell ${bellToGlyph(b)}`);
+      const micSelected = (state.micBells || []).includes(b);
+      const micActive = micSelected && !!state.micEnabled && state.mode !== 'demo';
+      // v08_p08_defaults_and_ui_fixes: highlight only when mic is truly enabled for this configuration.
+      micBtn.classList.toggle('mic-on', micActive);
+      micBtn.setAttribute('aria-pressed', micSelected ? 'true' : 'false');
+      micBtn.setAttribute('aria-label', micSelected ? `Mic selected for bell ${bellToGlyph(b)}` : `Mic not selected for bell ${bellToGlyph(b)}`);
       micBtn.addEventListener('click', () => {
         markUserTouchedConfig();
         const set = new Set(state.micBells || []);
@@ -4248,10 +4262,12 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       const btns = document.querySelectorAll('[data-mic-bell]');
       btns.forEach(btn => {
         const bell = parseInt(btn.getAttribute('data-mic-bell') || '', 10);
-        const on = Number.isFinite(bell) && (state.micBells || []).includes(bell);
-        btn.classList.toggle('mic-on', on);
-        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-        btn.setAttribute('aria-label', on ? `Mic on for bell ${bellToGlyph(bell)}` : `Mic off for bell ${bellToGlyph(bell)}`);
+        const micSelected = Number.isFinite(bell) && (state.micBells || []).includes(bell);
+        const micActive = micSelected && !!state.micEnabled && state.mode !== 'demo';
+        // v08_p08_defaults_and_ui_fixes: highlight only when mic is truly enabled for this configuration.
+        btn.classList.toggle('mic-on', micActive);
+        btn.setAttribute('aria-pressed', micSelected ? 'true' : 'false');
+        btn.setAttribute('aria-label', micSelected ? `Mic selected for bell ${bellToGlyph(bell)}` : `Mic not selected for bell ${bellToGlyph(bell)}`);
       });
     } catch (_) {}
   }
@@ -4296,6 +4312,8 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       if (!opts.keepError) state.micError = '';
       stopMicCapture();
     }
+    // v08_p08_defaults_and_ui_fixes: keep keybinding Mic button highlights in sync.
+    rebuildMicBellControls();
     syncMicToggleUI();
   }
 
@@ -6980,7 +6998,8 @@ Google Analytics is provided by Google. Their processing of data is governed by 
 
   droneOctaveSelect.addEventListener('change', () => {
     markUserTouchedConfig();
-    state.droneOctaveC = parseInt(droneOctaveSelect.value, 10) || 3;
+    state.droneOctaveC = clamp(parseInt(droneOctaveSelect.value, 10) || 3, 1, 6);
+    safeSetLS(LS_DRONE_OCTAVE_C, String(state.droneOctaveC));
     if (state.droneOn) refreshDrone();
   });
 
@@ -7220,7 +7239,9 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     // swaps view settings (persisted)
     state.spotlightSwapsView = safeGetBoolLS(LS_SPOTLIGHT_SWAPS_VIEW, true);
     state.spotlightShowN = safeGetBoolLS(LS_SPOTLIGHT_SHOW_N, true);
-    state.spotlightShowN1 = safeGetBoolLS(LS_SPOTLIGHT_SHOW_N1, false);
+    // v08_p08_defaults_and_ui_fixes: Play default (pristine) shows N, N+1, N+2.
+    // Only used when the preference is missing.
+    state.spotlightShowN1 = safeGetBoolLS(LS_SPOTLIGHT_SHOW_N1, true);
     state.spotlightShowN2 = safeGetBoolLS(LS_SPOTLIGHT_SHOW_N2, true);
     state.notationSwapsOverlay = safeGetBoolLS(LS_NOTATION_SWAPS_OVERLAY, true);
     state.displayLiveBellsOnly = safeGetBoolLS(LS_DISPLAY_LIVE_BELLS_ONLY, isMobileLikely());
@@ -7294,7 +7315,13 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       opt.textContent = 'C' + String(o);
       droneOctaveSelect.appendChild(opt);
     }
-    state.droneOctaveC = 4;
+    {
+      const raw = safeGetLS(LS_DRONE_OCTAVE_C);
+      let v = parseInt(raw || '', 10);
+      // v08_p08_defaults_and_ui_fixes: default Drone register to C3 on first run.
+      if (!Number.isFinite(v)) v = 3;
+      state.droneOctaveC = clamp(v, 1, 6);
+    }
     droneOctaveSelect.value = String(state.droneOctaveC);
 
     // v08_p07_drone_on_off_button: restore Drone On/Off (separate from drone type).
@@ -7454,4 +7481,14 @@ Google Analytics is provided by Google. Their processing of data is governed by 
 
   boot();
 })();
-    
+
+// === PWA: service worker registration ===
+// Needed for offline caching + install prompt on supporting browsers.
+if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(() => {
+      // Registration failures should not break gameplay.
+    });
+  });
+}
+

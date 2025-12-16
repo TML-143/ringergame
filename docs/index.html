@@ -2,13 +2,28 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#050814" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="description" content="Ringer Game — a client-only bell ringing practice game." />
+    <meta name="application-name" content="Ringer Game" />
+
+    <!-- iOS “Add to Home Screen” support -->
+    <meta name="apple-mobile-web-app-title" content="Ringer Game" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
     <title>Ringer Game</title>
 
-    <link rel="icon" href="ringer_game_icon.png" />
-    <link rel="manifest" href="manifest.webmanifest" />
-<link rel="stylesheet" href="./app.css">
+    <!-- Icons -->
+    <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="./icon-180.png" />
+
+    <!-- PWA -->
+    <link rel="manifest" href="./manifest.webmanifest" />
+
+    <link rel="stylesheet" href="./app.css" />
   </head>
   <body>
     <div id="app">
