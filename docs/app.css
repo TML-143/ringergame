@@ -1136,3 +1136,55 @@ select option { background-color: #0b1026; color: #e8eeff; }
 }
 
 .rg-consent-head{margin-bottom:4px;}
+
+/* v08_p05_sound_per_bell_overrides: per-bell sound editor (Sound menu) */
+.rg-bell-overrides-control{ width:100%; }
+.rg-bell-overrides-actions{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.rg-bell-overrides-list{ display:flex; flex-direction:column; gap:10px; margin-top:6px; }
+
+.rg-bell-override-row{
+  display:grid;
+  grid-template-columns:44px 1fr;
+  gap:10px;
+  align-items:start;
+  padding:10px 12px;
+  border:1px solid rgba(255,255,255,0.10);
+  border-radius:14px;
+  background:rgba(255,255,255,0.03);
+}
+
+.rg-bell-override-bell{
+  width:40px;
+  height:40px;
+  border-radius:12px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-weight:800;
+  font-size:18px;
+  color:rgba(232,238,255,0.96);
+  background:rgba(255,255,255,0.05);
+  border:1px solid rgba(255,255,255,0.10);
+  cursor:pointer;
+  user-select:none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.rg-bell-override-bell:hover{ background:rgba(255,255,255,0.07); }
+.rg-bell-override-bell:active{ transform:scale(0.98); }
+
+.rg-bell-override-body{ display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; }
+.rg-bell-override-group{ flex:1 1 240px; min-width:220px; display:flex; flex-direction:column; gap:6px; }
+.rg-bell-override-group-head{ display:flex; justify-content:space-between; gap:8px; align-items:baseline; }
+.rg-bell-override-group-title{ font-size:12px; color:rgba(232,238,255,0.72); }
+.rg-bell-override-effective{ font-size:12px; color:rgba(232,238,255,0.88); }
+.rg-bell-override-group-controls{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.rg-bell-override-group-controls input{ flex:1 1 120px; min-width:120px; }
+
+.pill.rg-mini{ padding:6px 10px; font-size:12px; }
+
+@media (max-width: 520px){
+  .rg-bell-override-row{ grid-template-columns:40px 1fr; padding:10px; }
+  .rg-bell-override-group{ min-width:180px; }
+}

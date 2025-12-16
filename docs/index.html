@@ -48,8 +48,8 @@
             <div class="control">
               <button id="setupExploreLibraryBtn" class="pill" type="button" disabled title="Load a CCCBR library XML/ZIP first">Explore library</button>
             </div>
-            <div class="stats-info">
-              Scoring: each scored bell gets one chance per row. Ring in its window: middle third = 10, outer thirds = 9. Outside window = 0. Only the first ring per bell per row counts.
+            <div id="setupScoringExplain" class="stats-info">
+              Scoring: each row is divided into '6' bell windows. For each scored bell and row, you get one scoring chance. Hits inside the window score 5–10 points based on accuracy; hits outside score 0. Extra rings still sound but only the first ring for a bell in a row counts for scoring. MAE (ms) is Mean Absolute Error: average timing error per hit. Lower values mean greater overall accuracy.
             </div>
             <div class="rg-nav">
               <button class="pill" type="button" data-go-screen="play">Setup</button>
@@ -156,6 +156,14 @@
           <div class="pane-title"><span>Sound</span></div>
           <div class="rg-screen-body">
             <div id="soundMenuControls" class="rg-controls" aria-label="Sound controls"></div>
+            <div id="bellOverridesControl" class="control rg-bell-overrides-control" aria-label="Per-bell sound">
+              <label>Per-bell sound</label>
+              <div class="rg-bell-overrides-actions">
+                <button id="bellOverridesResetBtn" class="pill" type="button">Reset all per-bell overrides</button>
+              </div>
+              <div id="bellOverridesList" class="rg-bell-overrides-list" aria-label="Per-bell overrides list"></div>
+              <div class="control-note rg-muted">Overrides layer on top of Bell key/register and Bell volume.</div>
+            </div>
             <div class="rg-nav">
               <button class="pill" type="button" data-go-screen="play">Setup</button>
               <button class="pill" type="button" data-go-screen="view">View</button>
@@ -312,10 +320,14 @@
           </div>
 
           <div class="control">
+            <label>Drone</label>
+            <button id="droneOnOffBtn" class="pill" type="button">Drone On</button>
+          </div>
+
+          <div class="control">
             <label for="droneTypeSelect">Drone type</label>
             <select id="droneTypeSelect">
-              <option value="off" selected>Off</option>
-              <option value="single">Single tone</option>
+              <option value="single" selected>Single tone</option>
               <option value="octaves">Octaves (low–mid–high)</option>
               <option value="root5">Root + 5th</option>
               <option value="fifth">Root + 5th + octave</option>

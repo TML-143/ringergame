@@ -67,17 +67,20 @@
   }
 
 
-  // Row-based scoring: each bell has one beat-wide window per row, split into three equal thirds.
-  // Middle third = 10 points, outer thirds = 9 points, miss = 0.
+  // Row-based scoring: each bell has one beat-wide window per row.
+  // More accurate hits score higher within the window, miss = 0.
+
+  const TIER12_BY_BIN = [5,6,7,8,9,10,10,9,8,7,6,5];
 
   // === Analytics (GA4) ===
   const GA_MEASUREMENT_ID = 'G-7TEG531231';
   const GA_ID = GA_MEASUREMENT_ID;
-  const SITE_VERSION = 'v07_p02c_remove_view_menu_privacy_toggle';
+  const SITE_VERSION = 'v08_p07_drone_on_off_button';
 
   function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
   function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
   function safeSetLS(key, val) { try { localStorage.setItem(key, val); } catch (_) {} }
+  function safeDelLS(key) { try { localStorage.removeItem(key); } catch (_) {} }
 
   function safeGetBoolLS(key, def) {
     const v = safeGetLS(key);
@@ -340,9 +343,14 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   const octaveSelect = document.getElementById('octaveSelect');
   const bellVolume = document.getElementById('bellVolume');
 
+  // v08_p05_sound_per_bell_overrides (Sound menu per-bell editor)
+  const bellOverridesResetBtn = document.getElementById('bellOverridesResetBtn');
+  const bellOverridesList = document.getElementById('bellOverridesList');
+
   const bellCustomHzInput = document.getElementById('bellCustomHzInput');
   const bellCustomHzSlider = document.getElementById('bellCustomHzSlider');
 
+  const droneOnOffBtn = document.getElementById('droneOnOffBtn');
   const droneTypeSelect = document.getElementById('droneTypeSelect');
   const droneScaleSelect = document.getElementById('droneScaleSelect');
   const droneOctaveSelect = document.getElementById('droneOctaveSelect');
@@ -464,8 +472,20 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     libraryPreviewBell: 1,
     // v06_p14c_library_details_study_controls
     libraryPreview: null,
-    librarySearchTerm: ''
+    librarySearchTerm: '',
+
+    // v08_p04_demo_profile_defaults: session-only flags (not persisted)
+    userTouchedConfig: false,
+    hasRunStartedThisSession: false,
+    isBooting: true
   };
+
+  // v08_p04_demo_profile_defaults
+  function markUserTouchedConfig() {
+    if (!ui || ui.isBooting) return;
+    if (ui.userTouchedConfig) return;
+    ui.userTouchedConfig = true;
+  }
 
   function setScreen(name) {
     const n = String(name || '').toLowerCase();
@@ -1369,12 +1389,15 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       return;
     }
 
+    // Selecting a library method is a user configuration change.
+    markUserTouchedConfig();
+
     const result = loadCCCBRMethod(idx);
     if (!result) return;
 
     setScreen('game');
     if (mode === 'demo') {
-      requestAnimationFrame(() => startPressed('demo'));
+      startDemoFromUi();
     }
   }
 
@@ -1385,6 +1408,9 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       alert('Stop the current game first.');
       return;
     }
+
+    // Loading a library is a user configuration change.
+    markUserTouchedConfig();
 
     // Some browsers cannot unzip in-app; fall back immediately.
     if (typeof DecompressionStream === 'undefined') {
@@ -1498,6 +1524,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     moveControlByChildId('octaveSelect', soundDest);
     moveControlByChildId('bellCustomHzInput', soundDest);
     moveControlByChildId('bellVolume', soundDest);
+    moveControlByChildId('droneOnOffBtn', soundDest);
     moveControlByChildId('droneTypeSelect', soundDest);
     moveControlByChildId('droneScaleSelect', soundDest);
     moveControlByChildId('droneOctaveSelect', soundDest);
@@ -1561,6 +1588,55 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   const libraryBrowseAnchor = document.getElementById('libraryBrowseAnchor');
   const libraryDetailsAnchor = document.getElementById('libraryDetailsAnchor');
 
+  // v08_p04_demo_profile_defaults
+  // Apply a minimal "demo profile" only on the first Demo of a pristine session.
+  // Important: this is session-only; do NOT persist these values to localStorage.
+  function applyDemoProfileDefaults() {
+    // View (Spotlight): swaps + show N/N+1/N+2
+    try {
+      state.spotlightSwapsView = true;
+      state.spotlightShowN = true;
+      state.spotlightShowN1 = true;
+      state.spotlightShowN2 = true;
+
+      if (spotlightSwapsView) spotlightSwapsView.checked = true;
+      if (spotlightShowN) spotlightShowN.checked = true;
+      if (spotlightShowN1) spotlightShowN1.checked = true;
+      if (spotlightShowN2) spotlightShowN2.checked = true;
+    } catch (_) {}
+
+    // View (Display): "Display scored bell(s) only"
+    try {
+      state.displayLiveBellsOnly = true;
+      if (displayLiveOnly) displayLiveOnly.checked = true;
+    } catch (_) {}
+
+    // Play/Setup: 2 scored bells (1 & 2)
+    try {
+      state.liveCount = 2;
+      state.liveBells = [1, 2];
+      if (liveCountSelect) liveCountSelect.value = '2';
+      rebuildLiveCountOptions();
+      ensureLiveBells();
+      rebuildBellPicker();
+    } catch (_) {}
+
+    // Re-sync view UI (no persistence)
+    try { syncSpotlightSwapRowTogglesUI(); } catch (_) {}
+    try { syncViewMenuSelectedUI(); } catch (_) {}
+    try { markDirty(); kickLoop(); } catch (_) {}
+  }
+
+  function startDemoFromUi() {
+    if (state.phase !== 'idle') return;
+
+    if (!ui.userTouchedConfig && !ui.hasRunStartedThisSession && state.phase === 'idle') {
+      applyDemoProfileDefaults();
+    }
+
+    requestAnimationFrame(() => startPressed('demo'));
+  }
+
   function wireUniversalMenuNav() {
     // Universal nav buttons (Home / Setup / View / Sound) across menu screens.
     document.addEventListener('click', (e) => {
@@ -1586,7 +1662,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
           return;
         }
         setScreen('game');
-        requestAnimationFrame(() => startPressed('demo'));
+        startDemoFromUi();
       });
     }
     wireDemo(playBtnDemo);
@@ -1610,7 +1686,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       return;
     }
     setScreen('game');
-    requestAnimationFrame(() => startPressed('demo'));
+    startDemoFromUi();
   });
 
   // v06_p12c_library_entry: Setup -> Library screen entry
@@ -1758,6 +1834,13 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   // v06_p15_notation_single_page_mode
   const LS_NOTATION_LAYOUT = 'rg_notation_layout';
 
+  // v08_p05_sound_per_bell_overrides localStorage keys
+  const LS_BELL_HZ_OVERRIDE = 'rg_bell_hz_override_v1';
+  const LS_BELL_VOL_OVERRIDE = 'rg_bell_vol_override_v1';
+
+  // v08_p07_drone_on_off_button localStorage key
+  const LS_DRONE_ON = 'rg_drone_on_v1';
+
   // mic localStorage keys
   const LS_MIC_ENABLED = 'rg_mic_enabled';
   const LS_MIC_BELLS = 'rg_mic_bells_v1';
@@ -1832,7 +1915,9 @@ Google Analytics is provided by Google. Their processing of data is governed by 
 
     // audio settings
     bellVolume: 100, // 0..100 master bell volume
-    droneType: 'off',
+    // v08_p07_drone_on_off_button: drone on/off is now a separate boolean; droneType is pattern only.
+    droneOn: false,
+    droneType: 'single',
     droneScaleKey: 'Fs_major',
     droneOctaveC: 4,
     droneCustomHz: 440, // used when droneScaleKey === 'custom_hz'
@@ -1841,6 +1926,10 @@ Google Analytics is provided by Google. Their processing of data is governed by 
 
 
     bellFreq: [],
+
+    // v08_p05_sound_per_bell_overrides
+    bellHzOverride: new Array(13).fill(null),
+    bellVolOverride: new Array(13).fill(null),
 
     pathBells: [1],
     rows: [],
@@ -2003,7 +2092,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       // Keep the shared AudioContext alive while mic capture, drone, or a demo run is active.
       if (state.phase !== 'idle' && state.mode === 'demo') return;
       if (state.micActive) return;
-      if (state.droneType && state.droneType !== 'off') return;
+      if (state.droneOn) return;
       try { audioCtx.close(); } catch (_) {}
       audioCtx = null;
       bellMasterGain = null;
@@ -2019,9 +2108,29 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     return audioCtx.currentTime + deltaMs / 1000;
   }
 
-  function getBellFrequency(bell) {
+  function getBellFrequencyDefault(bell) {
     const i = bell - 1;
     return state.bellFreq[i] || 440;
+  }
+
+  // v08_p05_sound_per_bell_overrides
+  function getBellHz(bell) {
+    const b = parseInt(bell, 10) || 0;
+    const ov = (state.bellHzOverride && state.bellHzOverride[b] != null) ? Number(state.bellHzOverride[b]) : NaN;
+    if (Number.isFinite(ov) && ov > 0) return ov;
+    return getBellFrequencyDefault(bell);
+  }
+
+  function getBellGain(bell) {
+    const b = parseInt(bell, 10) || 0;
+    const ovRaw = (state.bellVolOverride && state.bellVolOverride[b] != null) ? Number(state.bellVolOverride[b]) : NaN;
+    if (!Number.isFinite(ovRaw)) return 1;
+    return clamp(ovRaw / 100, 0, 1);
+  }
+
+  // Back-compat name (used throughout the existing audio code)
+  function getBellFrequency(bell) {
+    return getBellHz(bell);
   }
 
   function playBellAt(bell, whenMs) {
@@ -2033,9 +2142,17 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     osc.type = 'sine';
     osc.frequency.setValueAtTime(getBellFrequency(bell), t);
 
-    gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.exponentialRampToValueAtTime(0.16, t + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+    // v08_p05_sound_per_bell_overrides: per-bell volume scales on top of the global bell master volume
+    const bellVol = getBellGain(bell);
+    const MIN_G = 0.000001;
+    let g0 = Math.max(MIN_G, 0.0001 * bellVol);
+    let g1 = Math.max(MIN_G, 0.16 * bellVol);
+    let g2 = Math.max(MIN_G, 0.001 * bellVol);
+    if (g1 < g0) g1 = g0;
+
+    gain.gain.setValueAtTime(g0, t);
+    gain.gain.exponentialRampToValueAtTime(g1, t + 0.01);
+    gain.gain.exponentialRampToValueAtTime(g2, t + 0.28);
 
     osc.connect(gain).connect(bellMasterGain || audioCtx.destination);
     const tStop = t + 0.32;
@@ -2118,11 +2235,45 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     } catch (_) {}
   }
 
+  // v08_p07_drone_on_off_button: Drone On/Off UI (separate from drone type/pattern).
+  function syncDroneOnOffUI() {
+    if (droneOnOffBtn) {
+      droneOnOffBtn.textContent = state.droneOn ? 'Drone Off' : 'Drone On';
+      droneOnOffBtn.classList.toggle('active', !!state.droneOn);
+      try { droneOnOffBtn.setAttribute('aria-pressed', state.droneOn ? 'true' : 'false'); } catch (_) {}
+    }
+
+    // Game-screen pause button visibility + label (and safety reset while off).
+    syncDronePauseBtnUI();
+  }
+
+  function setDroneOn(on) {
+    const next = !!on;
+    if (state.droneOn === next) {
+      syncDroneOnOffUI();
+      return;
+    }
+
+    state.droneOn = next;
+    safeSetBoolLS(LS_DRONE_ON, next);
+
+    if (next) {
+      // Default behavior: turning the drone on unpauses it.
+      state.dronePaused = false;
+      try { startDrone(); } catch (_) {}
+    } else {
+      state.dronePaused = false;
+      stopDrone();
+    }
+
+    syncDroneOnOffUI();
+  }
+
   // Prompt 7: Drone Pause/Unpause (mute/unmute without stopping the drone)
   function syncDronePauseBtnUI() {
     if (!dronePauseBtn) return;
 
-    if (state.droneType === 'off') {
+    if (!state.droneOn) {
       state.dronePaused = false;
       dronePauseBtn.classList.add('hidden');
       dronePauseBtn.disabled = true;
@@ -2136,13 +2287,13 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   }
 
   function toggleDronePaused() {
-    if (state.droneType === 'off') return;
+    if (!state.droneOn) return;
 
     const wasPaused = !!state.dronePaused;
     state.dronePaused = !wasPaused;
 
     // Safety: if drone type is on but the drone graph doesn't exist, rebuild before resuming.
-    if (!state.dronePaused && state.droneType !== 'off' && !droneCurrent) {
+    if (!state.dronePaused && state.droneOn && !droneCurrent) {
       try { startDrone(); } catch (_) {}
     }
 
@@ -2238,7 +2389,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     state.droneCustomHz = f;
     if (droneCustomHzSlider) droneCustomHzSlider.value = String(f);
     if (commit && droneCustomHzInput) droneCustomHzInput.value = String(f);
-    if (state.droneScaleKey === 'custom_hz' && state.droneType !== 'off') refreshDrone();
+    if (state.droneScaleKey === 'custom_hz' && state.droneOn) refreshDrone();
   }
 
 
@@ -2426,7 +2577,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
 
 
   function startDrone() {
-    if (state.droneType === 'off') { stopDrone(); return; }
+    if (!state.droneOn) { stopDrone(); return; }
 
     ensureAudio();
     applyDroneMasterGain();
@@ -2519,7 +2670,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
 
 
   function refreshDrone() {
-    if (state.droneType === 'off') return;
+    if (!state.droneOn) return;
 
     // If structure changed, just rebuild
     if (!droneCurrent || droneCurrent.type !== state.droneType) {
@@ -3276,8 +3427,10 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     rebuildPathPicker();
     resetStats();
     rebuildBellFrequencies();
+    rebuildBellOverridesUI();
 
     syncGameHeaderMeta();
+    renderScoringExplanation();
 
     // Loaded into the existing pipeline; Play/Demo start is user-controlled from the UI.
     return { title: m.title || '', stage: stage };
@@ -3378,6 +3531,169 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       freq.push(rootFreq * Math.pow(2, off / 12));
     }
     state.bellFreq = freq;
+    try { syncBellOverridesEffectiveUI(); } catch (_) {}
+  }
+
+  // v08_p05_sound_per_bell_overrides: per-bell sound overrides (UI + persistence)
+  function ensureBellOverridesArrays() {
+    if (!Array.isArray(state.bellHzOverride) || state.bellHzOverride.length < 13) state.bellHzOverride = new Array(13).fill(null);
+    if (!Array.isArray(state.bellVolOverride) || state.bellVolOverride.length < 13) state.bellVolOverride = new Array(13).fill(null);
+  }
+
+  function loadBellOverridesFromLS() {
+    ensureBellOverridesArrays();
+
+    const hzObj = safeJsonParse(safeGetLS(LS_BELL_HZ_OVERRIDE) || '') || null;
+    if (hzObj && typeof hzObj === 'object') {
+      for (const k in hzObj) {
+        if (!Object.prototype.hasOwnProperty.call(hzObj, k)) continue;
+        const b = parseInt(k, 10);
+        if (!Number.isFinite(b) || b < 1 || b > 12) continue;
+        const v = Number(hzObj[k]);
+        if (Number.isFinite(v) && v > 0) state.bellHzOverride[b] = clamp(v, 20, 5000);
+      }
+    }
+
+    const volObj = safeJsonParse(safeGetLS(LS_BELL_VOL_OVERRIDE) || '') || null;
+    if (volObj && typeof volObj === 'object') {
+      for (const k in volObj) {
+        if (!Object.prototype.hasOwnProperty.call(volObj, k)) continue;
+        const b = parseInt(k, 10);
+        if (!Number.isFinite(b) || b < 1 || b > 12) continue;
+        let v = Number(volObj[k]);
+        if (!Number.isFinite(v)) continue;
+        if (v <= 1.0001 && v >= 0) v = v * 100; // allow 0..1 factor too
+        state.bellVolOverride[b] = clamp(v, 0, 100);
+      }
+    }
+  }
+
+  function saveBellHzOverridesToLS() {
+    ensureBellOverridesArrays();
+    const out = {};
+    for (let b = 1; b <= 12; b++) {
+      const v = Number(state.bellHzOverride[b]);
+      if (!Number.isFinite(v) || v <= 0) continue;
+      out[b] = v;
+    }
+    if (!Object.keys(out).length) safeDelLS(LS_BELL_HZ_OVERRIDE);
+    else safeSetLS(LS_BELL_HZ_OVERRIDE, JSON.stringify(out));
+  }
+
+  function saveBellVolOverridesToLS() {
+    ensureBellOverridesArrays();
+    const out = {};
+    for (let b = 1; b <= 12; b++) {
+      if (state.bellVolOverride[b] == null) continue;
+      const v = Number(state.bellVolOverride[b]);
+      if (!Number.isFinite(v)) continue;
+      out[b] = clamp(v, 0, 100);
+    }
+    if (!Object.keys(out).length) safeDelLS(LS_BELL_VOL_OVERRIDE);
+    else safeSetLS(LS_BELL_VOL_OVERRIDE, JSON.stringify(out));
+  }
+
+  function fmtHz(v) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return '—';
+    return String(Math.round(n * 100) / 100);
+  }
+
+  function fmtPct(v) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return '—';
+    return String(Math.round(n));
+  }
+
+  function syncBellOverridesEffectiveUI() {
+    if (!bellOverridesList) return;
+    ensureBellOverridesArrays();
+    const base = clamp(Number(state.bellVolume) || 0, 0, 100);
+
+    for (let b = 1; b <= state.stage; b++) {
+      const hzEl = document.getElementById('bellHzEffective_' + b);
+      if (hzEl) {
+        const hasOv = (state.bellHzOverride[b] != null) && Number.isFinite(Number(state.bellHzOverride[b]));
+        hzEl.textContent = 'Eff: ' + fmtHz(getBellHz(b)) + ' Hz' + (hasOv ? ' (override)' : '');
+      }
+
+      const volEl = document.getElementById('bellVolEffective_' + b);
+      if (volEl) {
+        const ovRaw = (state.bellVolOverride[b] != null) ? Number(state.bellVolOverride[b]) : NaN;
+        const hasOv = Number.isFinite(ovRaw);
+        const factor = hasOv ? clamp(ovRaw / 100, 0, 1) : 1;
+        const eff = base * factor;
+        volEl.textContent = 'Eff: ' + fmtPct(eff) + '%' + (hasOv ? (' (x' + fmtPct(ovRaw) + '%)') : '');
+      }
+    }
+  }
+
+  function rebuildBellOverridesUI() {
+    if (!bellOverridesList) return;
+    ensureBellOverridesArrays();
+
+    let html = '';
+    for (let b = 1; b <= state.stage; b++) {
+      const g = bellToGlyph(b);
+      const hzV = (state.bellHzOverride[b] != null && Number.isFinite(Number(state.bellHzOverride[b]))) ? String(state.bellHzOverride[b]) : '';
+      const volV = (state.bellVolOverride[b] != null && Number.isFinite(Number(state.bellVolOverride[b]))) ? String(state.bellVolOverride[b]) : '';
+      html += '<div class="rg-bell-override-row" data-bell="' + b + '">' +
+        '<div class="rg-bell-override-bell" data-bell="' + b + '" role="button" aria-label="Ring bell ' + g + '">' + g + '</div>' +
+        '<div class="rg-bell-override-body">' +
+          '<div class="rg-bell-override-group">' +
+            '<div class="rg-bell-override-group-head">' +
+              '<div class="rg-bell-override-group-title">Hz</div>' +
+              '<div id="bellHzEffective_' + b + '" class="rg-bell-override-effective"></div>' +
+            '</div>' +
+            '<div class="rg-bell-override-group-controls">' +
+              '<input id="bellHzOverride_' + b + '" type="number" min="20" max="5000" step="0.01" placeholder="(default)" value="' + hzV + '" />' +
+              '<button type="button" class="pill rg-mini" data-act="clearHz" data-bell="' + b + '">Clear</button>' +
+            '</div>' +
+          '</div>' +
+          '<div class="rg-bell-override-group">' +
+            '<div class="rg-bell-override-group-head">' +
+              '<div class="rg-bell-override-group-title">Vol</div>' +
+              '<div id="bellVolEffective_' + b + '" class="rg-bell-override-effective"></div>' +
+            '</div>' +
+            '<div class="rg-bell-override-group-controls">' +
+              '<input id="bellVolOverride_' + b + '" type="number" min="0" max="100" step="1" placeholder="(default)" value="' + volV + '" />' +
+              '<button type="button" class="pill rg-mini" data-act="clearVol" data-bell="' + b + '">Clear</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    }
+
+    bellOverridesList.innerHTML = html;
+    syncBellOverridesEffectiveUI();
+  }
+
+  function clearBellHzOverride(b) {
+    ensureBellOverridesArrays();
+    const bb = clamp(parseInt(b, 10) || 0, 1, 12);
+    state.bellHzOverride[bb] = null;
+    saveBellHzOverridesToLS();
+    const input = document.getElementById('bellHzOverride_' + bb);
+    if (input) input.value = '';
+    syncBellOverridesEffectiveUI();
+  }
+
+  function clearBellVolOverride(b) {
+    ensureBellOverridesArrays();
+    const bb = clamp(parseInt(b, 10) || 0, 1, 12);
+    state.bellVolOverride[bb] = null;
+    saveBellVolOverridesToLS();
+    const input = document.getElementById('bellVolOverride_' + bb);
+    if (input) input.value = '';
+    syncBellOverridesEffectiveUI();
+  }
+
+  function resetAllBellOverrides() {
+    state.bellHzOverride = new Array(13).fill(null);
+    state.bellVolOverride = new Array(13).fill(null);
+    safeDelLS(LS_BELL_HZ_OVERRIDE);
+    safeDelLS(LS_BELL_VOL_OVERRIDE);
+    rebuildBellOverridesUI();
   }
 
   function currentTrebleToneLabel() { return getScaleDef().label; }
@@ -3417,6 +3733,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       btn.type = 'button';
       btn.textContent = bellToGlyph(b);
       btn.addEventListener('click', () => {
+        markUserTouchedConfig();
         if (state.phase !== 'idle') ensureIdleForPlayChange();
         const max = state.liveCount;
         const list = state.liveBells.slice();
@@ -3566,6 +3883,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       micBtn.setAttribute('aria-pressed', micOn ? 'true' : 'false');
       micBtn.setAttribute('aria-label', micOn ? `Mic on for bell ${bellToGlyph(b)}` : `Mic off for bell ${bellToGlyph(b)}`);
       micBtn.addEventListener('click', () => {
+        markUserTouchedConfig();
         const set = new Set(state.micBells || []);
         if (set.has(b)) set.delete(b);
         else set.add(b);
@@ -3616,6 +3934,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       btn.type = 'button';
       btn.textContent = bellToGlyph(b);
       btn.addEventListener('click', () => {
+        markUserTouchedConfig();
         const list = state.pathBells.slice();
         const idx = list.indexOf(b);
         if (idx >= 0) list.splice(idx, 1);
@@ -4136,6 +4455,14 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     if (state.phase === 'idle') kickLoop();
   }
 
+  // v08_p06_sound_testpad_tap_to_ring: ring bell for Sound test pad (no scoring, no run state)
+  function ringBellTestPad(bell) {
+    const b = parseInt(bell, 10) || 0;
+    if (b < 1 || b > state.stage) return;
+    const now = perfNow();
+    playBellAt(b, now);
+  }
+
   // === Stats ===
   function resetStats() {
     state.statsByBell = {};
@@ -4250,7 +4577,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     const windowEnd = targetTimeMs + halfBeat;
 
     // Miss if the first ring in the row is outside the bell's own window.
-    if (timeMs < windowStart || timeMs >= windowEnd) {
+    if (Math.abs(timeMs - targetTimeMs) > halfBeat) {
       t.judged = true;
       t.hit = false;
 
@@ -4261,7 +4588,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       return;
     }
 
-    // Hit: score within the bell window (middle third = 10, outer thirds = 9).
+    // Hit: tiered score within the bell window (12 bins across [-W, +W]).
     t.judged = true;
     t.hit = true;
 
@@ -4273,10 +4600,10 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     s.sumAbsDelta += absDelta;
     s.sumSignedDelta += deltaMs;
 
-    const offset = clamp(timeMs - windowStart, 0, beatMs);
-    const third = beatMs / 3;
-    let points = 9;
-    if (offset >= third && offset < 2 * third) points = 10;
+    const W = halfBeat;
+    let bin = Math.floor(((deltaMs + W) / (2 * W)) * 12);
+    bin = clamp(bin, 0, 11);
+    const points = TIER12_BY_BIN[bin];
 
     s.score += points;
 
@@ -4754,10 +5081,9 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     const pageSize = Math.max(1, Number(state.notationPageSize) || 1);
     const rowsLen = (state.rows && state.rows.length) ? state.rows.length : 0;
     const totalPages = Math.ceil(rowsLen / pageSize);
-    let lastLeft = 0;
-    if (totalPages <= 1) lastLeft = 0;
-    else lastLeft = (totalPages % 2 === 1) ? (totalPages - 1) : (totalPages - 2);
-    lastLeft = Math.max(0, lastLeft);
+    // v08_p03_two_page_present_peek: in two-page mode, ui.notationPage is the PRESENT (left) page.
+    // The right page is always the immediate next page (peek), so the present page can advance by 1.
+    const lastLeft = Math.max(0, totalPages - 1);
     const lastPage = Math.max(0, totalPages - 1);
     return { pageSize, totalPages, lastLeft, lastPage };
   }
@@ -4775,7 +5101,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       if (p < 0) p = 0;
       if (p > lastPage) p = lastPage;
     } else {
-      p = Math.floor(p / 2) * 2;
+      // v08_p03_two_page_present_peek: no even-page alignment; present page is always the left page.
       if (p < 0) p = 0;
       if (p > lastLeft) p = lastLeft;
     }
@@ -4810,7 +5136,8 @@ Google Analytics is provided by Google. Their processing of data is governed by 
 
   function notationPrevPressed() {
     ui.notationFollow = false;
-    const delta = (ui.notationLayout === 'one_page') ? 1 : 2;
+    // v08_p03_two_page_present_peek: in two-page mode, arrows turn the PRESENT page by one page.
+    const delta = 1;
     ui.notationPage = (Number(ui.notationPage) || 0) - delta;
     if (ui.notationPage < 0) ui.notationPage = 0;
     syncNotationPagingUI();
@@ -4820,7 +5147,8 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     ui.notationFollow = false;
     const { lastLeft, lastPage } = getNotationPagingMeta();
     const onePage = (ui.notationLayout === 'one_page');
-    const delta = onePage ? 1 : 2;
+    // v08_p03_two_page_present_peek: in two-page mode, arrows turn the PRESENT page by one page.
+    const delta = 1;
     const maxP = onePage ? lastPage : lastLeft;
     ui.notationPage = (Number(ui.notationPage) || 0) + delta;
     if (ui.notationPage > maxP) ui.notationPage = maxP;
@@ -4880,7 +5208,10 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     // Auto-follow (default): keep the active row visible within the current layout.
     if (ui.notationFollow && (state.phase === 'running' || state.phase === 'countdown')) {
       const activePage = Math.floor(activeRowIdx / pageSize);
-      const desired = onePage ? activePage : (Math.floor(activePage / 2) * 2);
+
+      // v08_p03_two_page_present_peek: in two-page layout, the left page is always the PRESENT page
+      // (it contains the current cursor), and the right page is a PEEK of the following page.
+      const desired = activePage;
       if (ui.notationPage !== desired) {
         ui.notationPage = desired;
         syncNotationPagingUI();
@@ -4889,6 +5220,9 @@ Google Analytics is provided by Google. Their processing of data is governed by 
 
     const pageAStart = (Number(ui.notationPage) || 0) * pageSize;
     const pageBStart = ((Number(ui.notationPage) || 0) + 1) * pageSize;
+
+    // v08_p03_two_page_present_peek: in two-page layout, keep the highlight/cursor on the PRESENT (left) page only.
+    const highlightRowIdx = onePage ? activeRowIdx : (ui.notationFollow ? activeRowIdx : pageAStart);
 
     const bellsForPath = state.pathBells.slice().sort((a,b)=>a-b);
     const liveSet = new Set(state.liveBells);
@@ -5028,7 +5362,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
         if (rowIdx >= rows.length) break;
         const row = rows[rowIdx];
         const y = contentTop + i * lineH + lineH / 2;
-        const isActive = (rowIdx === activeRowIdx);
+        const isActive = (rowIdx === highlightRowIdx);
 
         if (isActive) {
           nctx.fillStyle = 'rgba(249,199,79,0.14)';
@@ -5199,7 +5533,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
         if (rowIdx >= rows.length) break;
         const row = rows[rowIdx];
         const y = contentTop + i * lineH + lineH / 2;
-        const isActive = (rowIdx === activeRowIdx);
+        const isActive = (rowIdx === highlightRowIdx);
 
         if (isActive) {
           nctx.fillStyle = 'rgba(249,199,79,0.14)';
@@ -5292,7 +5626,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
           if (rowIdx >= rows.length) break;
           const row = rows[rowIdx];
           const y = peekContentTop + i * lineH + lineH / 2;
-          const isActive = (rowIdx === activeRowIdx);
+          const isActive = (rowIdx === highlightRowIdx);
 
           if (isActive) {
             nctx.fillStyle = 'rgba(249,199,79,0.14)';
@@ -5404,8 +5738,8 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     const col = Math.floor((x - left) / colW);
     if (col < 0 || col >= stage) return null;
 
+    // v08_p03_two_page_present_peek: in two-page layout, ui.notationPage is the PRESENT (left) page.
     let basePage = Number(ui.notationPage) || 0;
-    if (!onePage) basePage = Math.floor(basePage / 2) * 2;
     if (basePage < 0) basePage = 0;
     const pageStartRow = (basePage + page) * pageSize;
     const rowIndex = pageStartRow + rowOffset;
@@ -5419,7 +5753,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     return { rowIndex, bell };
   }
 
-  // === Stats render (Mean Δ only + scale/octave) ===
+  // === Stats render (MAE + scale/octave) ===
   function fmtMs(ms, signed) {
     if (ms == null || isNaN(ms)) return '&ndash;';
     const v = Math.round(ms);
@@ -5434,6 +5768,20 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   function getPRCombo() {
     const t = analytics.totals || analytics.refreshTotals();
     return Number((t && t.pr_combo_global) || 0);
+  }
+
+  // v08_p02_scoring_explanation_sync: shared scoring explanation copy (Setup + Stats)
+  function getScoringExplanationText() {
+    const stage = clamp(parseInt(state.stage, 10) || 6, 4, 12);
+    return "Scoring: each row is divided into '" + stage + "' bell windows. For each scored bell and row, you get one scoring chance. Hits inside the window score 5–10 points based on accuracy; hits outside score 0. Extra rings still sound but only the first ring for a bell in a row counts for scoring. MAE (ms) is Mean Absolute Error: average timing error per hit. Lower values mean greater overall accuracy.";
+  }
+
+  function renderScoringExplanation() {
+    const txt = getScoringExplanationText();
+    const setupEl = document.getElementById('setupScoringExplain');
+    if (setupEl) setupEl.textContent = txt;
+    const statsEl = document.getElementById('statsScoringExplain');
+    if (statsEl) statsEl.textContent = txt;
   }
 
   function renderStats(nowMs) {
@@ -5460,13 +5808,12 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     const live = state.liveBells.slice().sort((a,b)=>a-b);
     if (!live.length) { statsDiv.textContent = 'No scored bells selected.'; return; }
 
-    let totalHits = 0, totalMisses = 0, sumAbs = 0, sumSigned = 0, scoreTotal = 0;
+    let totalHits = 0, totalMisses = 0, sumAbs = 0, scoreTotal = 0;
     live.forEach(b => {
       const s = state.statsByBell[b];
       totalHits += s.hits;
       totalMisses += s.misses;
       sumAbs += s.sumAbsDelta;
-      sumSigned += s.sumSignedDelta;
       scoreTotal += s.score;
     });
 
@@ -5475,27 +5822,27 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     const totalRows = state.rows.length;
 
     const accOverall = totalTargets > 0 ? (totalHits / totalTargets) * 100 : null;
-    const meanSignedOverall = totalHits > 0 ? Math.round(sumSigned / totalHits) : null;
+    const maeOverall = totalHits > 0 ? Math.round(sumAbs / totalHits) : null;
     const elapsed = getElapsedSeconds(nowMs);
     let html = '';
     html += '<div class="summary">';
     html += 'Rows: ' + rowsCompleted + ' / ' + totalRows + ' &nbsp; ';
     html += 'Acc%: ' + (accOverall == null ? '&ndash;' : accOverall.toFixed(0)) + ' &nbsp; ';
     html += 'Combo: ' + state.comboCurrentGlobal + ' (best ' + state.comboBestGlobal + ') &nbsp; ';
-    html += 'Mean Δ: ' + (meanSignedOverall == null ? '&ndash;' : fmtMs(meanSignedOverall, true) + ' ms') + ' &nbsp; ';
+    html += 'MAE (ms): ' + (maeOverall == null ? '&ndash;' : fmtMs(maeOverall, false) + ' ms') + ' &nbsp; ';
     html += 'Score: ' + Math.round(scoreTotal) + ' &nbsp; ';
     html += 'Time: ' + elapsed.toFixed(1) + ' s';
     html += '</div>';
 
     html += '<table><thead><tr>';
-    html += '<th>Bell</th><th>Targets</th><th>Hits</th><th>Misses</th><th>Acc%</th><th>Cur combo</th><th>Best combo</th><th>Mean Δ</th><th>Score</th>';
+    html += '<th>Bell</th><th>Targets</th><th>Hits</th><th>Misses</th><th>Acc%</th><th>Cur combo</th><th>Best combo</th><th>MAE (ms)</th><th>Score</th>';
     html += '</tr></thead><tbody>';
 
     live.forEach(bell => {
       const s = state.statsByBell[bell];
       const targets = s.hits + s.misses;
       const acc = targets > 0 ? (s.hits / targets) * 100 : null;
-      const meanSigned = s.hits > 0 ? Math.round(s.sumSignedDelta / s.hits) : null;
+      const mae = s.hits > 0 ? Math.round(s.sumAbsDelta / s.hits) : null;
 
       html += '<tr>';
       html += '<td>' + bellToGlyph(bell) + '</td>';
@@ -5505,29 +5852,27 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       html += '<td>' + (acc == null ? '&ndash;' : acc.toFixed(0)) + '</td>';
       html += '<td>' + s.comboCurrent + '</td>';
       html += '<td>' + s.comboBest + '</td>';
-      html += '<td>' + fmtMs(meanSigned, true) + '</td>';
+      html += '<td>' + fmtMs(mae, false) + '</td>';
       html += '<td>' + Math.round(s.score) + '</td>';
       html += '</tr>';
     });
 
     html += '</tbody></table>';
 
-    html += '<div class="stats-info">';
-    html += 'Scoring: each row is divided into ' + state.stage + ' bell windows. ';
-    html += 'For each scored bell and row, you get one scoring chance. ';
-    html += 'Within a bell window, hits in the middle third earn 10 points, ';
-    html += 'hits in either outer third earn 9 points. ';
-    html += 'If your first ring for that bell in the row is outside its window, it scores 0. Extra rings still sound but only the first ring for a bell in a row counts for scoring. ';
-    html += 'Δ is the signed timing error relative to the beat (negative = early, positive = late).';
-    html += '</div>';
+    html += '<div class="stats-info" id="statsScoringExplain"></div>';
 
     statsDiv.innerHTML = html;
+    renderScoringExplanation();
   }
 
   // === Engine start/stop + analytics ===
   function startPressed(mode) {
     if (!state.rows.length) { alert('No rows loaded.'); return; }
     if (state.phase !== 'idle') return;
+
+    // v08_p04_demo_profile_defaults: any run (Play or Demo) means the session is no longer pristine.
+    ui.hasRunStartedThisSession = true;
+
     state.mode = (mode === 'demo') ? 'demo' : 'play';
     requestWakeLock();
 
@@ -5813,9 +6158,15 @@ Google Analytics is provided by Google. Their processing of data is governed by 
         markRung(bell, tMs);
       }
 
+      // v08_p03_last_bell_fix: don't end the run at the exact final strike.
+      // Allow the last bell to sound and the final scoring window/tail to complete.
       if (state.execBeatIndex >= totalBeats) {
-        stopPressed('completed');
-        return;
+        const lastBeatAtMs = state.methodStartMs + (totalBeats - 1) * beatMs;
+        const graceMs = Math.max(beatMs / 2, 340);
+        if (nowMs >= lastBeatAtMs + graceMs) {
+          stopPressed('completed');
+          return;
+        }
       }
     }
   }
@@ -5896,7 +6247,13 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       } else break;
     }
 
-    if (state.execBeatIndex >= totalBeats) stopPressed('completed');
+    // v08_p03_last_bell_fix: don't stop exactly at the final strike.
+    // Give the final bell time to sound and the last scoring window to be judged.
+    if (state.execBeatIndex >= totalBeats) {
+      const lastBeatAtMs = state.methodStartMs + (totalBeats - 1) * beatMs;
+      const graceMs = Math.max(beatMs / 2, 340);
+      if (nowMs >= lastBeatAtMs + graceMs) stopPressed('completed');
+    }
   }
 
 
@@ -5988,6 +6345,23 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       saveKeyBindings();
       state.keybindCaptureBell = null;
       rebuildKeybindPanel();
+      return;
+    }
+
+    // v08_p06_sound_testpad_tap_to_ring: Sound screen keyboard test pad (no scoring)
+    if (ui && ui.screen === 'sound') {
+      let found = null;
+      const stage = clamp(parseInt(state.stage, 10) || 0, 1, 12);
+      for (let b = 1; b <= stage; b++) {
+        if (state.keyBindings && state.keyBindings[b] === k) {
+          if (found != null) { found = null; break; }
+          found = b;
+        }
+      }
+      if (found != null) {
+        if (k === 'Space') e.preventDefault();
+        ringBellTestPad(found);
+      }
       return;
     }
 
@@ -6266,6 +6640,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
 
 
   methodSelect.addEventListener('change', () => {
+    markUserTouchedConfig();
     ensureIdleForPlayChange();
     const v = methodSelect.value;
     state.method = v;
@@ -6287,21 +6662,25 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   });
 
   bellCountSelect.addEventListener('change', () => {
+    markUserTouchedConfig();
     ensureIdleForPlayChange();
     state.stage = clamp(parseInt(bellCountSelect.value,10)||6, 4, 12);
     if (state.method === 'custom') { state.method = 'plainhunt'; methodSelect.value='plainhunt'; state.customRows=null; state.methodSource='built_in'; state.methodMeta=null; }
     rebuildLiveCountOptions(); ensureLiveBells(); rebuildBellPicker();
-    ensurePathBells(); rebuildPathPicker(); computeRows(); resetStats(); rebuildBellFrequencies();
-      syncGameHeaderMeta();
+    ensurePathBells(); rebuildPathPicker(); computeRows(); resetStats(); rebuildBellFrequencies(); rebuildBellOverridesUI();
+    syncGameHeaderMeta();
+    renderScoringExplanation();
   });
 
   liveCountSelect.addEventListener('change', () => {
+    markUserTouchedConfig();
     ensureIdleForPlayChange();
     state.liveCount = clamp(parseInt(liveCountSelect.value,10)||1, 1, state.stage);
     ensureLiveBells(); rebuildBellPicker(); resetStats();
   });
 
   bpmInput.addEventListener('change', () => {
+    markUserTouchedConfig();
     ensureIdleForPlayChange();
     state.bpm = clamp(parseInt(bpmInput.value,10)||80, 1, 240);
     bpmInput.value = String(state.bpm);
@@ -6312,6 +6691,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   if (micToggleBtn) {
     micToggleBtn.addEventListener('click', () => {
       if (state.mode === 'demo') { setMicUiStatus('Mic disabled in Demo'); return; }
+      markUserTouchedConfig();
       if (state.micEnabled) {
         if (state.micActive) setMicEnabled(false);
         else startMicCapture();
@@ -6323,22 +6703,28 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   }
   if (micCalibrateBtn) {
     micCalibrateBtn.addEventListener('click', () => {
+      markUserTouchedConfig();
       calibrateMicThreshold();
     });
   }
   if (micCooldown) {
     micCooldown.addEventListener('input', () => {
+      markUserTouchedConfig();
       state.micCooldownMs = clamp(parseFloat(micCooldown.value), 100, 400);
       safeSetLS(LS_MIC_COOLDOWN_MS, String(state.micCooldownMs));
       syncMicSlidersUI();
     });
   }
 
-  [viewDisplay, viewSpotlight, viewNotation, viewStats, viewMic].forEach(cb => cb.addEventListener('change', syncViewLayout));
+  [viewDisplay, viewSpotlight, viewNotation, viewStats, viewMic].forEach(cb => cb.addEventListener('change', () => {
+    markUserTouchedConfig();
+    syncViewLayout();
+  }));
 
   // Layout preset selector (persisted)
   if (layoutPresetSelect) {
     layoutPresetSelect.addEventListener('change', () => {
+      markUserTouchedConfig();
       const v = String(layoutPresetSelect.value || 'auto');
       safeSetLS(LS_LAYOUT_PRESET, v);
       applyLayoutPreset(v);
@@ -6348,6 +6734,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   // v06_p15_notation_single_page_mode: notation layout selector (persisted)
   if (notationLayoutSelect) {
     notationLayoutSelect.addEventListener('change', () => {
+      markUserTouchedConfig();
       let v = String(notationLayoutSelect.value || 'two_page');
       if (!(v === 'two_page' || v === 'one_page')) v = isMobileLikely() ? 'one_page' : 'two_page';
       safeSetLS(LS_NOTATION_LAYOUT, v);
@@ -6375,6 +6762,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   // Display live bells only toggle (persisted)
   if (displayLiveOnly) {
     displayLiveOnly.addEventListener('change', () => {
+      markUserTouchedConfig();
       state.displayLiveBellsOnly = !!displayLiveOnly.checked;
       safeSetBoolLS(LS_DISPLAY_LIVE_BELLS_ONLY, state.displayLiveBellsOnly);
       syncViewMenuSelectedUI();
@@ -6384,6 +6772,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   // Spotlight swaps view + row controls
   if (spotlightSwapsView) {
     spotlightSwapsView.addEventListener('change', () => {
+      markUserTouchedConfig();
       state.spotlightSwapsView = spotlightSwapsView.checked;
       safeSetBoolLS(LS_SPOTLIGHT_SWAPS_VIEW, state.spotlightSwapsView);
       syncSpotlightSwapRowTogglesUI();
@@ -6407,13 +6796,14 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     markDirty();
   }
 
-  if (spotlightShowN) spotlightShowN.addEventListener('change', syncSpotlightRowPrefsFromUI);
-  if (spotlightShowN1) spotlightShowN1.addEventListener('change', syncSpotlightRowPrefsFromUI);
-  if (spotlightShowN2) spotlightShowN2.addEventListener('change', syncSpotlightRowPrefsFromUI);
+  if (spotlightShowN) spotlightShowN.addEventListener('change', () => { markUserTouchedConfig(); syncSpotlightRowPrefsFromUI(); });
+  if (spotlightShowN1) spotlightShowN1.addEventListener('change', () => { markUserTouchedConfig(); syncSpotlightRowPrefsFromUI(); });
+  if (spotlightShowN2) spotlightShowN2.addEventListener('change', () => { markUserTouchedConfig(); syncSpotlightRowPrefsFromUI(); });
 
   // Notation swaps overlay
   if (notationSwapsOverlay) {
     notationSwapsOverlay.addEventListener('change', () => {
+      markUserTouchedConfig();
       state.notationSwapsOverlay = notationSwapsOverlay.checked;
       safeSetBoolLS(LS_NOTATION_SWAPS_OVERLAY, state.notationSwapsOverlay);
       syncViewMenuSelectedUI();
@@ -6422,8 +6812,8 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   }
 
 
-  pathNoneBtn.addEventListener('click', setPathNone);
-  pathAllBtn.addEventListener('click', setPathAll);
+  pathNoneBtn.addEventListener('click', () => { markUserTouchedConfig(); setPathNone(); });
+  pathAllBtn.addEventListener('click', () => { markUserTouchedConfig(); setPathAll(); });
 
   // Prompt 6: Sound changes apply without restart; reschedule auto-bells quickly if active.
   function onBellTuningChanged() {
@@ -6436,7 +6826,92 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     kickLoop();
   }
 
+  // v08_p05_sound_per_bell_overrides: per-bell editor wiring
+  if (bellOverridesResetBtn) {
+    bellOverridesResetBtn.addEventListener('click', () => {
+      markUserTouchedConfig();
+      resetAllBellOverrides();
+      onBellTuningChanged();
+    });
+  }
+
+  if (bellOverridesList) {
+    bellOverridesList.addEventListener('input', (e) => {
+      const el = e && e.target ? e.target : null;
+      if (!el || !el.id) return;
+      ensureBellOverridesArrays();
+
+      if (el.id.startsWith('bellHzOverride_')) {
+        const b = parseInt(el.id.slice('bellHzOverride_'.length), 10) || 0;
+        if (b < 1 || b > 12) return;
+        const raw = String(el.value || '').trim();
+        if (!raw) state.bellHzOverride[b] = null;
+        else {
+          const v = parseFloat(raw);
+          state.bellHzOverride[b] = Number.isFinite(v) ? clamp(v, 20, 5000) : null;
+        }
+        syncBellOverridesEffectiveUI();
+      } else if (el.id.startsWith('bellVolOverride_')) {
+        const b = parseInt(el.id.slice('bellVolOverride_'.length), 10) || 0;
+        if (b < 1 || b > 12) return;
+        const raw = String(el.value || '').trim();
+        if (!raw) state.bellVolOverride[b] = null;
+        else {
+          const v = parseFloat(raw);
+          state.bellVolOverride[b] = Number.isFinite(v) ? clamp(v, 0, 100) : null;
+        }
+        syncBellOverridesEffectiveUI();
+      }
+    });
+
+    bellOverridesList.addEventListener('change', (e) => {
+      const el = e && e.target ? e.target : null;
+      if (!el || !el.id) return;
+      let did = false;
+
+      if (el.id.startsWith('bellHzOverride_')) {
+        did = true;
+        markUserTouchedConfig();
+        saveBellHzOverridesToLS();
+      } else if (el.id.startsWith('bellVolOverride_')) {
+        did = true;
+        markUserTouchedConfig();
+        saveBellVolOverridesToLS();
+      }
+
+      if (did) {
+        syncBellOverridesEffectiveUI();
+        onBellTuningChanged();
+      }
+    });
+
+    bellOverridesList.addEventListener('click', (e) => {
+      const bellEl = (e && e.target && e.target.closest) ? e.target.closest('.rg-bell-override-bell[data-bell]') : null;
+      if (bellEl && bellEl.dataset && bellEl.dataset.bell) {
+        const b = parseInt(bellEl.dataset.bell, 10) || 0;
+        ringBellTestPad(b);
+        return;
+      }
+
+      const btn = (e && e.target && e.target.closest) ? e.target.closest('button[data-act]') : null;
+      if (!btn) return;
+      const act = btn.dataset && btn.dataset.act ? String(btn.dataset.act) : '';
+      const b = clamp(parseInt((btn.dataset && btn.dataset.bell) || '0', 10) || 0, 1, 12);
+
+      if (act === 'clearHz') {
+        markUserTouchedConfig();
+        clearBellHzOverride(b);
+        onBellTuningChanged();
+      } else if (act === 'clearVol') {
+        markUserTouchedConfig();
+        clearBellVolOverride(b);
+        onBellTuningChanged();
+      }
+    });
+  }
+
   scaleSelect.addEventListener('change', () => {
+    markUserTouchedConfig();
     state.scaleKey = scaleSelect.value;
     syncBellCustomHzUI();
     rebuildBellFrequencies();
@@ -6444,6 +6919,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   });
 
   octaveSelect.addEventListener('change', () => {
+    markUserTouchedConfig();
     state.octaveC = parseInt(octaveSelect.value, 10) || 3;
     rebuildBellFrequencies();
     onBellTuningChanged();
@@ -6453,10 +6929,12 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   // Bell Custom (Hz) root controls
   if (bellCustomHzInput) {
     bellCustomHzInput.addEventListener('input', () => {
+      markUserTouchedConfig();
       setBellCustomHzFromUI(bellCustomHzInput.value, false);
     });
 
     const commitBellCustomHz = () => {
+      markUserTouchedConfig();
       setBellCustomHzFromUI(bellCustomHzInput.value, true);
       syncBellCustomHzUI();
     };
@@ -6466,46 +6944,56 @@ Google Analytics is provided by Google. Their processing of data is governed by 
 
   if (bellCustomHzSlider) {
     bellCustomHzSlider.addEventListener('input', () => {
+      markUserTouchedConfig();
       setBellCustomHzFromUI(bellCustomHzSlider.value, true);
       syncBellCustomHzUI();
     });
   }
 
   bellVolume.addEventListener('input', () => {
+    markUserTouchedConfig();
     state.bellVolume = clamp(parseInt(bellVolume.value, 10) || 0, 0, 100);
     applyBellMasterGain();
+    try { syncBellOverridesEffectiveUI(); } catch (_) {}
   });
 
+  if (droneOnOffBtn) {
+    droneOnOffBtn.addEventListener('click', () => {
+      markUserTouchedConfig();
+      setDroneOn(!state.droneOn);
+    });
+  }
+
   droneTypeSelect.addEventListener('change', () => {
+    markUserTouchedConfig();
     state.droneType = droneTypeSelect.value;
-    if (state.droneType === 'off') {
-      state.dronePaused = false;
-      stopDrone();
-    } else {
-      startDrone();
-    }
+    if (state.droneOn) startDrone();
     syncDronePauseBtnUI();
   });
 
   droneScaleSelect.addEventListener('change', () => {
+    markUserTouchedConfig();
     state.droneScaleKey = droneScaleSelect.value;
     syncDroneCustomHzUI();
-    if (state.droneType !== 'off') refreshDrone();
+    if (state.droneOn) refreshDrone();
   });
 
   droneOctaveSelect.addEventListener('change', () => {
+    markUserTouchedConfig();
     state.droneOctaveC = parseInt(droneOctaveSelect.value, 10) || 3;
-    if (state.droneType !== 'off') refreshDrone();
+    if (state.droneOn) refreshDrone();
   });
 
 
   // Drone Custom (Hz) root controls
   if (droneCustomHzInput) {
     droneCustomHzInput.addEventListener('input', () => {
+      markUserTouchedConfig();
       setDroneCustomHzFromUI(droneCustomHzInput.value, false);
     });
 
     const commitDroneCustomHz = () => {
+      markUserTouchedConfig();
       setDroneCustomHzFromUI(droneCustomHzInput.value, true);
       syncDroneCustomHzUI();
     };
@@ -6515,12 +7003,14 @@ Google Analytics is provided by Google. Their processing of data is governed by 
 
   if (droneCustomHzSlider) {
     droneCustomHzSlider.addEventListener('input', () => {
+      markUserTouchedConfig();
       setDroneCustomHzFromUI(droneCustomHzSlider.value, true);
       syncDroneCustomHzUI();
     });
   }
 
   droneVolume.addEventListener('input', () => {
+    markUserTouchedConfig();
     state.droneVolume = clamp(parseInt(droneVolume.value, 10) || 0, 0, 100);
     applyDroneMasterGain();
   });
@@ -6529,6 +7019,9 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     if (state.phase !== 'idle') return;
     const file = fileInput.files && fileInput.files[0];
     if (!file) return;
+
+    markUserTouchedConfig();
+
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
@@ -6551,8 +7044,10 @@ Google Analytics is provided by Google. Their processing of data is governed by 
         computeRows();
         resetStats();
         rebuildBellFrequencies();
+        rebuildBellOverridesUI();
 
         syncGameHeaderMeta();
+        renderScoringExplanation();
 
         alert('Custom method loaded: ' + parsed.rows.length + ' rows on ' + parsed.stage + ' bells.');
       } catch (err) {
@@ -6567,6 +7062,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       if (state.phase !== 'idle') return;
 
       const files = e.target && e.target.files ? Array.from(e.target.files) : [];
+      if (files.length) markUserTouchedConfig();
       for (const file of files) {
         const name = file && file.name ? String(file.name) : '';
         const lower = name.toLowerCase();
@@ -6614,13 +7110,14 @@ Google Analytics is provided by Google. Their processing of data is governed by 
 
   startBtn.addEventListener('click', () => startPressed('play'));
   if (pauseBtn) pauseBtn.addEventListener('click', togglePause);
-  if (demoBtn) demoBtn.addEventListener('click', () => startPressed('demo'));
+  if (demoBtn) demoBtn.addEventListener('click', () => startDemoFromUi());
   stopBtn.addEventListener('click', () => stopPressed('stopped'));
   if (dronePauseBtn) dronePauseBtn.addEventListener('click', toggleDronePaused);
 
   if (keybindResetBtn) {
     keybindResetBtn.addEventListener('click', () => {
       if (state.phase !== 'idle') return;
+      markUserTouchedConfig();
       state.keybindCaptureBell = null;
       resetKeyBindingsToDefaults();
       rebuildKeybindPanel();
@@ -6697,6 +7194,9 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   }
 
   function boot() {
+    // v08_p04_demo_profile_defaults: ignore config-change tracking during boot.
+    ui.isBooting = true;
+
     mountMenuControls();
 
     // Play defaults (non-persisted)
@@ -6726,6 +7226,8 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     state.displayLiveBellsOnly = safeGetBoolLS(LS_DISPLAY_LIVE_BELLS_ONLY, isMobileLikely());
 
     loadMicPrefs();
+
+    loadBellOverridesFromLS();
 
     if (!state.spotlightShowN && !state.spotlightShowN1 && !state.spotlightShowN2) state.spotlightShowN = true;
 
@@ -6795,6 +7297,51 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     state.droneOctaveC = 4;
     droneOctaveSelect.value = String(state.droneOctaveC);
 
+    // v08_p07_drone_on_off_button: restore Drone On/Off (separate from drone type).
+    // Drone type is always a real pattern (never "off").
+    const defaultDroneType = (() => {
+      try {
+        if (droneTypeSelect && droneTypeSelect.options && droneTypeSelect.options.length) {
+          return String(droneTypeSelect.options[0].value || 'single');
+        }
+      } catch (_) {}
+      return 'single';
+    })();
+
+    if (!state.droneType || state.droneType === 'off') state.droneType = defaultDroneType;
+    try {
+      if (droneTypeSelect && !Array.from(droneTypeSelect.options).some(o => o.value === state.droneType)) {
+        state.droneType = defaultDroneType;
+      }
+    } catch (_) {
+      if (!state.droneType) state.droneType = defaultDroneType;
+    }
+
+    // Load persisted on/off. If unset, try to infer from a legacy stored drone type.
+    {
+      const rawOn = safeGetLS(LS_DRONE_ON);
+      if (rawOn != null) {
+        state.droneOn = safeGetBoolLS(LS_DRONE_ON, false);
+      } else {
+        const legacyType = safeGetLS('rg_drone_type_v1') || safeGetLS('rg_drone_type') || '';
+        if (legacyType === 'off') {
+          state.droneOn = false;
+          state.droneType = defaultDroneType;
+        } else if (legacyType) {
+          try {
+            if (droneTypeSelect && Array.from(droneTypeSelect.options).some(o => o.value === legacyType)) {
+              state.droneType = legacyType;
+              state.droneOn = true;
+            }
+          } catch (_) {}
+        } else {
+          state.droneOn = false;
+        }
+      }
+    }
+
+    if (!state.droneOn) state.dronePaused = false;
+
     // Sliders/defaults
     bellVolume.value = String(state.bellVolume);
     droneTypeSelect.value = state.droneType;
@@ -6803,6 +7350,14 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     // Custom Hz controls
     syncBellCustomHzUI();
     syncDroneCustomHzUI();
+
+    // Start/stop drone based on current preference (no gameplay side effects).
+    if (state.droneOn) {
+      try { startDrone(); } catch (_) {}
+    } else {
+      stopDrone();
+    }
+    syncDroneOnOffUI();
 
     rebuildLiveCountOptions();
     ensureLiveBells();
@@ -6815,6 +7370,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     computeRows();
     resetStats();
     rebuildBellFrequencies();
+    rebuildBellOverridesUI();
     syncViewLayout();
 
     initPrivacyConsentUI();
@@ -6874,7 +7430,8 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     window.addEventListener('resize', () => { markDirty(); });
 
     syncGameHeaderMeta();
-    syncDronePauseBtnUI();
+    renderScoringExplanation();
+    syncDroneOnOffUI();
 
     // Default to Home screen; game initializes normally in the background.
     setScreen('home');
@@ -6891,6 +7448,8 @@ Google Analytics is provided by Google. Their processing of data is governed by 
 
     syncLibraryEntryUI();
     syncLibraryScreenUI();
+
+    ui.isBooting = false;
   }
 
   boot();
