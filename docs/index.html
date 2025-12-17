@@ -27,6 +27,30 @@
   </head>
   <body>
     <div id="app">
+      <button id="menuToggle" class="menu-toggle hidden" type="button" aria-label="Menu" title="Menu" aria-controls="rgHamburgerDropdown" aria-expanded="false">
+        <span class="menu-toggle-icon" aria-hidden="true"></span>
+      </button>
+      <div id="rgHamburgerDropdown" class="rg-hamburger-dropdown hidden" aria-hidden="true" role="menu" aria-label="Navigation">
+        <button class="rg-hamburger-item" type="button" data-ham="home" role="menuitem">Home</button>
+        <button class="rg-hamburger-item" type="button" data-ham="setup" role="menuitem">Setup</button>
+        <button class="rg-hamburger-item" type="button" data-ham="view" role="menuitem">View</button>
+        <button class="rg-hamburger-item" type="button" data-ham="sound" role="menuitem">Sound</button>
+        <button class="rg-hamburger-item" type="button" data-ham="play" role="menuitem">Play</button>
+        <button class="rg-hamburger-item" type="button" data-ham="demo" role="menuitem">Demo</button>
+      </div>
+
+      <!-- v09_p05_stop_current_run_modal: custom modal to stop an active run before starting Demo from menus -->
+      <div id="rgStopRunModal" class="rg-stoprun-modal hidden" aria-hidden="true">
+        <div class="rg-stoprun-panel pane" role="dialog" aria-modal="true" aria-label="Stop current game">
+          <button id="rgStopRunModalClose" class="rg-stoprun-close" type="button" aria-label="Close">×</button>
+          <div class="rg-stoprun-body">
+            <div class="rg-stoprun-msg">Stop the current game first.</div>
+            <div class="rg-stoprun-actions">
+              <button id="rgStopRunModalStop" class="pill" type="button">Stop</button>
+            </div>
+          </div>
+        </div>
+      </div>
       <div id="screenHome" class="rg-screen rg-active" aria-hidden="false">
         <section class="pane rg-splash">
           <div class="rg-screen-body">
@@ -67,6 +91,7 @@
               Scoring: each row is divided into '6' bell windows. For each scored bell and row, you get one scoring chance. Hits inside the window score 5–10 points based on accuracy; hits outside score 0. Extra rings still sound but only the first ring for a bell in a row counts for scoring. MAE (ms) is Mean Absolute Error: average timing error per hit. Lower values mean greater overall accuracy.
             </div>
             <div class="rg-nav">
+              <button class="pill" type="button" data-go-screen="home">Home</button>
               <button class="pill" type="button" data-go-screen="play">Setup</button>
               <button class="pill" type="button" data-go-screen="view">View</button>
               <button class="pill" type="button" data-go-screen="sound">Sound</button>
@@ -105,6 +130,7 @@
 
             </div>
             <div class="rg-nav">
+              <button class="pill" type="button" data-go-screen="home">Home</button>
               <button class="pill" type="button" data-go-screen="play">Setup</button>
               <button class="pill" type="button" data-go-screen="view">View</button>
               <button class="pill" type="button" data-go-screen="sound">Sound</button>
@@ -157,10 +183,9 @@
               <p>Google Analytics is provided by Google. Their processing of data is governed by Google’s own privacy terms.</p>
             </div>
             <div class="rg-nav">
-              <button class="pill" type="button" data-go-screen="view">View</button>
-              <button class="pill" type="button" data-go-screen="play">Setup</button>
-              <button class="pill" type="button" data-go-screen="sound">Sound</button>
               <button class="pill" type="button" data-go-screen="home">Home</button>
+              <button class="pill" type="button" data-go-screen="game">Play</button>
+              <button id="privacyBtnDemo" class="pill" type="button">Demo</button>
             </div>
           </div>
         </section>
@@ -180,6 +205,7 @@
               <div class="control-note rg-muted">Overrides layer on top of Bell key/register and Bell volume.</div>
             </div>
             <div class="rg-nav">
+              <button class="pill" type="button" data-go-screen="home">Home</button>
               <button class="pill" type="button" data-go-screen="play">Setup</button>
               <button class="pill" type="button" data-go-screen="view">View</button>
               <button class="pill" type="button" data-go-screen="sound">Sound</button>
@@ -285,8 +311,6 @@
             </div>
           </div>
         </div>
-        <button id="menuToggle" class="menu-toggle" type="button" aria-label="Menu" title="Menu">▾</button>
-
         <div id="controls">
           <div class="control">
             <label for="methodSelect">Method</label>
@@ -429,6 +453,18 @@
               <label class="toggle"><input id="viewNotation" type="checkbox" checked /> Notation</label>
               <label class="toggle"><input id="viewStats" type="checkbox" checked /> Stats</label>
               <label class="toggle"><input id="viewMic" type="checkbox" /> Mic</label>
+            </div>
+          </div>
+
+          <div class="control">
+            <label>Overlays</label>
+            <div class="toggles toggles--mini" role="group" aria-label="Accuracy dots toggles">
+              <label class="toggle"><input id="accuracyDotsEnabled" type="checkbox" checked /> Accuracy dots</label>
+              <div class="toggles toggles--mini toggles--indent" role="group" aria-label="Accuracy dots per-pane toggles">
+                <label class="toggle"><input id="accuracyDotsDisplay" type="checkbox" checked /> Display</label>
+                <label class="toggle"><input id="accuracyDotsNotation" type="checkbox" checked /> Notation</label>
+                <label class="toggle"><input id="accuracyDotsSpotlight" type="checkbox" checked /> Spotlight</label>
+              </div>
             </div>
           </div>
 

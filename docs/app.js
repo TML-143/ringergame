@@ -75,7 +75,7 @@
   // === Analytics (GA4) ===
   const GA_MEASUREMENT_ID = 'G-7TEG531231';
   const GA_ID = GA_MEASUREMENT_ID;
-  const SITE_VERSION = 'v09_p01_home_logo_step_method';
+  const SITE_VERSION = 'v09_p07c_notation_spotlight_persistent_accuracy';
 
   function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
   function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
@@ -388,6 +388,62 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   const demoBtn = document.getElementById('demoBtn');
   const dronePauseBtn = document.getElementById('dronePauseBtn');
   const menuToggle = document.getElementById('menuToggle');
+  const rgHamburgerDropdown = document.getElementById('rgHamburgerDropdown');
+
+  // v09_p05_stop_current_run_modal: shown when trying to start Demo from Home/menu while a run is active.
+  const rgStopRunModal = document.getElementById('rgStopRunModal');
+  const rgStopRunModalClose = document.getElementById('rgStopRunModalClose');
+  const rgStopRunModalStop = document.getElementById('rgStopRunModalStop');
+
+  // v09_p04b_hamburger_header_anchor: keep a stable root location for the hamburger (Play/Demo stays unchanged).
+  const rgAppRoot = document.getElementById('app');
+  const rgHamburgerRootParent = rgAppRoot || (menuToggle ? menuToggle.parentNode : null);
+
+  function rgHamburgerMoveToggleToRoot() {
+    if (!menuToggle || !rgHamburgerRootParent) return;
+    // Preserve original DOM order (toggle before dropdown) when possible.
+    if (rgHamburgerDropdown && rgHamburgerDropdown.parentNode === rgHamburgerRootParent) {
+      try { rgHamburgerRootParent.insertBefore(menuToggle, rgHamburgerDropdown); } catch (_) {}
+    } else {
+      try { rgHamburgerRootParent.insertBefore(menuToggle, rgHamburgerRootParent.firstChild); } catch (_) {}
+    }
+  }
+
+  function rgHamburgerIsHeaderAnchoredScreen(screenName) {
+    const s = String(screenName || '').toLowerCase();
+    return (s === 'play' || s === 'view' || s === 'sound' || s === 'privacy');
+  }
+
+  function rgHamburgerResetDropdownInlinePosition() {
+    if (!rgHamburgerDropdown) return;
+    try {
+      rgHamburgerDropdown.style.position = '';
+      rgHamburgerDropdown.style.top = '';
+      rgHamburgerDropdown.style.right = '';
+      rgHamburgerDropdown.style.left = '';
+      rgHamburgerDropdown.style.bottom = '';
+    } catch (_) {}
+  }
+
+  function rgHamburgerPositionDropdownPortal() {
+    if (!rgHamburgerDropdown || !menuToggle) return;
+    const s = (ui && ui.screen) ? ui.screen : '';
+    if (!rgHamburgerIsHeaderAnchoredScreen(s)) return;
+
+    const r = menuToggle.getBoundingClientRect();
+    const pad = 10;
+    const top = Math.max(0, Math.round(r.bottom + pad));
+    const right = Math.max(0, Math.round(window.innerWidth - r.right));
+
+    // Portal positioning: keep dropdown adjacent to the in-panel hamburger without risking overflow clipping.
+    try {
+      rgHamburgerDropdown.style.position = 'fixed';
+      rgHamburgerDropdown.style.top = top + 'px';
+      rgHamburgerDropdown.style.right = right + 'px';
+      rgHamburgerDropdown.style.left = 'auto';
+      rgHamburgerDropdown.style.bottom = 'auto';
+    } catch (_) {}
+  }
 
   // Prompt 5: in-game header meta elements
   const gameMetaMethod = document.getElementById('gameMetaMethod');
@@ -419,20 +475,142 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     try { if (menuToggle && ui && ui.screen === 'game') menuToggle.focus({ preventScroll: true }); } catch (_) {}
   }
 
-  // v06_p10_ui_home_menu_polish: Menu button routes to Home (no overlay).
+  // Legacy in-game overlay is kept inert (legacy DOM allowed).
   if (rgMenuOverlay) {
     // Keep overlay permanently hidden/inert (legacy DOM allowed).
     try { rgMenuOverlay.classList.add('hidden'); } catch (_) {}
     try { rgMenuOverlay.setAttribute('aria-hidden', 'true'); } catch (_) {}
   }
 
+  // v09_p04_unified_hamburger_nav: unified hamburger dropdown on all screens.
+  function hamburgerIsOpen() {
+    return !!(rgHamburgerDropdown && !rgHamburgerDropdown.classList.contains('hidden'));
+  }
+  function openHamburgerMenu() {
+    if (!rgHamburgerDropdown) return;
+    if (menuToggle && menuToggle.disabled) return;
+    try { rgHamburgerPositionDropdownPortal(); } catch (_) {}
+    rgHamburgerDropdown.classList.remove('hidden');
+    rgHamburgerDropdown.setAttribute('aria-hidden', 'false');
+    if (menuToggle) {
+      menuToggle.classList.add('is-open');
+      menuToggle.setAttribute('aria-expanded', 'true');
+    }
+  }
+  function closeHamburgerMenu() {
+    if (!rgHamburgerDropdown) return;
+    if (rgHamburgerDropdown.classList.contains('hidden')) {
+      if (menuToggle) {
+        menuToggle.classList.remove('is-open');
+        menuToggle.setAttribute('aria-expanded', 'false');
+      }
+      return;
+    }
+    rgHamburgerDropdown.classList.add('hidden');
+    rgHamburgerDropdown.setAttribute('aria-hidden', 'true');
+    if (menuToggle) {
+      menuToggle.classList.remove('is-open');
+      menuToggle.setAttribute('aria-expanded', 'false');
+    }
+  }
+  function toggleHamburgerMenu() {
+    if (hamburgerIsOpen()) closeHamburgerMenu();
+    else openHamburgerMenu();
+  }
+
+  // v09_p05_stop_current_run_modal
+  function closeStopCurrentRunModal() {
+    if (!rgStopRunModal) return;
+    rgStopRunModal.classList.add('hidden');
+    rgStopRunModal.setAttribute('aria-hidden', 'true');
+  }
+
+  function showStopCurrentRunModal() {
+    if (!rgStopRunModal) {
+      alert('Stop the current game first.');
+      return;
+    }
+
+    // Ensure nav dropdown is not layered over the modal.
+    try { closeHamburgerMenu(); } catch (_) {}
+
+    rgStopRunModal.classList.remove('hidden');
+    rgStopRunModal.setAttribute('aria-hidden', 'false');
+
+    // Minimal focus help for keyboard users.
+    try {
+      if (rgStopRunModalStop) rgStopRunModalStop.focus({ preventScroll: true });
+      else if (rgStopRunModalClose) rgStopRunModalClose.focus({ preventScroll: true });
+    } catch (_) {}
+  }
+
+  if (rgStopRunModalClose) {
+    rgStopRunModalClose.addEventListener('click', () => closeStopCurrentRunModal());
+  }
+  if (rgStopRunModalStop) {
+    rgStopRunModalStop.addEventListener('click', () => {
+      stopPressed('stopped');
+      closeStopCurrentRunModal();
+    });
+  }
+  if (rgStopRunModal) {
+    rgStopRunModal.addEventListener('click', (e) => {
+      // Click the shaded backdrop to dismiss.
+      if (e && e.target === rgStopRunModal) closeStopCurrentRunModal();
+    });
+  }
+
+  function runHamburgerAction(action) {
+    const key = String(action || '').toLowerCase();
+    if (key === 'home') { setScreen('home'); return; }
+    if (key === 'setup') { setScreen('play'); return; }
+    if (key === 'view') { setScreen('view'); return; }
+    if (key === 'sound') { setScreen('sound'); return; }
+    if (key === 'play') { setScreen('game'); return; }
+    if (key === 'demo') {
+      if (state.phase !== 'idle') {
+        showStopCurrentRunModal();
+        return;
+      }
+      setScreen('game');
+      startDemoFromUi();
+      return;
+    }
+  }
+
   if (menuToggle) {
     menuToggle.setAttribute('aria-label', 'Menu');
     menuToggle.setAttribute('title', 'Menu');
-    menuToggle.addEventListener('click', () => {
-      setScreen('home');
+    menuToggle.addEventListener('click', (e) => {
+      try { e.preventDefault(); e.stopPropagation(); } catch (_) {}
+      toggleHamburgerMenu();
     });
   }
+
+  if (rgHamburgerDropdown) {
+    rgHamburgerDropdown.addEventListener('click', (e) => {
+      const btn = (e && e.target && e.target.closest) ? e.target.closest('button[data-ham]') : null;
+      if (!btn) return;
+      const action = (btn.dataset && btn.dataset.ham) ? btn.dataset.ham : '';
+      closeHamburgerMenu();
+      runHamburgerAction(action);
+    });
+  }
+
+  const rgOutsideNavEvent = (typeof window !== 'undefined' && ('PointerEvent' in window)) ? 'pointerdown' : 'mousedown';
+  document.addEventListener(rgOutsideNavEvent, (e) => {
+    if (!hamburgerIsOpen()) return;
+    const t = e && e.target;
+    if (t && t.closest && (t.closest('#menuToggle') || t.closest('#rgHamburgerDropdown'))) return;
+    closeHamburgerMenu();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (!hamburgerIsOpen()) return;
+    if (e && e.key === 'Escape') {
+      closeHamburgerMenu();
+    }
+  });
 
   const statsDiv = document.getElementById('stats');
 
@@ -444,6 +622,41 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   const screenLibrary = document.getElementById('screenLibrary');
   const screenGame = document.getElementById('screenGame');
   const screenPrivacy = document.getElementById('screenPrivacy');
+
+  // v09_p04b_hamburger_header_anchor: hide on Home; anchor into menu header rows on Setup/View/Sound/Privacy.
+  function syncHamburgerUIForScreen(nextScreen) {
+    if (!menuToggle) return;
+    const n = String(nextScreen || '').toLowerCase();
+
+    const show = (n !== 'home');
+    menuToggle.classList.toggle('hidden', !show);
+    try { menuToggle.disabled = !show; } catch (_) {}
+    try { menuToggle.setAttribute('aria-hidden', show ? 'false' : 'true'); } catch (_) {}
+
+    if (!show) {
+      // Keep root positioning tidy even while hidden.
+      try { rgHamburgerResetDropdownInlinePosition(); } catch (_) {}
+      try { rgHamburgerMoveToggleToRoot(); } catch (_) {}
+      return;
+    }
+
+    if (rgHamburgerIsHeaderAnchoredScreen(n)) {
+      const screenEl = (n === 'play') ? screenPlay :
+                       (n === 'view') ? screenView :
+                       (n === 'sound') ? screenSound :
+                       (n === 'privacy') ? screenPrivacy : null;
+      const titleEl = screenEl ? screenEl.querySelector('.pane-title') : null;
+      if (titleEl) {
+        try { titleEl.appendChild(menuToggle); } catch (_) {}
+      } else {
+        try { rgHamburgerMoveToggleToRoot(); } catch (_) {}
+      }
+    } else {
+      try { rgHamburgerMoveToggleToRoot(); } catch (_) {}
+      // Non-anchored screens use CSS default positioning.
+      try { rgHamburgerResetDropdownInlinePosition(); } catch (_) {}
+    }
+  }
 
   const ui = {
     screen: 'home',
@@ -488,6 +701,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   }
 
   function setScreen(name) {
+    try { closeHamburgerMenu(); } catch (_) {}
     const n = String(name || '').toLowerCase();
     const next = (n === 'home' || n === 'play' || n === 'view' || n === 'sound' || n === 'library' || n === 'game' || n === 'privacy') ? n : 'home';
 
@@ -500,6 +714,9 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     }
 
     ui.screen = next;
+
+    // v09_p04b_hamburger_header_anchor
+    try { syncHamburgerUIForScreen(next); } catch (_) {}
 
     // v07_p02_privacy_footer_policy_friendly_banner: audience measurement (screen views only)
     try { analytics.track('screen_view', { screen_name: analyticsScreenName(next) }); } catch (_) {}
@@ -1515,6 +1732,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     // VIEW
     moveControlByChildId('viewDisplay', viewDest);
     moveControlByChildId('displayLiveOnly', viewDest);
+    moveControlByChildId('accuracyDotsEnabled', viewDest);
     moveControlByChildId('spotlightSwapsView', viewDest);
     moveControlByChildId('notationSwapsOverlay', viewDest);
     moveControlByChildId('pathNoneBtn', viewDest);
@@ -1552,6 +1770,9 @@ Google Analytics is provided by Google. Their processing of data is governed by 
 
   const libraryBtnEnterGame = document.getElementById('libraryBtnEnterGame');
   const libraryBtnDemo = document.getElementById('libraryBtnDemo');
+
+  // v09_p04_unified_hamburger_nav: Privacy bottom nav actions
+  const privacyBtnDemo = document.getElementById('privacyBtnDemo');
 
   const setupExploreLibraryBtn = document.getElementById('setupExploreLibraryBtn');
 
@@ -1621,6 +1842,13 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       rebuildBellPicker();
     } catch (_) {}
 
+    // View (Line): also show the line for bell 2 (demo-default only)
+    try {
+      state.pathBells = [1, 2];
+      ensurePathBells();
+      rebuildPathPicker();
+    } catch (_) {}
+
     // Re-sync view UI (no persistence)
     try { syncSpotlightSwapRowTogglesUI(); } catch (_) {}
     try { syncViewMenuSelectedUI(); } catch (_) {}
@@ -1658,7 +1886,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       if (!btn) return;
       btn.addEventListener('click', () => {
         if (state.phase !== 'idle') {
-          alert('Stop the current game first.');
+          showStopCurrentRunModal();
           return;
         }
         setScreen('game');
@@ -1669,6 +1897,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     wireDemo(viewBtnDemo);
     wireDemo(soundBtnDemo);
     wireDemo(libraryBtnDemo);
+    wireDemo(privacyBtnDemo);
   }
 
   if (homeBtnPlay) homeBtnPlay.addEventListener('click', () => setScreen('play'));
@@ -1682,7 +1911,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   });
   if (homeBtnDemo) homeBtnDemo.addEventListener('click', () => {
     if (state.phase !== 'idle') {
-      alert('Stop the current game first.');
+      showStopCurrentRunModal();
       return;
     }
     setScreen('game');
@@ -1810,6 +2039,12 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   const viewStats = document.getElementById('viewStats');
   const viewMic = document.getElementById('viewMic');
   const displayLiveOnly = document.getElementById('displayLiveOnly');
+
+  // v09_p07b_notation_spotlight_accuracy_dots
+  const accuracyDotsEnabled = document.getElementById('accuracyDotsEnabled');
+  const accuracyDotsDisplay = document.getElementById('accuracyDotsDisplay');
+  const accuracyDotsNotation = document.getElementById('accuracyDotsNotation');
+  const accuracyDotsSpotlight = document.getElementById('accuracyDotsSpotlight');
   // v07_p02_privacy_footer_policy_friendly_banner
   const privacyAudienceCheckbox = document.getElementById('privacyAudienceCheckbox');
   const privacyPolicyPre = document.getElementById('privacyPolicyPre');
@@ -1848,6 +2083,9 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   const LS_NOTATION_SWAPS_OVERLAY = 'notation_swaps_overlay';
   const LS_DISPLAY_LIVE_BELLS_ONLY = 'display_live_bells_only';
 
+  // v09_p07b_notation_spotlight_accuracy_dots
+  const LS_ACCURACY_DOTS = 'rg_accuracy_dots_v1';
+
   // layout preset localStorage key
   const LS_LAYOUT_PRESET = 'rg_layout_preset';
 
@@ -1857,6 +2095,10 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   // v08_p05_sound_per_bell_overrides localStorage keys
   const LS_BELL_HZ_OVERRIDE = 'rg_bell_hz_override_v1';
   const LS_BELL_VOL_OVERRIDE = 'rg_bell_vol_override_v1';
+
+  // v09_p06_sound_per_bell_key_register localStorage keys
+  const LS_BELL_KEY_OVERRIDE = 'rg_bell_key_override_v1';
+  const LS_BELL_OCT_OVERRIDE = 'rg_bell_oct_override_v1';
 
   // v08_p07_drone_on_off_button localStorage key
   const LS_DRONE_ON = 'rg_drone_on_v1';
@@ -1954,6 +2196,10 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     bellHzOverride: new Array(13).fill(null),
     bellVolOverride: new Array(13).fill(null),
 
+    // v09_p06_sound_per_bell_key_register
+    bellKeyOverride: new Array(13).fill(null),
+    bellOctaveOverride: new Array(13).fill(null),
+
     pathBells: [1],
     rows: [],
     customRows: null,
@@ -1978,6 +2224,14 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     runStartPerfMs: 0,
 
     statsByBell: {},
+    // v09_p07_stats_overlay_hit_12slot_shape: per-bell last judged outcome for lightweight display overlay
+    lastJudgeByBell: {}, // bell -> { kind:'hit'|'miss', bin:0..11|null, errMs?:number }
+
+    // v09_p07c_notation_spotlight_persistent_accuracy: per-row judged accuracy record (Notation + Spotlight)
+    // rowIndex -> Array(stage) of {kind:'hit', bin:0..11, errMs?:number} | {kind:'miss'} | null
+    accuracyByRow: [],
+    _accuracyScratchByRow: {},
+    _rowJudgedCount: [],
     comboCurrentGlobal: 0,
     comboBestGlobal: 0,
 
@@ -1997,6 +2251,12 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     notationSwapsOverlay: true,
     notationPageSize: 16,
     displayLiveBellsOnly: false,
+
+    // v09_p07b_notation_spotlight_accuracy_dots: accuracy dot overlays (master + per-pane)
+    accuracyDotsEnabled: true,
+    accuracyDotsDisplay: true,
+    accuracyDotsNotation: true,
+    accuracyDotsSpotlight: true,
 
     // mic input
     micEnabled: false,          // desired toggle state (persisted)
@@ -2137,10 +2397,44 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   }
 
   // v08_p05_sound_per_bell_overrides
+  function getBellFrequencyFromKeyOct(bell, scaleKey, octaveC) {
+    const b = clamp(parseInt(bell, 10) || 0, 1, 12);
+    const stage = clamp(parseInt(state.stage, 10) || 1, 1, 12);
+    const bb = clamp(b, 1, stage);
+    const key = String(scaleKey || state.scaleKey || '');
+
+    let def;
+    let rootFreq;
+    if (key === 'custom_hz') {
+      def = getScaleDef();
+      rootFreq = coerceCustomHz(state.bellCustomHz, 440);
+      const o = clamp(parseInt(octaveC, 10) || state.octaveC, 1, 6);
+      const o0 = clamp(parseInt(state.octaveC, 10) || 4, 1, 6);
+      if (o !== o0) rootFreq = rootFreq * Math.pow(2, (o - o0));
+    } else {
+      def = getScaleDefByKey(key);
+      const o = clamp(parseInt(octaveC, 10) || state.octaveC, 1, 6);
+      const rootMidi = noteToMidi(def.root, o);
+      rootFreq = midiToFreq(rootMidi);
+    }
+
+    const intervals = downsampleIntervals(def.intervals, stage);
+    const off = intervals[stage - bb];
+    return rootFreq * Math.pow(2, off / 12);
+  }
+
   function getBellHz(bell) {
     const b = parseInt(bell, 10) || 0;
     const ov = (state.bellHzOverride && state.bellHzOverride[b] != null) ? Number(state.bellHzOverride[b]) : NaN;
     if (Number.isFinite(ov) && ov > 0) return ov;
+
+    const hasKeyOv = (state.bellKeyOverride && state.bellKeyOverride[b] != null) && String(state.bellKeyOverride[b] || '').trim();
+    const hasOctOv = (state.bellOctaveOverride && state.bellOctaveOverride[b] != null) && Number.isFinite(Number(state.bellOctaveOverride[b]));
+    if (hasKeyOv || hasOctOv) {
+      const key = hasKeyOv ? String(state.bellKeyOverride[b]) : String(state.scaleKey);
+      const oct = hasOctOv ? clamp(parseInt(String(state.bellOctaveOverride[b]), 10) || state.octaveC, 1, 6) : state.octaveC;
+      return getBellFrequencyFromKeyOct(b, key, oct);
+    }
     return getBellFrequencyDefault(bell);
   }
 
@@ -3564,6 +3858,8 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   function ensureBellOverridesArrays() {
     if (!Array.isArray(state.bellHzOverride) || state.bellHzOverride.length < 13) state.bellHzOverride = new Array(13).fill(null);
     if (!Array.isArray(state.bellVolOverride) || state.bellVolOverride.length < 13) state.bellVolOverride = new Array(13).fill(null);
+    if (!Array.isArray(state.bellKeyOverride) || state.bellKeyOverride.length < 13) state.bellKeyOverride = new Array(13).fill(null);
+    if (!Array.isArray(state.bellOctaveOverride) || state.bellOctaveOverride.length < 13) state.bellOctaveOverride = new Array(13).fill(null);
   }
 
   function loadBellOverridesFromLS() {
@@ -3592,6 +3888,59 @@ Google Analytics is provided by Google. Their processing of data is governed by 
         state.bellVolOverride[b] = clamp(v, 0, 100);
       }
     }
+
+    // v09_p06_sound_per_bell_key_register
+    const keyObj = safeJsonParse(safeGetLS(LS_BELL_KEY_OVERRIDE) || '') || null;
+    if (keyObj && typeof keyObj === 'object') {
+      for (const k in keyObj) {
+        if (!Object.prototype.hasOwnProperty.call(keyObj, k)) continue;
+        const b = parseInt(k, 10);
+        if (!Number.isFinite(b) || b < 1 || b > 12) continue;
+        const v = String(keyObj[k] || '').trim();
+        if (!v) continue;
+        if (v === 'custom_hz') continue;
+        if (SCALE_LIBRARY.some(s => s.key === v)) state.bellKeyOverride[b] = v;
+      }
+    }
+
+    const octObj = safeJsonParse(safeGetLS(LS_BELL_OCT_OVERRIDE) || '') || null;
+    if (octObj && typeof octObj === 'object') {
+      for (const k in octObj) {
+        if (!Object.prototype.hasOwnProperty.call(octObj, k)) continue;
+        const b = parseInt(k, 10);
+        if (!Number.isFinite(b) || b < 1 || b > 12) continue;
+        const v = parseInt(String(octObj[k] || ''), 10);
+        if (!Number.isFinite(v)) continue;
+        state.bellOctaveOverride[b] = clamp(v, 1, 6);
+      }
+    }
+  }
+
+  function saveBellKeyOverridesToLS() {
+    ensureBellOverridesArrays();
+    const out = {};
+    for (let b = 1; b <= 12; b++) {
+      const v = (state.bellKeyOverride[b] != null) ? String(state.bellKeyOverride[b]) : '';
+      if (!v) continue;
+      if (v === 'custom_hz') continue;
+      if (!SCALE_LIBRARY.some(s => s.key === v)) continue;
+      out[b] = v;
+    }
+    if (!Object.keys(out).length) safeDelLS(LS_BELL_KEY_OVERRIDE);
+    else safeSetLS(LS_BELL_KEY_OVERRIDE, JSON.stringify(out));
+  }
+
+  function saveBellOctOverridesToLS() {
+    ensureBellOverridesArrays();
+    const out = {};
+    for (let b = 1; b <= 12; b++) {
+      if (state.bellOctaveOverride[b] == null) continue;
+      const v = parseInt(String(state.bellOctaveOverride[b]), 10);
+      if (!Number.isFinite(v)) continue;
+      out[b] = clamp(v, 1, 6);
+    }
+    if (!Object.keys(out).length) safeDelLS(LS_BELL_OCT_OVERRIDE);
+    else safeSetLS(LS_BELL_OCT_OVERRIDE, JSON.stringify(out));
   }
 
   function saveBellHzOverridesToLS() {
@@ -3631,6 +3980,13 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     return String(Math.round(n));
   }
 
+  function scaleKeyLabel(key) {
+    const k = String(key || '');
+    if (k === 'custom_hz') return 'Custom (Hz)';
+    const def = SCALE_LIBRARY.find(s => s.key === k);
+    return def ? def.label : k;
+  }
+
   function syncBellOverridesEffectiveUI() {
     if (!bellOverridesList) return;
     ensureBellOverridesArrays();
@@ -3639,8 +3995,25 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     for (let b = 1; b <= state.stage; b++) {
       const hzEl = document.getElementById('bellHzEffective_' + b);
       if (hzEl) {
-        const hasOv = (state.bellHzOverride[b] != null) && Number.isFinite(Number(state.bellHzOverride[b]));
-        hzEl.textContent = 'Eff: ' + fmtHz(getBellHz(b)) + ' Hz' + (hasOv ? ' (override)' : '');
+        const hasHzOv = (state.bellHzOverride[b] != null) && Number.isFinite(Number(state.bellHzOverride[b]));
+        const hasKeyOv = (state.bellKeyOverride[b] != null) && String(state.bellKeyOverride[b] || '').trim();
+        const hasOctOv = (state.bellOctaveOverride[b] != null) && Number.isFinite(Number(state.bellOctaveOverride[b]));
+        const tag = hasHzOv ? ' (Hz override)' : ((hasKeyOv || hasOctOv) ? ' (key/reg)' : '');
+        hzEl.textContent = 'Eff: ' + fmtHz(getBellHz(b)) + ' Hz' + tag;
+      }
+
+      const keyEl = document.getElementById('bellKeyEffective_' + b);
+      if (keyEl) {
+        const hasKeyOv = (state.bellKeyOverride[b] != null) && String(state.bellKeyOverride[b] || '').trim();
+        const effKey = hasKeyOv ? String(state.bellKeyOverride[b]) : String(state.scaleKey);
+        keyEl.textContent = 'Eff: ' + scaleKeyLabel(effKey) + (hasKeyOv ? ' (override)' : '');
+      }
+
+      const octEl = document.getElementById('bellOctEffective_' + b);
+      if (octEl) {
+        const hasOctOv = (state.bellOctaveOverride[b] != null) && Number.isFinite(Number(state.bellOctaveOverride[b]));
+        const effOct = hasOctOv ? clamp(parseInt(String(state.bellOctaveOverride[b]), 10) || state.octaveC, 1, 6) : state.octaveC;
+        octEl.textContent = 'Eff: C' + String(effOct) + (hasOctOv ? ' (override)' : '');
       }
 
       const volEl = document.getElementById('bellVolEffective_' + b);
@@ -3663,6 +4036,21 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       const g = bellToGlyph(b);
       const hzV = (state.bellHzOverride[b] != null && Number.isFinite(Number(state.bellHzOverride[b]))) ? String(state.bellHzOverride[b]) : '';
       const volV = (state.bellVolOverride[b] != null && Number.isFinite(Number(state.bellVolOverride[b]))) ? String(state.bellVolOverride[b]) : '';
+
+      const keyV = (state.bellKeyOverride[b] != null) ? String(state.bellKeyOverride[b] || '') : '';
+      let keyOpts = '<option value="">(global)</option>';
+      for (const s of SCALE_LIBRARY) {
+        const sel = (keyV && s.key === keyV) ? ' selected' : '';
+        keyOpts += '<option value="' + s.key + '"' + sel + '>' + s.label + '</option>';
+      }
+
+      const octRaw = (state.bellOctaveOverride[b] != null) ? parseInt(String(state.bellOctaveOverride[b]), 10) : NaN;
+      const octV = Number.isFinite(octRaw) ? String(clamp(octRaw, 1, 6)) : '';
+      let octOpts = '<option value="">(global)</option>';
+      for (let o = 1; o <= 6; o++) {
+        const sel = (octV && String(o) === octV) ? ' selected' : '';
+        octOpts += '<option value="' + String(o) + '"' + sel + '>C' + String(o) + '</option>';
+      }
       html += '<div class="rg-bell-override-row" data-bell="' + b + '">' +
         '<div class="rg-bell-override-bell" data-bell="' + b + '" role="button" aria-label="Ring bell ' + g + '">' + g + '</div>' +
         '<div class="rg-bell-override-body">' +
@@ -3674,6 +4062,26 @@ Google Analytics is provided by Google. Their processing of data is governed by 
             '<div class="rg-bell-override-group-controls">' +
               '<input id="bellHzOverride_' + b + '" type="number" min="20" max="5000" step="0.01" placeholder="(default)" value="' + hzV + '" />' +
               '<button type="button" class="pill rg-mini" data-act="clearHz" data-bell="' + b + '">Clear</button>' +
+            '</div>' +
+          '</div>' +
+          '<div class="rg-bell-override-group">' +
+            '<div class="rg-bell-override-group-head">' +
+              '<div class="rg-bell-override-group-title">Key</div>' +
+              '<div id="bellKeyEffective_' + b + '" class="rg-bell-override-effective"></div>' +
+            '</div>' +
+            '<div class="rg-bell-override-group-controls">' +
+              '<select id="bellKeyOverride_' + b + '">' + keyOpts + '</select>' +
+              '<button type="button" class="pill rg-mini" data-act="clearKey" data-bell="' + b + '">Clear</button>' +
+            '</div>' +
+          '</div>' +
+          '<div class="rg-bell-override-group">' +
+            '<div class="rg-bell-override-group-head">' +
+              '<div class="rg-bell-override-group-title">Reg</div>' +
+              '<div id="bellOctEffective_' + b + '" class="rg-bell-override-effective"></div>' +
+            '</div>' +
+            '<div class="rg-bell-override-group-controls">' +
+              '<select id="bellOctOverride_' + b + '">' + octOpts + '</select>' +
+              '<button type="button" class="pill rg-mini" data-act="clearOct" data-bell="' + b + '">Clear</button>' +
             '</div>' +
           '</div>' +
           '<div class="rg-bell-override-group">' +
@@ -3714,11 +4122,35 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     syncBellOverridesEffectiveUI();
   }
 
+  function clearBellKeyOverride(b) {
+    ensureBellOverridesArrays();
+    const bb = clamp(parseInt(b, 10) || 0, 1, 12);
+    state.bellKeyOverride[bb] = null;
+    saveBellKeyOverridesToLS();
+    const sel = document.getElementById('bellKeyOverride_' + bb);
+    if (sel) sel.value = '';
+    syncBellOverridesEffectiveUI();
+  }
+
+  function clearBellOctOverride(b) {
+    ensureBellOverridesArrays();
+    const bb = clamp(parseInt(b, 10) || 0, 1, 12);
+    state.bellOctaveOverride[bb] = null;
+    saveBellOctOverridesToLS();
+    const sel = document.getElementById('bellOctOverride_' + bb);
+    if (sel) sel.value = '';
+    syncBellOverridesEffectiveUI();
+  }
+
   function resetAllBellOverrides() {
     state.bellHzOverride = new Array(13).fill(null);
     state.bellVolOverride = new Array(13).fill(null);
+    state.bellKeyOverride = new Array(13).fill(null);
+    state.bellOctaveOverride = new Array(13).fill(null);
     safeDelLS(LS_BELL_HZ_OVERRIDE);
     safeDelLS(LS_BELL_VOL_OVERRIDE);
+    safeDelLS(LS_BELL_KEY_OVERRIDE);
+    safeDelLS(LS_BELL_OCT_OVERRIDE);
     rebuildBellOverridesUI();
   }
 
@@ -4065,6 +4497,51 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       pathAllBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
       pathAllBtn.classList.toggle('is-selected', on);
     }
+  }
+
+  // v09_p07b_notation_spotlight_accuracy_dots: preferences + UI
+  function loadAccuracyDotsPrefs() {
+    const raw = safeGetLS(LS_ACCURACY_DOTS);
+    const j = safeJsonParse(raw || '');
+    if (!j || typeof j !== 'object') return;
+    if (typeof j.accuracyDotsEnabled === 'boolean') state.accuracyDotsEnabled = j.accuracyDotsEnabled;
+    if (typeof j.accuracyDotsDisplay === 'boolean') state.accuracyDotsDisplay = j.accuracyDotsDisplay;
+    if (typeof j.accuracyDotsNotation === 'boolean') state.accuracyDotsNotation = j.accuracyDotsNotation;
+    if (typeof j.accuracyDotsSpotlight === 'boolean') state.accuracyDotsSpotlight = j.accuracyDotsSpotlight;
+  }
+
+  function saveAccuracyDotsPrefs() {
+    const payload = {
+      accuracyDotsEnabled: !!state.accuracyDotsEnabled,
+      accuracyDotsDisplay: !!state.accuracyDotsDisplay,
+      accuracyDotsNotation: !!state.accuracyDotsNotation,
+      accuracyDotsSpotlight: !!state.accuracyDotsSpotlight
+    };
+    safeSetLS(LS_ACCURACY_DOTS, JSON.stringify(payload));
+  }
+
+  function syncAccuracyDotsUI() {
+    if (accuracyDotsEnabled) accuracyDotsEnabled.checked = !!state.accuracyDotsEnabled;
+    if (accuracyDotsDisplay) accuracyDotsDisplay.checked = !!state.accuracyDotsDisplay;
+    if (accuracyDotsNotation) accuracyDotsNotation.checked = !!state.accuracyDotsNotation;
+    if (accuracyDotsSpotlight) accuracyDotsSpotlight.checked = !!state.accuracyDotsSpotlight;
+
+    const masterOn = !!state.accuracyDotsEnabled;
+    if (accuracyDotsDisplay) accuracyDotsDisplay.disabled = !masterOn;
+    if (accuracyDotsNotation) accuracyDotsNotation.disabled = !masterOn;
+    if (accuracyDotsSpotlight) accuracyDotsSpotlight.disabled = !masterOn;
+    syncViewMenuSelectedUI();
+  }
+
+  function syncAccuracyDotsPrefsFromUI() {
+    if (accuracyDotsEnabled) state.accuracyDotsEnabled = !!accuracyDotsEnabled.checked;
+    if (accuracyDotsDisplay) state.accuracyDotsDisplay = !!accuracyDotsDisplay.checked;
+    if (accuracyDotsNotation) state.accuracyDotsNotation = !!accuracyDotsNotation.checked;
+    if (accuracyDotsSpotlight) state.accuracyDotsSpotlight = !!accuracyDotsSpotlight.checked;
+    saveAccuracyDotsPrefs();
+    syncAccuracyDotsUI();
+    markDirty();
+    if (!inLoopTick && (loopTimer != null || loopRAF != null)) kickLoop();
   }
 
   // === View layout ===
@@ -4507,8 +4984,16 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   // === Stats ===
   function resetStats() {
     state.statsByBell = {};
+    state.lastJudgeByBell = {};
+
+    // v09_p07c_notation_spotlight_persistent_accuracy: reset per-row accuracy record
+    state.accuracyByRow = [];
+    state._accuracyScratchByRow = {};
+    state._rowJudgedCount = [];
+
     for (let b = 1; b <= state.stage; b++) {
       state.statsByBell[b] = { bell: b, hits: 0, misses: 0, sumAbsDelta: 0, sumSignedDelta: 0, score: 0, comboCurrent: 0, comboBest: 0 };
+      state.lastJudgeByBell[b] = null;
     }
     state.targets.length = 0;
     state.comboCurrentGlobal = 0;
@@ -4539,6 +5024,64 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     }
   }
 
+  // v09_p07c_notation_spotlight_persistent_accuracy: per-row accuracy recording (committed only when a row is fully judged)
+  function getRowPosForTarget(bell, targetTimeMs, beatMs) {
+    const stage = state.stage;
+    if (!Number.isFinite(targetTimeMs) || !Number.isFinite(beatMs) || beatMs <= 0) return null;
+    const i = Math.round((targetTimeMs - state.methodStartMs) / beatMs);
+    if (!Number.isFinite(i)) return null;
+    const rowIdx = Math.floor(i / stage);
+    if (rowIdx < 0 || !state.rows || rowIdx >= state.rows.length) return null;
+    const row = state.rows[rowIdx];
+    if (!row) return null;
+    let posInRow = i % stage;
+    if (posInRow < 0) posInRow += stage;
+    if (row[posInRow] !== bell) {
+      const j = row.indexOf(bell);
+      if (j >= 0) posInRow = j;
+    }
+    return { rowIdx, posInRow };
+  }
+
+  function recordAccuracyScratch(rowIdx, posInRow, rec) {
+    const stage = state.stage;
+    if (rowIdx == null || posInRow == null) return;
+    if (rowIdx < 0 || !state.rows || rowIdx >= state.rows.length) return;
+    if (posInRow < 0 || posInRow >= stage) return;
+    if (!state._accuracyScratchByRow) state._accuracyScratchByRow = {};
+    let arr = state._accuracyScratchByRow[rowIdx];
+    if (!arr) {
+      arr = new Array(stage).fill(null);
+      state._accuracyScratchByRow[rowIdx] = arr;
+    }
+    if (arr[posInRow] != null) return; // do not overwrite
+    arr[posInRow] = rec;
+  }
+
+  function commitAccuracyRowIfComplete(rowIdx) {
+    const stage = state.stage;
+    if (rowIdx == null) return;
+    if (rowIdx < 0 || !state.rows || rowIdx >= state.rows.length) return;
+    if (!state._rowJudgedCount) state._rowJudgedCount = [];
+    const next = (state._rowJudgedCount[rowIdx] || 0) + 1;
+    state._rowJudgedCount[rowIdx] = next;
+    if (next < stage) return;
+
+    if (!state.accuracyByRow) state.accuracyByRow = [];
+    if (state.accuracyByRow[rowIdx] != null) return; // already committed
+
+    const rec = new Array(stage).fill(null);
+    const scratch = state._accuracyScratchByRow && state._accuracyScratchByRow[rowIdx];
+    if (scratch) {
+      for (let p = 0; p < stage; p++) {
+        if (scratch[p] != null) rec[p] = scratch[p];
+      }
+      try { delete state._accuracyScratchByRow[rowIdx]; } catch (_) {}
+    }
+    state.accuracyByRow[rowIdx] = rec;
+    markDirty();
+  }
+
   function updateMisses(nowMs) {
     const live = new Set(state.liveBells);
     const beatMs = 60000 / state.bpm;
@@ -4548,13 +5091,17 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       if (t.judged) continue;
       if (nowMs > t.timeMs + halfBeat) {
         t.judged = true;
+        const rp = getRowPosForTarget(t.bell, t.timeMs, beatMs);
         if (live.has(t.bell)) {
           const s = state.statsByBell[t.bell];
           s.misses += 1;
+          if (state.mode === 'play' && state.lastJudgeByBell) state.lastJudgeByBell[t.bell] = { kind: 'miss', bin: null };
+          if (rp) recordAccuracyScratch(rp.rowIdx, rp.posInRow, { kind: 'miss' });
           s.comboCurrent = 0;
           state.comboCurrentGlobal = 0;
           didChange = true;
         }
+        if (rp) commitAccuracyRowIfComplete(rp.rowIdx);
       }
     }
     const cutoff = nowMs - 8000;
@@ -4565,15 +5112,20 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   function finalizePendingAsMisses(nowMs) {
     state.targets = state.targets.filter(t => t.timeMs <= nowMs);
     const live = new Set(state.liveBells);
+    const beatMs = 60000 / state.bpm;
     for (const t of state.targets) {
       if (t.judged) continue;
       t.judged = true;
+      const rp = getRowPosForTarget(t.bell, t.timeMs, beatMs);
       if (live.has(t.bell)) {
         const s = state.statsByBell[t.bell];
         s.misses += 1;
+        if (state.mode === 'play' && state.lastJudgeByBell) state.lastJudgeByBell[t.bell] = { kind: 'miss', bin: null };
+        if (rp) recordAccuracyScratch(rp.rowIdx, rp.posInRow, { kind: 'miss' });
         s.comboCurrent = 0;
         state.comboCurrentGlobal = 0;
       }
+      if (rp) commitAccuracyRowIfComplete(rp.rowIdx);
     }
   }
 
@@ -4624,6 +5176,9 @@ Google Analytics is provided by Google. Their processing of data is governed by 
 
       const s = state.statsByBell[bell];
       s.misses += 1;
+      if (state.mode === 'play' && state.lastJudgeByBell) { state.lastJudgeByBell[bell] = { kind: 'miss', bin: null }; markDirty(); }
+      recordAccuracyScratch(rowIdx, posInRow, { kind: 'miss' });
+      commitAccuracyRowIfComplete(rowIdx);
       s.comboCurrent = 0;
       state.comboCurrentGlobal = 0;
       return;
@@ -4653,6 +5208,11 @@ Google Analytics is provided by Google. Their processing of data is governed by 
 
     state.comboCurrentGlobal += 1;
     if (state.comboCurrentGlobal > state.comboBestGlobal) state.comboBestGlobal = state.comboCurrentGlobal;
+
+    recordAccuracyScratch(rowIdx, posInRow, { kind: 'hit', bin, errMs: deltaMs });
+    commitAccuracyRowIfComplete(rowIdx);
+
+    if (state.mode === 'play' && state.lastJudgeByBell) { state.lastJudgeByBell[bell] = { kind: 'hit', bin, errMs: deltaMs }; markDirty(); }
   }
 
   function getElapsedSeconds(nowMs) {
@@ -4720,13 +5280,14 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       // Default Spotlight (exactly as before)
       if (!state.spotlightSwapsView) {
         const currentRow = state.rows[rowIdx] || state.rows[0];
-        const nextRow = state.rows[Math.min(rowIdx + 1, state.rows.length - 1)] || currentRow;
+        const nextRowIdx = Math.min(rowIdx + 1, state.rows.length - 1);
+        const nextRow = state.rows[nextRowIdx] || currentRow;
 
         const padX = 14, padY = 12, gapY = 10;
         const rowBlockH = (H - padY * 2 - gapY) / 2;
         const cellW = (W - padX * 2) / stage;
 
-        function drawRow(row, yTop, highlightPos, faded, rowKind) {
+        function drawRow(row, yTop, highlightPos, faded, rowKind, rowIndex) {
           sctx.save();
           sctx.translate(padX, yTop);
           sctx.fillStyle = faded ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.05)';
@@ -4759,12 +5320,16 @@ Google Analytics is provided by Google. Their processing of data is governed by 
             } else sctx.fillStyle = isLive ? '#e8eeff' : '#9aa2bb';
 
             sctx.fillText(bellToGlyph(bell), x, y);
+            if (accuracyDotsEnabledForPane('spotlight')) {
+              const darkOnLight = ((!faded && i === highlightPos) || flashOn);
+              drawRowAccuracyOverlayUnderGlyph(sctx, x, y, cellW, rowBlockH, fontSize, rowIndex, i, darkOnLight);
+            }
           }
           sctx.restore();
         }
 
-        drawRow(currentRow, padY, pos, false, 'N');
-        drawRow(nextRow, padY + rowBlockH + gapY, -1, true, 'N1');
+        drawRow(currentRow, padY, pos, false, 'N', rowIdx);
+        drawRow(nextRow, padY + rowBlockH + gapY, -1, true, 'N1', nextRowIdx);
         return;
       }
 
@@ -4812,6 +5377,8 @@ Google Analytics is provided by Google. Their processing of data is governed by 
         sctx.save();
         sctx.translate(padX, yTop);
 
+        const absRowIdx = rowIdx + (Number(offset) || 0);
+
         const rowKind = (offset === 0) ? 'N' : ((offset === 1) ? 'N1' : 'N2');
         sctx.fillStyle = faded ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.05)';
         sctx.strokeStyle = 'rgba(255,255,255,0.08)';
@@ -4846,6 +5413,10 @@ Google Analytics is provided by Google. Their processing of data is governed by 
           } else sctx.fillStyle = isLive ? '#e8eeff' : '#9aa2bb';
 
           sctx.fillText(bellToGlyph(bell), x, y);
+          if (accuracyDotsEnabledForPane('spotlight')) {
+            const darkOnLight = ((!faded && i === highlightPos) || flashOn);
+            drawRowAccuracyOverlayUnderGlyph(sctx, x, y, cellW, rowBlockH, fontSize, absRowIdx, i, darkOnLight);
+          }
         }
 
         sctx.restore();
@@ -4935,6 +5506,186 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     return { x0, y0, w0, h0, rows, cols, cellW, cellH, bells: bellsSorted };
   }
 
+  // v09_p07b_notation_spotlight_accuracy_dots: shared judge overlay helpers
+  function accuracyDotsEnabledForPane(paneKey) {
+    if (!state.accuracyDotsEnabled) return false;
+    if (paneKey === 'display') return !!state.accuracyDotsDisplay;
+    if (paneKey === 'notation') return !!state.accuracyDotsNotation;
+    if (paneKey === 'spotlight') return !!state.accuracyDotsSpotlight;
+    return false;
+  }
+
+  function judgeRenderBinFromLastJudge(lj) {
+    if (!lj || lj.kind !== 'hit' || lj.bin == null) return null;
+    let dispBin = lj.bin;
+    const errMs = lj.errMs;
+    // Special render rule: exactly on-beat hits render in the "late" center bin (choose the later center)
+    if (errMs != null && Math.abs(errMs) < 0.0001) dispBin = Math.floor(12 / 2); // 6
+    return clamp(dispBin, 0, 11);
+  }
+
+  function judgeStrengthFromBin(bin) {
+    const pts = TIER12_BY_BIN[bin == null ? 0 : bin] || 5;
+    return clamp((pts - 5) / 5, 0, 1);
+  }
+
+  function drawJudgeOverlayUnderGlyph(ctx, cx, cy, cellW, cellH, fontSize, bell, darkOnLight) {
+    if (state.mode !== 'play') return;
+    const map = state.lastJudgeByBell;
+    if (!map) return;
+    const lj = map[bell];
+    if (!lj) return;
+
+    if (lj.kind === 'miss') {
+      const r = Math.max(7, Math.min(Math.min(cellW, cellH) * 0.42, fontSize * 0.72));
+      const lw = Math.max(1.15, Math.min(2.4, fontSize * 0.10));
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255, 90, 90, 0.82)';
+      ctx.lineWidth = lw;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
+
+    const bin = judgeRenderBinFromLastJudge(lj);
+    if (bin == null) return;
+    const strength = judgeStrengthFromBin(bin);
+
+    let slotW = fontSize * 2.4;
+    slotW = Math.max(18, Math.min(slotW, cellW * 0.80));
+    const x0 = cx - slotW / 2;
+    const x = x0 + (bin / 11) * slotW;
+
+    const alpha = 0.20 + strength * 0.65;
+    const baseR = Math.max(1.6, Math.min(5.0, fontSize * 0.12));
+    const r = baseR * (0.75 + strength * 0.55);
+
+    const yOff = Math.min(fontSize * 0.75, cellH * 0.42);
+    let y = cy + yOff;
+    const yMax = (cy + cellH / 2) - (r + 1.0);
+    if (y > yMax) y = yMax;
+
+    const rgb = darkOnLight ? '16,22,44' : '249,199,79';
+    ctx.save();
+    ctx.fillStyle = `rgba(${rgb},${alpha})`;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // v09_p07c_notation_spotlight_persistent_accuracy: per-row accuracy overlay (Notation + Spotlight)
+  function judgeRenderBinFromAccuracyEntry(e) {
+    if (!e || e.kind !== 'hit' || e.bin == null) return null;
+    let dispBin = e.bin;
+    const errMs = e.errMs;
+    // Match display rule: exactly on-beat hits render in the "late" center bin.
+    if (errMs != null && Math.abs(errMs) < 0.0001) dispBin = Math.floor(12 / 2); // 6
+    return clamp(dispBin, 0, 11);
+  }
+
+  function drawRowAccuracyOverlayUnderGlyph(ctx, cx, cy, cellW, cellH, fontSize, rowIdx, posInRow, darkOnLight) {
+    if (state.mode !== 'play') return;
+    const byRow = state.accuracyByRow;
+    if (!byRow) return;
+    const rowRec = byRow[rowIdx];
+    if (!rowRec) return;
+    const e = rowRec[posInRow];
+    if (!e) return;
+
+    if (e.kind === 'miss') {
+      const r = Math.max(7, Math.min(Math.min(cellW, cellH) * 0.42, fontSize * 0.72));
+      const lw = Math.max(1.15, Math.min(2.4, fontSize * 0.10));
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255, 90, 90, 0.82)';
+      ctx.lineWidth = lw;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
+
+    const bin = judgeRenderBinFromAccuracyEntry(e);
+    if (bin == null) return;
+    const strength = judgeStrengthFromBin(bin);
+
+    let slotW = fontSize * 2.4;
+    slotW = Math.max(18, Math.min(slotW, cellW * 0.80));
+    const x0 = cx - slotW / 2;
+    const x = x0 + (bin / 11) * slotW;
+
+    const alpha = 0.20 + strength * 0.65;
+    const baseR = Math.max(1.6, Math.min(5.0, fontSize * 0.12));
+    const r = baseR * (0.75 + strength * 0.55);
+
+    const yOff = Math.min(fontSize * 0.75, cellH * 0.42);
+    let y = cy + yOff;
+    const yMax = (cy + cellH / 2) - (r + 1.0);
+    if (y > yMax) y = yMax;
+
+    const rgb = darkOnLight ? '16,22,44' : '249,199,79';
+    ctx.save();
+    ctx.fillStyle = `rgba(${rgb},${alpha})`;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // v09_p07_stats_overlay_hit_12slot_shape: per-bell last-judged overlay (12-slot timing dot + miss ring)
+  function drawDisplayJudgeOverlay(ctx, cx, cy, ringRadius, fontSize, bell) {
+    if (state.mode !== 'play') return;
+    const map = state.lastJudgeByBell;
+    if (!map) return;
+    const lj = map[bell];
+    if (!lj) return;
+
+    if (lj.kind === 'miss') {
+      const rNum = Math.min(ringRadius - 4, Math.max(10, fontSize * 0.65));
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255, 90, 90, 0.85)';
+      ctx.lineWidth = Math.max(1.2, Math.min(3.0, ringRadius * 0.08));
+      ctx.beginPath();
+      ctx.arc(cx, cy, rNum, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
+
+    if (lj.kind !== 'hit' || lj.bin == null) return;
+
+    // Dot slot corresponds to scoring bin 0..11 (left=early/ahead, right=late/behind)
+    let dispBin = lj.bin;
+    const errMs = lj.errMs;
+    // Special render rule: exactly on-beat hits render in the "late" center bin (if you're not early, you're late)
+    if (errMs != null && Math.abs(errMs) < 0.0001) dispBin = Math.floor(12 / 2); // 6 (late-center)
+    dispBin = clamp(dispBin, 0, 11);
+
+    // Dot strength follows 5|6|7|8|9|10|10|9|8|7|6|5 (visual only)
+    const pts = TIER12_BY_BIN[dispBin] || 5;
+    const strength = clamp((pts - 5) / 5, 0, 1);
+
+    const slotW = Math.max(28, Math.min(56, ringRadius * 1.55));
+    const x0 = cx - slotW / 2;
+    const x = x0 + (dispBin / 11) * slotW;
+    let y = cy + Math.min(ringRadius * 0.62, fontSize * 0.75);
+    y = Math.min(y, cy + ringRadius - 6);
+
+    const alpha = 0.28 + strength * 0.62;
+    const baseR = Math.max(1.8, Math.min(5.0, ringRadius * 0.12));
+    const r = baseR * (0.75 + strength * 0.55);
+
+    ctx.save();
+    ctx.fillStyle = `rgba(249,199,79,${alpha})`;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
   function drawDisplayLiveOnly(nowMs, W, H, bellsSorted) {
     const layout = computeDisplayLiveOnlyLayout(W, H, bellsSorted);
     const n = bellsSorted.length;
@@ -5006,6 +5757,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       dctx.textBaseline = 'middle';
       dctx.fillStyle = glow > 0.2 ? '#10162c' : '#e8eeff';
       dctx.fillText(bellToGlyph(bell), cx, cy);
+      if (accuracyDotsEnabledForPane('display')) drawDisplayJudgeOverlay(dctx, cx, cy, ringRadius, fontSize, bell);
       dctx.restore();
     }
   }
@@ -5077,6 +5829,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       dctx.textBaseline = 'middle';
       dctx.fillStyle = glow > 0.2 ? '#10162c' : (isLive ? '#e8eeff' : '#9aa2bb');
       dctx.fillText(bellToGlyph(bell), p.x, p.y);
+      if (accuracyDotsEnabledForPane('display')) drawDisplayJudgeOverlay(dctx, p.x, p.y, ringRadius, fontSize, bell);
       dctx.restore();
     }
   }
@@ -5177,15 +5930,23 @@ Google Analytics is provided by Google. Their processing of data is governed by 
 
   function notationPrevPressed() {
     ui.notationFollow = false;
+    const prevPage = Number(ui.notationPage) || 0;
     // v08_p03_two_page_present_peek: in two-page mode, arrows turn the PRESENT page by one page.
     const delta = 1;
     ui.notationPage = (Number(ui.notationPage) || 0) - delta;
     if (ui.notationPage < 0) ui.notationPage = 0;
     syncNotationPagingUI();
+
+    // v09_p02_notation_arrow_redraw_fix: ensure arrow paging redraws immediately.
+    if ((Number(ui.notationPage) || 0) !== prevPage) {
+      markDirty();
+      if (!inLoopTick && (loopTimer != null || loopRAF != null)) kickLoop();
+    }
   }
 
   function notationNextPressed() {
     ui.notationFollow = false;
+    const prevPage = Number(ui.notationPage) || 0;
     const { lastLeft, lastPage } = getNotationPagingMeta();
     const onePage = (ui.notationLayout === 'one_page');
     // v08_p03_two_page_present_peek: in two-page mode, arrows turn the PRESENT page by one page.
@@ -5194,6 +5955,12 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     ui.notationPage = (Number(ui.notationPage) || 0) + delta;
     if (ui.notationPage > maxP) ui.notationPage = maxP;
     syncNotationPagingUI();
+
+    // v09_p02_notation_arrow_redraw_fix: ensure arrow paging redraws immediately.
+    if ((Number(ui.notationPage) || 0) !== prevPage) {
+      markDirty();
+      if (!inLoopTick && (loopTimer != null || loopRAF != null)) kickLoop();
+    }
   }
 
   function drawNotation() {
@@ -5431,6 +6198,9 @@ Google Analytics is provided by Google. Their processing of data is governed by 
 
           nctx.fillStyle = isActive ? (isLive ? '#ffffff' : '#c6cbe0') : (isLive ? '#dde8ff' : '#9aa2bb');
           nctx.fillText(bellToGlyph(bell), x, y);
+          if (accuracyDotsEnabledForPane('notation')) {
+            drawRowAccuracyOverlayUnderGlyph(nctx, x, y, colW, lineH, fs, rowIdx, p, false);
+          }
         }
       }
 
@@ -5601,6 +6371,9 @@ Google Analytics is provided by Google. Their processing of data is governed by 
 
           nctx.fillStyle = isActive ? (isLive ? '#ffffff' : '#c6cbe0') : (isLive ? '#dde8ff' : '#9aa2bb');
           nctx.fillText(bellToGlyph(bell), x, y);
+          if (accuracyDotsEnabledForPane('notation')) {
+            drawRowAccuracyOverlayUnderGlyph(nctx, x, y, colW, lineH, fs, rowIdx, p, false);
+          }
         }
       }
 
@@ -5688,6 +6461,9 @@ Google Analytics is provided by Google. Their processing of data is governed by 
             }
             nctx.fillStyle = isActive ? (isLive ? '#ffffff' : '#c6cbe0') : (isLive ? '#dde8ff' : 'rgba(154,162,187,0.92)');
             nctx.fillText(bellToGlyph(bell), x, y);
+            if (accuracyDotsEnabledForPane('notation')) {
+              drawRowAccuracyOverlayUnderGlyph(nctx, x, y, colW, lineH, fs, rowIdx, p, false);
+            }
           }
         }
 
@@ -6762,6 +7538,15 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     syncViewLayout();
   }));
 
+  // v09_p07b_notation_spotlight_accuracy_dots
+  [accuracyDotsEnabled, accuracyDotsDisplay, accuracyDotsNotation, accuracyDotsSpotlight].forEach(cb => {
+    if (!cb) return;
+    cb.addEventListener('change', () => {
+      markUserTouchedConfig();
+      syncAccuracyDotsPrefsFromUI();
+    });
+  });
+
   // Layout preset selector (persisted)
   if (layoutPresetSelect) {
     layoutPresetSelect.addEventListener('change', () => {
@@ -6918,6 +7703,30 @@ Google Analytics is provided by Google. Their processing of data is governed by 
         did = true;
         markUserTouchedConfig();
         saveBellVolOverridesToLS();
+      } else if (el.id.startsWith('bellKeyOverride_')) {
+        did = true;
+        markUserTouchedConfig();
+        ensureBellOverridesArrays();
+        const b = parseInt(el.id.slice('bellKeyOverride_'.length), 10) || 0;
+        if (b < 1 || b > 12) return;
+        const raw = String(el.value || '').trim();
+        if (!raw) state.bellKeyOverride[b] = null;
+        else if (raw !== 'custom_hz' && SCALE_LIBRARY.some(s => s.key === raw)) state.bellKeyOverride[b] = raw;
+        else state.bellKeyOverride[b] = null;
+        saveBellKeyOverridesToLS();
+      } else if (el.id.startsWith('bellOctOverride_')) {
+        did = true;
+        markUserTouchedConfig();
+        ensureBellOverridesArrays();
+        const b = parseInt(el.id.slice('bellOctOverride_'.length), 10) || 0;
+        if (b < 1 || b > 12) return;
+        const raw = String(el.value || '').trim();
+        if (!raw) state.bellOctaveOverride[b] = null;
+        else {
+          const v = parseInt(raw, 10);
+          state.bellOctaveOverride[b] = Number.isFinite(v) ? clamp(v, 1, 6) : null;
+        }
+        saveBellOctOverridesToLS();
       }
 
       if (did) {
@@ -6946,6 +7755,14 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       } else if (act === 'clearVol') {
         markUserTouchedConfig();
         clearBellVolOverride(b);
+        onBellTuningChanged();
+      } else if (act === 'clearKey') {
+        markUserTouchedConfig();
+        clearBellKeyOverride(b);
+        onBellTuningChanged();
+      } else if (act === 'clearOct') {
+        markUserTouchedConfig();
+        clearBellOctOverride(b);
         onBellTuningChanged();
       }
     });
@@ -7282,6 +8099,9 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     if (notationSwapsOverlay) notationSwapsOverlay.checked = state.notationSwapsOverlay;
     if (displayLiveOnly) displayLiveOnly.checked = state.displayLiveBellsOnly;
 
+    loadAccuracyDotsPrefs();
+    syncAccuracyDotsUI();
+
 
     syncSpotlightSwapRowTogglesUI();
     syncSpotlightRowPrefsFromUI();
@@ -7477,7 +8297,10 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       }
     });
 
-    window.addEventListener('resize', () => { markDirty(); });
+    window.addEventListener('resize', () => {
+      markDirty();
+      try { if (hamburgerIsOpen()) rgHamburgerPositionDropdownPortal(); } catch (_) {}
+    });
 
     syncGameHeaderMeta();
     renderScoringExplanation();

@@ -137,6 +137,63 @@ h1{
 }
 
 
+/* v09_p05_stop_current_run_modal */
+#rgStopRunModal{
+  position:fixed;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:18px;
+  background:rgba(0,0,0,0.55);
+  z-index:10050;
+}
+
+#rgStopRunModal .rg-stoprun-panel{
+  width:min(420px, 92vw);
+  max-height:min(72vh, 560px);
+  overflow:auto;
+  position:relative;
+}
+
+#rgStopRunModal .rg-stoprun-body{
+  padding:16px 16px 14px;
+}
+
+#rgStopRunModal .rg-stoprun-msg{
+  font-size:14px;
+  line-height:1.35;
+  color:var(--text);
+  padding-right:44px; /* keep text clear of the X */
+}
+
+#rgStopRunModal .rg-stoprun-actions{
+  display:flex;
+  justify-content:flex-end;
+  margin-top:14px;
+}
+
+#rgStopRunModalClose{
+  position:absolute;
+  top:10px;
+  right:10px;
+  width:34px;
+  height:34px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,0.12);
+  background:rgba(255,255,255,0.05);
+  color:var(--text);
+  cursor:pointer;
+  display:grid;
+  place-items:center;
+  font-size:18px;
+  line-height:1;
+}
+
+#rgStopRunModalClose:hover{ background:rgba(255,255,255,0.08); }
+#rgStopRunModalClose:active{ transform:translateY(1px); }
+
+
 #controls{
   display:flex;
   flex-wrap:wrap;
@@ -279,6 +336,7 @@ select option { background-color: #0b1026; color: #e8eeff; }
 }
 .pane-actions .toggle{ padding:4px 8px; font-size:12px; }
 .toggles--mini{ gap:6px; }
+.toggles--indent{ flex-basis:100%; margin-left:22px; margin-top:4px; }
 .pane canvas{
   display:block;
   width:100%;
@@ -391,9 +449,9 @@ select option { background-color: #0b1026; color: #e8eeff; }
 /* Menu hide toggle */
 .top-bar{ position:relative; }
 .menu-toggle{
-  position:absolute;
-  top:12px;
-  right:18px;
+  position:fixed;
+  top:calc(26px + env(safe-area-inset-top));
+  right:calc((100vw - min(1220px, 100vw)) / 2 + 32px + env(safe-area-inset-right));
   width:36px;
   height:36px;
   border-radius:12px;
@@ -403,11 +461,76 @@ select option { background-color: #0b1026; color: #e8eeff; }
   cursor:pointer;
   display:grid;
   place-items:center;
-  font-size:18px;
+  font-size:0;
   line-height:1;
+  z-index:200;
 }
 .menu-toggle:hover{ background:rgba(255,255,255,0.10); }
 .menu-toggle:active{ transform:translateY(1px); }
+
+.menu-toggle.is-open{
+  border-color:rgba(249,199,79,0.30);
+  background:rgba(249,199,79,0.12);
+}
+
+.menu-toggle-icon{
+  position:relative;
+  display:block;
+  width:18px;
+  height:2px;
+  border-radius:2px;
+  background:#e8eeff;
+}
+.menu-toggle-icon::before,
+.menu-toggle-icon::after{
+  content:"";
+  position:absolute;
+  left:0;
+  width:18px;
+  height:2px;
+  border-radius:2px;
+  background:#e8eeff;
+}
+.menu-toggle-icon::before{ top:-6px; }
+.menu-toggle-icon::after{ top:6px; }
+
+/* v09_p04b_hamburger_header_anchor: when hamburger is placed into a pane header row, anchor it in-flow */
+.pane-title .menu-toggle{
+  position:static;
+  top:auto;
+  right:auto;
+}
+
+/* v09_p04_unified_hamburger_nav: unified dropdown */
+.rg-hamburger-dropdown{
+  position:fixed;
+  top:calc(26px + env(safe-area-inset-top) + 36px + 10px);
+  right:calc((100vw - min(1220px, 100vw)) / 2 + 32px + env(safe-area-inset-right));
+  z-index:199;
+  min-width:176px;
+  padding:10px;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  background:rgba(5,8,20,0.92);
+  border:1px solid rgba(255,255,255,0.14);
+  border-radius:16px;
+  box-shadow:0 18px 60px rgba(0,0,0,0.55);
+  backdrop-filter:blur(10px);
+}
+.rg-hamburger-item{
+  width:100%;
+  text-align:left;
+  border:1px solid rgba(255,255,255,0.12);
+  background:rgba(255,255,255,0.05);
+  color:var(--text);
+  padding:9px 12px;
+  border-radius:12px;
+  cursor:pointer;
+  font-weight:700;
+}
+.rg-hamburger-item:hover{ background:rgba(255,255,255,0.08); }
+.rg-hamburger-item:active{ transform:translateY(1px); }
 
 .menu-hidden #controls .control:not(.control-buttons){
   display:none !important;
@@ -1181,6 +1304,7 @@ select option { background-color: #0b1026; color: #e8eeff; }
 .rg-bell-override-effective{ font-size:12px; color:rgba(232,238,255,0.88); }
 .rg-bell-override-group-controls{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
 .rg-bell-override-group-controls input{ flex:1 1 120px; min-width:120px; }
+.rg-bell-override-group-controls select{ flex:1 1 140px; min-width:140px; }
 
 .pill.rg-mini{ padding:6px 10px; font-size:12px; }
 
