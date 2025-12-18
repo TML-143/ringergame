@@ -75,7 +75,7 @@
   // === Analytics (GA4) ===
   const GA_MEASUREMENT_ID = 'G-7TEG531231';
   const GA_ID = GA_MEASUREMENT_ID;
-  const SITE_VERSION = 'v09_p09_p01_first_hit_window_fix';
+  const SITE_VERSION = 'v10_p02_play_scored_only_display_default';
 
   function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
   function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
@@ -1841,14 +1841,6 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       ensureLiveBells();
       rebuildBellPicker();
     } catch (_) {}
-
-    // View (Line): also show the line for bell 2 (demo-default only)
-    try {
-      state.pathBells = [1, 2];
-      ensurePathBells();
-      rebuildPathPicker();
-    } catch (_) {}
-
     // Re-sync view UI (no persistence)
     try { syncSpotlightSwapRowTogglesUI(); } catch (_) {}
     try { syncViewMenuSelectedUI(); } catch (_) {}
@@ -8131,6 +8123,10 @@ Google Analytics is provided by Google. Their processing of data is governed by 
 
     mountMenuControls();
 
+    // v10_p01_polish_defaults_privacy_home_buttons: pristine means no prior localStorage.
+    const pristineLS = (() => { try { return (localStorage.length === 0); } catch (_) { return true; } })();
+
+
     // Play defaults (non-persisted)
     state.method = 'plainhunt';
     if (methodSelect) methodSelect.value = 'plainhunt';
@@ -8141,13 +8137,21 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     state.stage = 6;
     if (bellCountSelect) bellCountSelect.value = '6';
 
-    state.liveCount = 1;
-    state.liveBells = [1];
+    state.liveCount = pristineLS ? 2 : 1;
+    state.liveBells = pristineLS ? [1, 2] : [1];
 
     state.bpm = 120;
     if (bpmInput) bpmInput.value = String(state.bpm);
 
     loadKeyBindings();
+
+    // v10_p01_polish_defaults_privacy_home_buttons: pristine Play key defaults
+    // Space rings bell 1; Enter rings bell 2 (only when no saved keybinds exist).
+    if (pristineLS && safeGetLS(LS_KEYBINDS) == null) {
+      state.keyBindings[1] = 'Space';
+      state.keyBindings[2] = 'Enter';
+    }
+
 
     // swaps view settings (persisted)
     state.spotlightSwapsView = safeGetBoolLS(LS_SPOTLIGHT_SWAPS_VIEW, true);
@@ -8157,7 +8161,11 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     state.spotlightShowN1 = safeGetBoolLS(LS_SPOTLIGHT_SHOW_N1, true);
     state.spotlightShowN2 = safeGetBoolLS(LS_SPOTLIGHT_SHOW_N2, true);
     state.notationSwapsOverlay = safeGetBoolLS(LS_NOTATION_SWAPS_OVERLAY, true);
-    state.displayLiveBellsOnly = safeGetBoolLS(LS_DISPLAY_LIVE_BELLS_ONLY, isMobileLikely());
+    // v10_p02_play_scored_only_display_default: In Play, default to "Display scored bell(s) only" when no saved preference exists.
+    // Do NOT overwrite an existing localStorage preference.
+    state.displayLiveBellsOnly = (safeGetLS(LS_DISPLAY_LIVE_BELLS_ONLY) == null)
+      ? true
+      : safeGetBoolLS(LS_DISPLAY_LIVE_BELLS_ONLY, isMobileLikely());
 
     loadMicPrefs();
 
@@ -8171,6 +8179,9 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     if (spotlightShowN2) spotlightShowN2.checked = state.spotlightShowN2;
     if (notationSwapsOverlay) notationSwapsOverlay.checked = state.notationSwapsOverlay;
     if (displayLiveOnly) displayLiveOnly.checked = state.displayLiveBellsOnly;
+
+    // v10_p01_polish_defaults_privacy_home_buttons: pristine default keeps Spotlight accuracy dots OFF.
+    if (pristineLS && safeGetLS(LS_ACCURACY_DOTS) == null) state.accuracyDotsSpotlight = false;
 
     loadAccuracyDotsPrefs();
     syncAccuracyDotsUI();
@@ -8306,8 +8317,8 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     ensureLiveBells();
     rebuildBellPicker();
 
-    // View default: line (blue line) = bell 1
-    state.pathBells = [1];
+    // View default: line (blue line) = none on pristine sessions
+    state.pathBells = pristineLS ? [] : [1];
     rebuildPathPicker();
 
     computeRows();

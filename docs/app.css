@@ -1312,3 +1312,14 @@ select option { background-color: #0b1026; color: #e8eeff; }
   .rg-bell-override-row{ grid-template-columns:40px 1fr; padding:10px; }
   .rg-bell-override-group{ min-width:180px; }
 }
+
+
+/* v10_p01_polish_defaults_privacy_home_buttons: Home button readability */
+#screenHome .rg-home .pill{
+  font-size:18px;
+  font-weight:700;
+  line-height:1.15;
+}
+#screenHome .rg-home-menu .pill{padding:12px 14px;}
+#screenHome .rg-home-bottom .pill{padding:12px 18px;}
+
