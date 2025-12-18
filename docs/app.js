@@ -75,7 +75,7 @@
   // === Analytics (GA4) ===
   const GA_MEASUREMENT_ID = 'G-7TEG531231';
   const GA_ID = GA_MEASUREMENT_ID;
-  const SITE_VERSION = 'v09_p07c_notation_spotlight_persistent_accuracy';
+  const SITE_VERSION = 'v09_p09_p01_first_hit_window_fix';
 
   function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
   function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
@@ -2189,6 +2189,11 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     droneVolume: 50, // 0..100
     dronePaused: false, // Prompt 7: mute/unmute drone without stopping
 
+    // v09_p08p_background_policy_and_drone_ownership
+    // Internal-only lifecycle wiring (no UI yet)
+    droneOwner: 'run',           // 'run' | 'meditation'
+    meditationActive: false,     // placeholder for future Meditation
+
 
     bellFreq: [],
 
@@ -2324,15 +2329,28 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     wakeLockSentinel = null;
   }
 
+  function isActiveRunForWakeLock() {
+    // Wake-lock is for active attention only (Play/Demo countdown or running).
+    return (state.phase === 'countdown' || state.phase === 'running');
+  }
+
+  function syncWakeLockForRun() {
+    // Best effort: browsers release wake locks while hidden.
+    if (document.hidden || !isActiveRunForWakeLock()) {
+      releaseWakeLock();
+    } else {
+      requestWakeLock();
+    }
+  }
+
   function demoEffectiveHorizonMs() {
     const bpm = Math.max(1, Number(state.bpm) || 1);
     const beatMs = 60000 / bpm;
-    let baseHorizonMs;
-    if (document.hidden) {
-      baseHorizonMs = (bpm <= DEMO_LOW_BPM_THRESHOLD) ? DEMO_LOW_BPM_AHEAD_MS : DEMO_HIDDEN_AHEAD_MS;
-    } else {
-      baseHorizonMs = DEMO_VISIBLE_AHEAD_MS;
-    }
+    // Interactive-only policy: keep scheduling modest. Demo may tolerate a bit more
+    // lookahead while hidden on desktop to reduce background-tab timer throttling,
+    // but we do not pre-schedule long runs to survive device lock / sleep.
+    let baseHorizonMs = Math.max(LOOKAHEAD_MS, getMaintenanceIntervalMs());
+    if (document.hidden && !isMobileLikely()) baseHorizonMs = Math.max(baseHorizonMs, 2500);
     const capMs = beatMs * DEMO_MAX_AHEAD_STRIKES;
     return Math.min(baseHorizonMs, capMs);
   }
@@ -2372,10 +2390,13 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   }
   function closeAudio() {
     if (audioCtx) {
-      // Keep the shared AudioContext alive while mic capture, drone, or a demo run is active.
-      if (state.phase !== 'idle' && state.mode === 'demo') return;
-      if (state.micActive) return;
+      // v09_p08p_background_policy_and_drone_ownership:
+      // Keep the shared AudioContext alive while any background-capable audio is active.
+      // (Drone, Mic, future Meditation). Do not close during an active run.
+      if (state.phase !== 'idle') return;
+      if (state.meditationActive) return;
       if (state.droneOn) return;
+      if (state.micEnabled || state.micActive) return;
       try { audioCtx.close(); } catch (_) {}
       audioCtx = null;
       bellMasterGain = null;
@@ -4966,10 +4987,13 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   // === Bell ring action (user) ===
   function ringBell(bell) {
     const now = perfNow();
-    releaseWakeLock();
+    syncWakeLockForRun();
     markRung(bell, now);
     playBellAt(bell, now);
-    if (state.mode === 'play' && state.phase === 'running') scoreHit(bell, now);
+    // v09_p09_p01_first_hit_window_fix: during the countdown→running boundary,
+    // the first scoring window can begin before state.phase flips to 'running'.
+    // Let scoreHit decide eligibility based on the timing reference.
+    if (state.mode === 'play' && (state.phase === 'running' || state.phase === 'countdown')) scoreHit(bell, now);
     if (state.phase === 'idle') kickLoop();
   }
 
@@ -5130,11 +5154,19 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   }
 
   function scoreHit(bell, timeMs) {
-    if (state.phase !== 'running') return;
-    if (!state.liveBells.includes(bell)) return;
-
     const beatMs = 60000 / state.bpm;
     const halfBeat = beatMs / 2;
+
+    // v09_p09_p01_first_hit_window_fix:
+    // The first scoring window opens at (methodStartMs - halfBeat), but state.phase
+    // flips from 'countdown' to 'running' exactly at methodStartMs. If the player
+    // strikes during that early half-window (or right at the boundary before the
+    // loop advances phase), the hit must be judged like later windows.
+    if (state.phase !== 'running') {
+      if (state.phase !== 'countdown') return;
+      if (timeMs < (state.methodStartMs - halfBeat)) return;
+    }
+    if (!state.liveBells.includes(bell)) return;
 
     // Only the first ring for this bell within the current row counts (hit or miss).
     const rel = timeMs - (state.methodStartMs - halfBeat);
@@ -6030,7 +6062,17 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     const pageBStart = ((Number(ui.notationPage) || 0) + 1) * pageSize;
 
     // v08_p03_two_page_present_peek: in two-page layout, keep the highlight/cursor on the PRESENT (left) page only.
-    const highlightRowIdx = onePage ? activeRowIdx : (ui.notationFollow ? activeRowIdx : pageAStart);
+    // v09_p07d_notation_cursor_wrap_fix: in single-page mode, keep the cursor confined to the active rows
+    // (exclude the peek strip) by wrapping within the visible main rows when follow-mode is off.
+    const highlightRowIdx = (() => {
+      if (!onePage) return (ui.notationFollow ? activeRowIdx : pageAStart);
+      if (ui.notationFollow) return activeRowIdx;
+      const maxRows = Math.max(1, Math.min(pageSize, rows.length - pageAStart));
+      let d = activeRowIdx - pageAStart;
+      if (!isFinite(d)) d = 0;
+      d = ((d % maxRows) + maxRows) % maxRows;
+      return pageAStart + d;
+    })();
 
     const bellsForPath = state.pathBells.slice().sort((a,b)=>a-b);
     const liveSet = new Set(state.liveBells);
@@ -6691,7 +6733,6 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     ui.hasRunStartedThisSession = true;
 
     state.mode = (mode === 'demo') ? 'demo' : 'play';
-    requestWakeLock();
 
     state.keybindCaptureBell = null;
     rebuildKeybindPanel();
@@ -6715,6 +6756,14 @@ Google Analytics is provided by Google. Their processing of data is governed by 
 
     if (state.mode === 'demo') stopMicCapture();
     ensureAudio();
+    // v09_p08p_background_policy_and_drone_ownership:
+    // If the drone is currently owned by the run, ensure it is audible during active Play/Demo.
+    if (state.droneOwner === 'run' && state.droneOn) {
+      state.dronePaused = false;
+      if (!droneCurrent) { try { startDrone(); } catch (_) {} }
+      applyDroneMasterGain();
+      syncDronePauseBtnUI();
+    }
     if (state.mode === 'play' && state.micEnabled && !state.micActive && getMicControlledBells().length) startMicCapture();
 
     const now = perfNow();
@@ -6745,6 +6794,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     }
     stopBtn.disabled = false;
     if (demoBtn) demoBtn.disabled = true;
+    syncWakeLockForRun();
     markDirty();
     kickLoop();
   }
@@ -6863,6 +6913,16 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       state.currentPlay = null;
     }
 
+    // v09_p08p_background_policy_and_drone_ownership:
+    // If the drone is owned by the run, end it with the run. Meditation-owned drone persists.
+    if (state.droneOwner === 'run' && state.droneOn) {
+      state.dronePaused = true;
+      applyDroneMasterGain();
+      syncDronePauseBtnUI();
+    }
+
+    syncWakeLockForRun();
+
     closeAudio();
     state.mode = 'play';
 
@@ -6905,6 +6965,9 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       state.pauseAtMs = 0;
       if (pauseBtn) pauseBtn.textContent = 'Pause';
 
+      // Wake lock is only held while actively running/countdown.
+      syncWakeLockForRun();
+
       syncGameHeaderMeta();
       markDirty();
       kickLoop();
@@ -6921,6 +6984,9 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     }
 
     state.phase = 'paused';
+
+    // Wake lock is only held while actively running/countdown.
+    syncWakeLockForRun();
 
     // Stop auto-ringing immediately by canceling already-scheduled future strikes.
     cancelScheduledBellAudioNow();
@@ -7031,7 +7097,9 @@ Google Analytics is provided by Google. Their processing of data is governed by 
 
     function scheduleMethod(nowMs) {
     if (state.phase === 'paused') return;
-    if (state.phase !== 'running' && !(state.mode === 'demo' && state.phase === 'countdown')) return;
+    // v09_p09_p01_first_hit_window_fix: allow scheduling to start during countdown
+    // so the first method strike is scheduled on the same time reference as later strikes.
+    if (state.phase !== 'running' && state.phase !== 'countdown') return;
     const beatMs = 60000 / state.bpm;
     const totalBeats = state.rows.length * state.stage;
     const liveSet = new Set(state.liveBells);
@@ -7077,6 +7145,11 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   function loop() {
     const nowMs = perfNow();
     inLoopTick = true;
+
+    // Reacquire wake lock if the browser/OS released it while a run is still active.
+    if (!wakeLockSentinel && !document.hidden && isActiveRunForWakeLock()) {
+      requestWakeLock();
+    }
 
     // === Maintenance tick (logic + audio scheduling only) ===
     const prevExecBeatIndex = state.execBeatIndex;
@@ -8256,42 +8329,16 @@ Google Analytics is provided by Google. Their processing of data is governed by 
 
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
-        releaseWakeLock();
-        if (state.phase !== 'idle') {
-          if (state.mode === 'play') {
-            stopPressed('sleep');
-          } else if (state.mode === 'demo') {
-            const nowMs = perfNow();
-            scheduleCountdown(nowMs);
-
-            const beatMs = 60000 / state.bpm;
-            const horizonMs = demoEffectiveHorizonMs();
-            const totalBeats = state.rows.length * state.stage;
-
-            let passes = 0;
-            const maxPasses = Math.ceil(DEMO_MAX_AHEAD_STRIKES / DEMO_SCHED_MAX_PER_PASS) + 4;
-            while (passes < maxPasses) {
-              const before = state.schedBeatIndex;
-              scheduleMethod(nowMs);
-              passes += 1;
-
-              if (state.schedBeatIndex === before) break;
-              if (state.schedBeatIndex >= totalBeats) break;
-
-              const nextT = state.methodStartMs + state.schedBeatIndex * beatMs;
-              if (nextT > nowMs + horizonMs) break;
-            }
-          }
-        }
+        // Interactive-only: do not auto-stop runs on desktop tab switches.
+        // Browsers may release wake locks while hidden; we re-request on return.
+        syncWakeLockForRun();
       } else {
-        if (state.phase !== 'idle') {
-          requestWakeLock();
-          if (state.mode === 'demo') {
-            const nowMs = perfNow();
-            resyncDemoToNow(nowMs);
-            scheduleCountdown(nowMs);
-            scheduleMethod(nowMs);
-          }
+        syncWakeLockForRun();
+        if (state.phase !== 'idle' && state.mode === 'demo') {
+          const nowMs = perfNow();
+          resyncDemoToNow(nowMs);
+          scheduleCountdown(nowMs);
+          scheduleMethod(nowMs);
         }
         markDirty();
       }
