@@ -75,7 +75,7 @@
   // === Analytics (GA4) ===
   const GA_MEASUREMENT_ID = 'G-7TEG531231';
   const GA_ID = GA_MEASUREMENT_ID;
-  const SITE_VERSION = 'v10_p02_play_scored_only_display_default';
+  const SITE_VERSION = 'v10_p09_sound_per_bell_chords_overrides';
 
   function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
   function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
@@ -115,10 +115,15 @@ Local gameplay data
 Gameplay statistics and preferences may be stored in your browser (for example, via localStorage) so the game can remember settings and show your performance stats. This data stays on your device.
 
 Your choice
-Audience measurement is off by default. You can enable or disable it at any time from the Privacy page. When disabled, Google Analytics is not loaded.
+Audience measurement is off by default. You can enable or disable it at any time from the Privacy page. When Audience measurement is turned off, analytics is stopped immediately. A page refresh ensures it is not loaded at all.
+
+CCCBR method library (optional)
+From Setup, you can optionally choose to download a method library from CCCBR. If you do, your browser will request data from CCCBR-hosted resources. CCCBR is a third party; their handling of data is governed by their terms. Ringer Game does not claim ownership of CCCBR content. See: https://www.cccbr.org.uk/
 
 Third party
-Google Analytics is provided by Google. Their processing of data is governed by Google’s own privacy terms.`;
+Google Analytics is provided by Google. Their processing of data is governed by Google’s own privacy terms.
+
+Contact: ringergame143@gmail.com`;
 
 
   function getAudienceConsent() {
@@ -135,6 +140,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
         // Side effects: GA is strictly opt-in and only ever records screen/page views.
         showConsentBanner(false);
         if (v === '1') {
+          gaNeedsRefreshNotice = false;
           try { window[gaDisableFlagKey()] = false; } catch (_) {}
           try { loadGA4IfConsented(); } catch (_) {}
           try { analytics.configure(); } catch (_) {}
@@ -144,7 +150,10 @@ Google Analytics is provided by Google. Their processing of data is governed by 
           // Stop sending hits best-effort, and clear GA cookies if present.
           try { window[gaDisableFlagKey()] = true; } catch (_) {}
           cleanupGACookiesBestEffort();
+          if (gaLoadedThisSession) gaNeedsRefreshNotice = true;
         }
+
+        try { syncPrivacyRefreshNoticeUI(); } catch (_) {}
 
         return v;
       }
@@ -153,6 +162,9 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   let gaInjected = false;
   let gaConfigured = false;
   let gaScriptEl = null;
+  // Session-only flags: in-memory (cleared on refresh)
+  let gaLoadedThisSession = false;       // becomes true only after the gtag.js script actually loads
+  let gaNeedsRefreshNotice = false;      // show opt-out refresh notice until refresh or re-enable
 
   function gaDisableFlagKey() { return 'ga-disable-' + GA_ID; }
 
@@ -172,6 +184,12 @@ Google Analytics is provided by Google. Their processing of data is governed by 
         gaScriptEl = document.createElement('script');
         gaScriptEl.async = true;
         gaScriptEl.src = 'https://www.googletagmanager.com/gtag/js?id=' + GA_ID;
+        gaScriptEl.onload = function () {
+          gaLoadedThisSession = true;
+          // If the user opted out during a slow load, keep the refresh notice available.
+          if (!isAudienceMeasurementEnabled()) gaNeedsRefreshNotice = true;
+          try { syncPrivacyRefreshNoticeUI(); } catch (_) {}
+        };
         document.head.appendChild(gaScriptEl);
         gaInjected = true;
       } catch (_) {}
@@ -187,7 +205,10 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       try {
         window.gtag('config', GA_ID, {
           allow_google_signals: false,
-          allow_ad_personalization_signals: false
+          allow_ad_personalization_signals: false,
+          send_page_view: false,
+          cookie_expires: 0,
+          cookie_update: false
         });
       } catch (_) {}
       gaConfigured = true;
@@ -346,6 +367,19 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   // v08_p05_sound_per_bell_overrides (Sound menu per-bell editor)
   const bellOverridesResetBtn = document.getElementById('bellOverridesResetBtn');
   const bellOverridesList = document.getElementById('bellOverridesList');
+  // v10_p04_sound_quick_bell_row
+  const soundQuickBellRow = document.getElementById('soundQuickBellRow');
+
+  // v10_p08_sound_global_chords_splitstrike (Sound menu global chord controls)
+  const globalChordOnOffBtn = document.getElementById('globalChordOnOffBtn');
+  const globalChordPresetSelect = document.getElementById('globalChordPresetSelect');
+  const globalChordSplitSelect = document.getElementById('globalChordSplitSelect');
+  const globalChordInversionSelect = document.getElementById('globalChordInversionSelect');
+  const globalChordSpreadSelect = document.getElementById('globalChordSpreadSelect');
+  const globalChordSplitStepControl = document.getElementById('globalChordSplitStepControl');
+  const globalChordSplitMaxControl = document.getElementById('globalChordSplitMaxControl');
+  const globalChordStepMs = document.getElementById('globalChordStepMs');
+  const globalChordMaxMs = document.getElementById('globalChordMaxMs');
 
   const bellCustomHzInput = document.getElementById('bellCustomHzInput');
   const bellCustomHzSlider = document.getElementById('bellCustomHzSlider');
@@ -358,6 +392,13 @@ Google Analytics is provided by Google. Their processing of data is governed by 
 
   const droneCustomHzInput = document.getElementById('droneCustomHzInput');
   const droneCustomHzSlider = document.getElementById('droneCustomHzSlider');
+
+  // v10_p05_sound_per_bell_hz_slider_preview: per-bell Hz slider range (prefer reusing drone root Hz slider semantics)
+  const PER_BELL_HZ_SLIDER_REF = droneCustomHzSlider || bellCustomHzSlider;
+  const PER_BELL_HZ_SLIDER_MIN = Number((PER_BELL_HZ_SLIDER_REF && PER_BELL_HZ_SLIDER_REF.min) || 20);
+  const PER_BELL_HZ_SLIDER_MAX = Math.max(Number((PER_BELL_HZ_SLIDER_REF && PER_BELL_HZ_SLIDER_REF.max) || 4000), 5000);
+  // Match the per-bell Hz text input precision so slider + input stay in sync.
+  const PER_BELL_HZ_SLIDER_STEP = 0.01;
 
   const liveCountSelect = document.getElementById('liveCount');
   const bellPicker = document.getElementById('bellPicker');
@@ -679,6 +720,13 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     spotlightDragPointerId: null,
     spotlightDragLastKey: null,
 
+    // v10_p04_sound_quick_bell_row
+    soundQuickRowDragActive: false,
+    soundQuickRowDragPointerId: null,
+    soundQuickRowDragLastBell: null,
+    soundQuickRowActiveEl: null,
+    soundQuickRowIgnoreClickUntilMs: 0,
+
     // v06_p12d_library_browser
     libraryIndex: null,
     librarySelectedIdx: null,
@@ -705,6 +753,14 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     const n = String(name || '').toLowerCase();
     const next = (n === 'home' || n === 'play' || n === 'view' || n === 'sound' || n === 'library' || n === 'game' || n === 'privacy') ? n : 'home';
 
+    // v10_p05_sound_per_bell_hz_slider_preview: safety stop for any ongoing continuous Hz preview when leaving Sound.
+    try {
+      if (ui && ui.screen === 'sound' && next !== 'sound') {
+        cancelHzSliderPreviewGesture();
+        stopHzPreviewTone();
+      }
+    } catch (_) {}
+
     const screens = { home: screenHome, play: screenPlay, view: screenView, sound: screenSound, library: screenLibrary, game: screenGame, privacy: screenPrivacy };
     for (const k in screens) {
       const el = screens[k];
@@ -723,6 +779,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
 
     if (next === 'privacy') {
       syncAudienceConsentUI();
+      syncPrivacyRefreshNoticeUI();
     }
 
     if (next === 'view') {
@@ -732,6 +789,11 @@ Google Analytics is provided by Google. Their processing of data is governed by 
 
     if (next === 'library') {
       syncLibraryScreenUI();
+    }
+
+    if (next === 'sound') {
+      // v10_p04_sound_quick_bell_row: stage-sized test row updates when revisiting Sound.
+      try { rebuildSoundQuickBellRow(); } catch (_) {}
     }
 
     if (next === 'game') {
@@ -2039,6 +2101,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   const accuracyDotsSpotlight = document.getElementById('accuracyDotsSpotlight');
   // v07_p02_privacy_footer_policy_friendly_banner
   const privacyAudienceCheckbox = document.getElementById('privacyAudienceCheckbox');
+  const privacyRefreshNotice = document.getElementById('privacyRefreshNotice');
   const privacyPolicyPre = document.getElementById('privacyPolicyPre');
   const footerPrivacyLink = document.getElementById('footerPrivacyLink');
 
@@ -2091,6 +2154,12 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   // v09_p06_sound_per_bell_key_register localStorage keys
   const LS_BELL_KEY_OVERRIDE = 'rg_bell_key_override_v1';
   const LS_BELL_OCT_OVERRIDE = 'rg_bell_oct_override_v1';
+
+  // v10_p08_sound_global_chords_splitstrike localStorage key
+  const LS_GLOBAL_CHORD = 'rg_global_chord_v1';
+
+  // v10_p09_sound_per_bell_chords_overrides localStorage key
+  const LS_BELL_CHORD_OVERRIDES = 'rg_bell_chord_overrides_v1';
 
   // v08_p07_drone_on_off_button localStorage key
   const LS_DRONE_ON = 'rg_drone_on_v1';
@@ -2196,6 +2265,18 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     // v09_p06_sound_per_bell_key_register
     bellKeyOverride: new Array(13).fill(null),
     bellOctaveOverride: new Array(13).fill(null),
+
+    // v10_p08_sound_global_chords_splitstrike
+    globalChord: {
+      enabled: false,
+      size: 'single',
+      preset: 'unison',
+      inversion: 'root',
+      spread: 'close',
+      splitStrike: 'simultaneous',
+      stepMs: 6,
+      maxMs: 12,
+    },
 
     pathBells: [1],
     rows: [],
@@ -2389,6 +2470,9 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       if (state.meditationActive) return;
       if (state.droneOn) return;
       if (state.micEnabled || state.micActive) return;
+      // v10_p05_sound_per_bell_hz_slider_preview: ensure any preview oscillator is stopped before closing.
+      try { cancelHzSliderPreviewGesture(); } catch (_) {}
+      try { stopHzPreviewTone(); } catch (_) {}
       try { audioCtx.close(); } catch (_) {}
       audioCtx = null;
       bellMasterGain = null;
@@ -2463,21 +2547,308 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     return getBellHz(bell);
   }
 
-  function playBellAt(bell, whenMs) {
+  // v10_p08_sound_global_chords_splitstrike: Global chord config + helpers
+  const GLOBAL_CHORD_PRESETS = {
+    unison: [0],
+    octave: [0, 12],
+    fifth: [0, 7],
+    power: [0, 7, 12],
+    major: [0, 4, 7],
+    minor: [0, 3, 7],
+    sus2: [0, 2, 7],
+    sus4: [0, 5, 7],
+    maj7: [0, 4, 7, 11],
+    min7: [0, 3, 7, 10],
+    // v10_p09_sound_per_bell_chords_overrides: 5-tone partial stack (allow 5 voices when selected)
+    bell_partials5: [-12, 0, 3, 7, 12],
+  };
+  const GLOBAL_CHORD_PRESET_ORDER = ['unison','octave','fifth','power','major','minor','sus2','sus4','maj7','min7','bell_partials5'];
+  const GLOBAL_CHORD_INVERSION_ORDER = ['root','first','second','third'];
+  const GLOBAL_CHORD_SPREAD_ORDER = ['close','open'];
+  const GLOBAL_CHORD_SPLIT_ORDER = ['simultaneous','belllike'];
+
+  function chordPresetLabel(k) {
+    const LABEL = {
+      unison: 'Unison (root)',
+      octave: 'Octave (0, +12)',
+      fifth: 'Fifth (0, +7)',
+      power: 'Power (0, +7, +12)',
+      major: 'Major (0, +4, +7)',
+      minor: 'Minor (0, +3, +7)',
+      sus2: 'Sus2 (0, +2, +7)',
+      sus4: 'Sus4 (0, +5, +7)',
+      maj7: 'Maj7 (0, +4, +7, +11)',
+      min7: 'Min7 (0, +3, +7, +10)',
+      bell_partials5: 'Bell partials (5) (-12, 0, +3, +7, +12)',
+    };
+    const kk = String(k || '').trim();
+    return LABEL[kk] || kk;
+  }
+
+  function chordVoiceCapForPreset(preset) {
+    const p = String(preset || '').trim();
+    // Preferred approach: allow 5 tones only for the 5-tone partial preset; keep the legacy cap of 4 otherwise.
+    if (p === 'bell_partials5') return 5;
+    return 4;
+  }
+
+  function globalChordDefaults() {
+    return {
+      enabled: false,
+      size: 'single',
+      preset: 'unison',
+      inversion: 'root',
+      spread: 'close',
+      splitStrike: 'simultaneous',
+      stepMs: 6,
+      maxMs: 12,
+    };
+  }
+
+  function globalChordSizeFromPreset(preset) {
+    const k = String(preset || '').toLowerCase();
+    if (k === 'octave' || k === 'fifth') return 'dyad';
+    if (k === 'power' || k === 'major' || k === 'minor' || k === 'sus2' || k === 'sus4') return 'triad';
+    if (k === 'maj7' || k === 'min7') return 'tetrad';
+    if (k === 'bell_partials5') return 'pentad';
+    return 'single';
+  }
+
+  function sanitizeGlobalChordConfig(raw) {
+    const d = globalChordDefaults();
+    const out = Object.assign({}, d);
+
+    if (raw && typeof raw === 'object') {
+      const en = raw.enabled;
+      if (typeof en === 'boolean') out.enabled = en;
+      else if (en === 1 || en === '1' || en === 'true' || en === 'on') out.enabled = true;
+      else if (en === 0 || en === '0' || en === 'false' || en === 'off') out.enabled = false;
+
+      const p = String(raw.preset || raw.quality || raw.qualityPreset || raw.chord || '').trim();
+      if (p && GLOBAL_CHORD_PRESETS[p]) out.preset = p;
+
+      const inv = String(raw.inversion || '').trim();
+      if (inv && GLOBAL_CHORD_INVERSION_ORDER.includes(inv)) out.inversion = inv;
+
+      const sp = String(raw.spread || '').trim();
+      if (sp && GLOBAL_CHORD_SPREAD_ORDER.includes(sp)) out.spread = sp;
+
+      const ss = String(raw.splitStrike || raw.split || '').trim();
+      if (ss && GLOBAL_CHORD_SPLIT_ORDER.includes(ss)) out.splitStrike = ss;
+
+      const st = parseFloat(raw.stepMs);
+      if (Number.isFinite(st)) out.stepMs = clamp(Math.round(st), 0, 15);
+      const mx = parseFloat(raw.maxMs);
+      if (Number.isFinite(mx)) out.maxMs = clamp(Math.round(mx), 0, 18);
+    }
+
+    // Keep size in sync with preset so preset selection always produces the expected chord.
+    out.size = globalChordSizeFromPreset(out.preset);
+
+    // Inversion is only meaningful for triads/tetrads; clamp to root otherwise.
+    if (out.size === 'single' || out.size === 'dyad') out.inversion = 'root';
+
+    // Defensive clamping (in case callers mutated fields directly).
+    out.stepMs = clamp(Math.round(Number(out.stepMs) || d.stepMs), 0, 15);
+    out.maxMs = clamp(Math.round(Number(out.maxMs) || d.maxMs), 0, 18);
+
+    return out;
+  }
+
+  function loadGlobalChordFromLS() {
+    const raw = safeJsonParse(safeGetLS(LS_GLOBAL_CHORD) || '');
+    return sanitizeGlobalChordConfig(raw);
+  }
+
+  function saveGlobalChordToLS() {
+    if (!state.globalChord) return;
+    safeSetLS(LS_GLOBAL_CHORD, JSON.stringify(sanitizeGlobalChordConfig(state.globalChord)));
+  }
+
+  function deriveGlobalChordSemitones(cfg) {
+    const c = cfg || state.globalChord;
+    if (!c || !c.enabled) return [0];
+    const preset = (c.preset && GLOBAL_CHORD_PRESETS[c.preset]) ? c.preset : 'unison';
+    const cap = Math.min(6, chordVoiceCapForPreset(preset));
+    let semis = (GLOBAL_CHORD_PRESETS[preset] || [0]).slice(0, cap);
+
+    // Apply inversion + spread only when they can matter.
+    if (semis.length >= 3) {
+      const inv = String(c.inversion || 'root');
+      let shift = (inv === 'first') ? 1 : (inv === 'second') ? 2 : (inv === 'third') ? 3 : 0;
+      shift = clamp(shift, 0, semis.length - 1);
+      if (shift > 0) {
+        semis = semis.slice();
+        for (let i = 0; i < shift; i++) semis[i] += 12;
+      }
+
+      const spread = String(c.spread || 'close');
+      if (spread === 'open') {
+        // Simple open voicing: push the second-lowest chord tone up an octave.
+        semis = semis.slice();
+        semis[1] += 12;
+      }
+      semis.sort((a, b) => a - b);
+    }
+
+    // Cap voices (safety)
+    if (semis.length > cap) semis = semis.slice(0, cap);
+    return semis;
+  }
+
+  function deriveGlobalChordOffsetsMs(cfg, n) {
+    const c = cfg || state.globalChord;
+    const N = clamp(parseInt(n, 10) || 1, 1, 6);
+    const out = new Array(N);
+
+    const mode = c ? String(c.splitStrike || 'simultaneous') : 'simultaneous';
+    if (mode === 'belllike') {
+      const step = clamp(parseInt(String(c.stepMs), 10) || 0, 0, 15);
+      const max = clamp(parseInt(String(c.maxMs), 10) || 0, 0, 18);
+      for (let i = 0; i < N; i++) out[i] = (i === 0) ? 0 : Math.min(i * step, max);
+    } else {
+      for (let i = 0; i < N; i++) out[i] = 0;
+    }
+    out[0] = 0;
+    return out;
+  }
+
+  // v10_p09_sound_per_bell_chords_overrides: per-bell chord override resolution + derivation
+  function resolveBellChordOverrideForStrike(bell) {
+    const b = clamp(parseInt(bell, 10) || 0, 1, 12);
+    ensureBellChordOverridesArray();
+    const cfg = sanitizeBellChordOverride(state.bellChordOverrides[b] || bellChordOverrideDefaults());
+    state.bellChordOverrides[b] = cfg;
+    if (cfg.mode !== 'override' || !cfg.enabled) return null;
+
+    const g = state.globalChord ? sanitizeGlobalChordConfig(state.globalChord) : globalChordDefaults();
+
+    // Split-strike: per-bell can inherit global, or override to simultaneous/bell-like.
+    const sm = String(cfg.splitStrikeMode || 'inherit');
+    let splitStrike = 'simultaneous';
+    let stepMs = 6;
+    let maxMs = 12;
+    let customSplitOffsets = null;
+
+    if (sm === 'inherit') {
+      splitStrike = String((g && g.splitStrike) || 'simultaneous');
+      stepMs = clamp(parseInt(String(g && g.stepMs), 10) || 0, 0, 15);
+      maxMs = clamp(parseInt(String(g && g.maxMs), 10) || 0, 0, 18);
+      // Custom split offsets are only applied when the bell explicitly overrides split-strike.
+      customSplitOffsets = null;
+    } else if (sm === 'belllike') {
+      splitStrike = 'belllike';
+      stepMs = clamp(parseInt(String(cfg.splitStepMs), 10) || 0, 0, 15);
+      maxMs = clamp(parseInt(String(cfg.splitMaxMs), 10) || 0, 0, 18);
+      customSplitOffsets = (cfg._splitOffsets && cfg._splitOffsets.length) ? cfg._splitOffsets.slice(0, 6) : null;
+    } else {
+      splitStrike = 'simultaneous';
+    }
+
+    return {
+      enabled: true,
+      preset: (cfg.preset && GLOBAL_CHORD_PRESETS[cfg.preset]) ? String(cfg.preset) : 'unison',
+      inversion: GLOBAL_CHORD_INVERSION_ORDER.includes(String(cfg.inversion || 'root')) ? String(cfg.inversion) : 'root',
+      spread: GLOBAL_CHORD_SPREAD_ORDER.includes(String(cfg.spread || 'close')) ? String(cfg.spread) : 'close',
+      splitStrike,
+      stepMs,
+      maxMs,
+      // Interval precedence: custom intervals override preset-derived semitones.
+      customIntervals: (cfg._intervals && cfg._intervals.length) ? cfg._intervals.slice(0, 6) : null,
+      customSplitOffsets,
+      detune: (cfg._detune && cfg._detune.length) ? cfg._detune.slice(0, 6) : null,
+      levels: (cfg._levels && cfg._levels.length) ? cfg._levels.slice(0, 6) : null,
+    };
+  }
+
+  function deriveChordSemitonesFromAnyConfig(cfg) {
+    const c = cfg || null;
+    if (!c || !c.enabled) return [0];
+
+    const preset = (c.preset && GLOBAL_CHORD_PRESETS[c.preset]) ? String(c.preset) : 'unison';
+    const useCustom = (c.customIntervals && Array.isArray(c.customIntervals) && c.customIntervals.length);
+    let semis = useCustom ? c.customIntervals.slice() : (GLOBAL_CHORD_PRESETS[preset] || [0]).slice();
+
+    // Safety: hard cap 6 tones. If using a preset, keep the legacy cap of 4 (5 only for bell_partials5).
+    const cap = Math.min(6, useCustom ? 6 : chordVoiceCapForPreset(preset));
+    if (semis.length > cap) semis = semis.slice(0, cap);
+
+    // Apply inversion + spread only when they can matter.
+    if (semis.length >= 3) {
+      const inv = String(c.inversion || 'root');
+      let shift = (inv === 'first') ? 1 : (inv === 'second') ? 2 : (inv === 'third') ? 3 : 0;
+      shift = clamp(shift, 0, semis.length - 1);
+      if (shift > 0) {
+        semis = semis.slice();
+        for (let i = 0; i < shift; i++) semis[i] += 12;
+      }
+      const spread = String(c.spread || 'close');
+      if (spread === 'open') {
+        semis = semis.slice();
+        semis[1] += 12;
+      }
+      semis.sort((a, b) => a - b);
+    }
+
+    if (semis.length > 6) semis = semis.slice(0, 6);
+    return semis;
+  }
+
+  function deriveChordOffsetsMsFromAnyConfig(cfg, n) {
+    const c = cfg || null;
+    const N = clamp(parseInt(n, 10) || 1, 1, 6);
+    const out = new Array(N);
+
+    const mode = c ? String(c.splitStrike || 'simultaneous') : 'simultaneous';
+    if (mode !== 'belllike') {
+      for (let i = 0; i < N; i++) out[i] = 0;
+      out[0] = 0;
+      return out;
+    }
+
+    const step = clamp(parseInt(String(c.stepMs), 10) || 0, 0, 15);
+    const max = clamp(parseInt(String(c.maxMs), 10) || 0, 0, 18);
+
+    const custom = (c.customSplitOffsets && Array.isArray(c.customSplitOffsets) && c.customSplitOffsets.length) ? c.customSplitOffsets.slice(0, 6) : null;
+    if (custom && custom.length) {
+      // If the custom offsets list is shorter than N, pad using the step/max formula.
+      let prev = 0;
+      for (let i = 0; i < N; i++) {
+        if (i < custom.length) {
+          const v = clamp(parseInt(String(custom[i]), 10) || 0, 0, 18);
+          out[i] = (i === 0) ? 0 : Math.max(prev, v);
+        } else {
+          out[i] = (i === 0) ? 0 : Math.min(i * step, max);
+          if (out[i] < prev) out[i] = prev;
+        }
+        prev = out[i];
+      }
+      out[0] = 0;
+      return out;
+    }
+
+    for (let i = 0; i < N; i++) out[i] = (i === 0) ? 0 : Math.min(i * step, max);
+    out[0] = 0;
+    return out;
+  }
+
+  function playBellVoiceAtHz(bell, hz, whenMs, gainScale, minGain) {
     ensureAudio();
     const t = msToAudioTime(whenMs);
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
 
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(getBellFrequency(bell), t);
+    const f = Number(hz);
+    osc.frequency.setValueAtTime((Number.isFinite(f) && f > 0) ? f : 440, t);
 
     // v08_p05_sound_per_bell_overrides: per-bell volume scales on top of the global bell master volume
     const bellVol = getBellGain(bell);
-    const MIN_G = 0.000001;
-    let g0 = Math.max(MIN_G, 0.0001 * bellVol);
-    let g1 = Math.max(MIN_G, 0.16 * bellVol);
-    let g2 = Math.max(MIN_G, 0.001 * bellVol);
+    const MIN_G = Math.max(0.0000001, Number(minGain) || 0.000001);
+    const s = Math.max(0.000001, Number(gainScale) || 1);
+    let g0 = Math.max(MIN_G, 0.0001 * bellVol * s);
+    let g1 = Math.max(MIN_G, 0.16 * bellVol * s);
+    let g2 = Math.max(MIN_G, 0.001 * bellVol * s);
     if (g1 < g0) g1 = g0;
 
     gain.gain.setValueAtTime(g0, t);
@@ -2490,6 +2861,201 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     osc.stop(tStop);
 
     scheduledBellNodes.push({ osc, gain, startAt: t, stopAt: tStop });
+  }
+
+  function playBellStrikeAtHz(bell, baseHz, whenMs, minGain) {
+    const b = clamp(parseInt(bell, 10) || 0, 1, 12);
+
+    // v10_p09_sound_per_bell_chords_overrides: bell-local chord override takes priority.
+    const ov = resolveBellChordOverrideForStrike(b);
+    if (ov) {
+      const semis = deriveChordSemitonesFromAnyConfig(ov);
+      const N = clamp(semis.length, 1, 6);
+      const base = (Number.isFinite(Number(baseHz)) && Number(baseHz) > 0) ? Number(baseHz) : getBellFrequency(b);
+      if (N <= 1) {
+        // Still allow detune/levels to apply to the single tone.
+        let hz1 = base;
+        if (ov.detune && ov.detune.length) {
+          const cents = clamp(Number(ov.detune[0]) || 0, -50, 50);
+          hz1 = hz1 * Math.pow(2, cents / 1200);
+        }
+        const lv = (ov.levels && ov.levels.length) ? clamp(Number(ov.levels[0]) || 1, 0, 1.5) : 1;
+        playBellVoiceAtHz(b, hz1, whenMs, lv, minGain);
+        return;
+      }
+
+      const offsets = deriveChordOffsetsMsFromAnyConfig(ov, N);
+      const perToneBase = 1 / Math.sqrt(N);
+      for (let i = 0; i < N; i++) {
+        const semi = Number(semis[i]) || 0;
+        let hz = base * Math.pow(2, semi / 12);
+        if (ov.detune && i < ov.detune.length) {
+          const cents = clamp(Number(ov.detune[i]) || 0, -50, 50);
+          hz = hz * Math.pow(2, cents / 1200);
+        }
+        const w = (ov.levels && i < ov.levels.length) ? clamp(Number(ov.levels[i]) || 1, 0, 1.5) : 1;
+        const gainScale = perToneBase * w;
+        const atMs = (Number(whenMs) || 0) + (Number(offsets[i]) || 0);
+        playBellVoiceAtHz(b, hz, atMs, gainScale, minGain);
+      }
+      return;
+    }
+
+    // Otherwise: global chord config (legacy behavior).
+    const cfg = state.globalChord || null;
+    if (!cfg || !cfg.enabled) {
+      playBellVoiceAtHz(b, baseHz, whenMs, 1, minGain);
+      return;
+    }
+
+    const semis = deriveGlobalChordSemitones(cfg);
+    const N = clamp(semis.length, 1, 6);
+    if (N <= 1) {
+      playBellVoiceAtHz(b, baseHz, whenMs, 1, minGain);
+      return;
+    }
+
+    const base = (Number.isFinite(Number(baseHz)) && Number(baseHz) > 0) ? Number(baseHz) : getBellFrequency(b);
+    const offsets = deriveGlobalChordOffsetsMs(cfg, N);
+    const perToneScale = 1 / Math.sqrt(N);
+
+    for (let i = 0; i < N; i++) {
+      const semi = Number(semis[i]) || 0;
+      const hz = base * Math.pow(2, semi / 12);
+      const atMs = (Number(whenMs) || 0) + (Number(offsets[i]) || 0);
+      playBellVoiceAtHz(b, hz, atMs, perToneScale, minGain);
+    }
+  }
+
+  function playBellAt(bell, whenMs) {
+    // v10_p08_sound_global_chords_splitstrike: central bell strike path (applies everywhere bells ring)
+    playBellStrikeAtHz(bell, getBellFrequency(bell), whenMs, 0.000001);
+  }
+
+  // v10_p05_sound_per_bell_hz_slider_preview: shared continuous tone preview (single instance)
+  let hzPreviewOsc = null;
+  let hzPreviewGain = null;
+  let hzPreviewBell = 0;
+  const HZ_PREVIEW_MIN_GAIN = 0.0001;
+
+  function stopHzPreviewTone() {
+    if (!hzPreviewOsc) {
+      hzPreviewGain = null;
+      hzPreviewBell = 0;
+      return;
+    }
+
+    const osc = hzPreviewOsc;
+    const gain = hzPreviewGain;
+    hzPreviewOsc = null;
+    hzPreviewGain = null;
+    hzPreviewBell = 0;
+
+    if (!audioCtx) {
+      try { osc.disconnect(); } catch (_) {}
+      try { if (gain) gain.disconnect(); } catch (_) {}
+      return;
+    }
+
+    const now = audioCtx.currentTime;
+    try {
+      if (gain && gain.gain) {
+        gain.gain.cancelScheduledValues(now);
+        const cur = Math.max(HZ_PREVIEW_MIN_GAIN, Number(gain.gain.value) || HZ_PREVIEW_MIN_GAIN);
+        gain.gain.setValueAtTime(cur, now);
+        gain.gain.exponentialRampToValueAtTime(HZ_PREVIEW_MIN_GAIN, now + 0.03);
+      }
+    } catch (_) {}
+    try { osc.stop(now + 0.04); } catch (_) { try { osc.stop(); } catch (_) {} }
+    try { osc.disconnect(); } catch (_) {}
+    try { if (gain) gain.disconnect(); } catch (_) {}
+  }
+
+  function startHzPreviewTone(bell, hz) {
+    ensureAudio();
+    stopHzPreviewTone();
+
+    const b = clamp(parseInt(bell, 10) || 0, 1, 12);
+    const f = clamp(Number(hz) || 440, 20, 5000);
+    const now = audioCtx.currentTime;
+
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(f, now);
+
+    // Keep the preview comfortably under the bell strike peak.
+    const bellVol = getBellGain(b);
+    const level = Math.max(HZ_PREVIEW_MIN_GAIN, Math.min(0.09, 0.065 * bellVol));
+    gain.gain.setValueAtTime(HZ_PREVIEW_MIN_GAIN, now);
+    try { gain.gain.exponentialRampToValueAtTime(level, now + 0.02); } catch (_) { gain.gain.setValueAtTime(level, now + 0.02); }
+
+    osc.connect(gain).connect(bellMasterGain || audioCtx.destination);
+    osc.start(now);
+
+    hzPreviewOsc = osc;
+    hzPreviewGain = gain;
+    hzPreviewBell = b;
+  }
+
+  function updateHzPreviewTone(bell, hz) {
+    if (!hzPreviewOsc || !audioCtx) return;
+    const b = clamp(parseInt(bell, 10) || 0, 1, 12);
+    const f = clamp(Number(hz) || 440, 20, 5000);
+    const now = audioCtx.currentTime;
+
+    try {
+      hzPreviewOsc.frequency.cancelScheduledValues(now);
+      hzPreviewOsc.frequency.setTargetAtTime(f, now, 0.015);
+    } catch (_) {
+      try { hzPreviewOsc.frequency.setValueAtTime(f, now); } catch (_) {}
+    }
+
+    if (b !== hzPreviewBell && hzPreviewGain && hzPreviewGain.gain) {
+      hzPreviewBell = b;
+      const bellVol = getBellGain(b);
+      const level = Math.max(HZ_PREVIEW_MIN_GAIN, Math.min(0.09, 0.065 * bellVol));
+      try {
+        hzPreviewGain.gain.cancelScheduledValues(now);
+        hzPreviewGain.gain.setTargetAtTime(level, now, 0.02);
+      } catch (_) {}
+    }
+  }
+
+  function playBellStrikePreviewAtHz(bell, hz, whenMs) {
+    // v10_p08_sound_global_chords_splitstrike: piano strikes also follow global chord settings
+    const b = clamp(parseInt(bell, 10) || 0, 1, 12);
+    const f = clamp(Number(hz) || getBellFrequency(b), 20, 5000);
+    playBellStrikeAtHz(b, f, whenMs, HZ_PREVIEW_MIN_GAIN);
+  }
+
+  // v10_p05_sound_per_bell_hz_slider_preview: gesture tracking (so safety stops can also cancel pending holds)
+  const HZ_SLIDER_HOLD_MS = 160;
+  const HZ_SLIDER_MOVE_PX2 = 16; // 4px squared
+  const hzSliderPreview = {
+    active: false,
+    pointerId: null,
+    el: null,
+    bell: 0,
+    didStartTone: false,
+    downX: 0,
+    downY: 0,
+    holdTimer: null
+  };
+
+  function cancelHzSliderPreviewGesture() {
+    if (hzSliderPreview && hzSliderPreview.holdTimer) {
+      try { window.clearTimeout(hzSliderPreview.holdTimer); } catch (_) {}
+      hzSliderPreview.holdTimer = null;
+    }
+    if (!hzSliderPreview) return;
+    hzSliderPreview.active = false;
+    hzSliderPreview.pointerId = null;
+    hzSliderPreview.el = null;
+    hzSliderPreview.bell = 0;
+    hzSliderPreview.didStartTone = false;
+    hzSliderPreview.downX = 0;
+    hzSliderPreview.downY = 0;
   }
 
   function playTickAt(whenMs) {
@@ -3981,6 +4547,206 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     else safeSetLS(LS_BELL_VOL_OVERRIDE, JSON.stringify(out));
   }
 
+  // v10_p09_sound_per_bell_chords_overrides: per-bell chord + split-strike overrides (UI + persistence)
+  function bellChordOverrideDefaults() {
+    return {
+      mode: 'inherit',              // 'inherit' | 'override'
+      enabled: false,               // only meaningful when mode === 'override'
+      preset: 'unison',
+      inversion: 'root',
+      spread: 'close',
+      splitStrikeMode: 'inherit',   // 'inherit'|'simultaneous'|'belllike'
+      splitStepMs: 6,
+      splitMaxMs: 12,
+      // Advanced (strings for robust storage)
+      customIntervals: '',
+      customSplitOffsetsMs: '',
+      customDetuneCents: '',
+      customLevelGains: '',
+      // Internal (not persisted)
+      _intervals: null,
+      _splitOffsets: null,
+      _detune: null,
+      _levels: null,
+      _warn: ''
+    };
+  }
+
+  function parseIntListLoose(raw, maxItems) {
+    if (raw == null) return [];
+    if (Array.isArray(raw)) {
+      const out = [];
+      for (let i = 0; i < raw.length && out.length < (maxItems || 6); i++) {
+        const v = parseInt(String(raw[i]).trim(), 10);
+        if (Number.isFinite(v)) out.push(v);
+      }
+      return out;
+    }
+    const txt = String(raw || '').trim();
+    if (!txt) return [];
+    const parts = txt.split(/[\s,]+/g).filter(Boolean);
+    const out = [];
+    for (let i = 0; i < parts.length && out.length < (maxItems || 6); i++) {
+      const v = parseInt(parts[i], 10);
+      if (Number.isFinite(v)) out.push(v);
+    }
+    return out;
+  }
+
+  function parseNumListLoose(raw, maxItems) {
+    if (raw == null) return [];
+    if (Array.isArray(raw)) {
+      const out = [];
+      for (let i = 0; i < raw.length && out.length < (maxItems || 6); i++) {
+        const v = parseFloat(String(raw[i]).trim());
+        if (Number.isFinite(v)) out.push(v);
+      }
+      return out;
+    }
+    const txt = String(raw || '').trim();
+    if (!txt) return [];
+    const parts = txt.split(/[\s,]+/g).filter(Boolean);
+    const out = [];
+    for (let i = 0; i < parts.length && out.length < (maxItems || 6); i++) {
+      const v = parseFloat(parts[i]);
+      if (Number.isFinite(v)) out.push(v);
+    }
+    return out;
+  }
+
+  function sanitizeBellChordOverride(raw) {
+    const d = bellChordOverrideDefaults();
+    const out = Object.assign({}, d);
+    let warn = '';
+
+    if (raw && typeof raw === 'object') {
+      const mode = String(raw.mode || '').trim();
+      if (mode === 'override' || mode === 'inherit') out.mode = mode;
+
+      const en = raw.enabled;
+      if (typeof en === 'boolean') out.enabled = en;
+      else if (en === 1 || en === '1' || en === 'true' || en === 'on') out.enabled = true;
+      else if (en === 0 || en === '0' || en === 'false' || en === 'off') out.enabled = false;
+
+      const p = String(raw.preset || raw.quality || raw.qualityPreset || raw.chord || '').trim();
+      if (p && GLOBAL_CHORD_PRESETS[p]) out.preset = p;
+
+      const inv = String(raw.inversion || '').trim();
+      if (inv && GLOBAL_CHORD_INVERSION_ORDER.includes(inv)) out.inversion = inv;
+
+      const sp = String(raw.spread || '').trim();
+      if (sp && GLOBAL_CHORD_SPREAD_ORDER.includes(sp)) out.spread = sp;
+
+      const ss = String(raw.splitStrikeMode || raw.splitStrike || raw.split || '').trim();
+      if (ss === 'inherit' || ss === 'simultaneous' || ss === 'belllike') out.splitStrikeMode = ss;
+
+      const st = parseFloat(raw.splitStepMs != null ? raw.splitStepMs : raw.stepMs);
+      if (Number.isFinite(st)) out.splitStepMs = clamp(Math.round(st), 0, 15);
+      const mx = parseFloat(raw.splitMaxMs != null ? raw.splitMaxMs : raw.maxMs);
+      if (Number.isFinite(mx)) out.splitMaxMs = clamp(Math.round(mx), 0, 18);
+
+      // Advanced strings (store as-is for forward/back compat)
+      if (raw.customIntervals != null) out.customIntervals = Array.isArray(raw.customIntervals) ? raw.customIntervals.join(', ') : String(raw.customIntervals);
+      if (raw.customSplitOffsetsMs != null) out.customSplitOffsetsMs = Array.isArray(raw.customSplitOffsetsMs) ? raw.customSplitOffsetsMs.join(', ') : String(raw.customSplitOffsetsMs);
+      if (raw.customDetuneCents != null) out.customDetuneCents = Array.isArray(raw.customDetuneCents) ? raw.customDetuneCents.join(', ') : String(raw.customDetuneCents);
+      if (raw.customLevelGains != null) out.customLevelGains = Array.isArray(raw.customLevelGains) ? raw.customLevelGains.join(', ') : String(raw.customLevelGains);
+    }
+
+    // Parse + clamp advanced (hard cap 6 for safety)
+    const intervalTxt = String(out.customIntervals || '').trim();
+    if (intervalTxt) {
+      const ints = parseIntListLoose(intervalTxt, 6);
+      if (!ints.length) warn = 'Invalid custom intervals';
+      else {
+        out._intervals = ints.map(v => clamp(parseInt(String(v), 10) || 0, -24, 24)).slice(0, 6);
+      }
+    }
+
+    const splitTxt = String(out.customSplitOffsetsMs || '').trim();
+    if (splitTxt) {
+      const ints = parseIntListLoose(splitTxt, 6);
+      if (!ints.length) warn = warn ? (warn + '; invalid split offsets') : 'Invalid split offsets';
+      else {
+        const arr = ints.map(v => clamp(parseInt(String(v), 10) || 0, 0, 18)).slice(0, 6);
+        // Must start at 0.
+        if (arr.length && arr[0] !== 0) {
+          warn = warn ? (warn + '; split offsets must start at 0') : 'Split offsets must start at 0';
+        } else {
+          // Enforce nondecreasing.
+          for (let i = 1; i < arr.length; i++) if (arr[i] < arr[i - 1]) arr[i] = arr[i - 1];
+          out._splitOffsets = arr;
+        }
+      }
+    }
+
+    const detuneTxt = String(out.customDetuneCents || '').trim();
+    if (detuneTxt) {
+      const nums = parseNumListLoose(detuneTxt, 6);
+      if (!nums.length) warn = warn ? (warn + '; invalid detune') : 'Invalid detune';
+      else out._detune = nums.map(v => clamp(Number(v) || 0, -50, 50)).slice(0, 6);
+    }
+
+    const levelTxt = String(out.customLevelGains || '').trim();
+    if (levelTxt) {
+      const nums = parseNumListLoose(levelTxt, 6);
+      if (!nums.length) warn = warn ? (warn + '; invalid levels') : 'Invalid levels';
+      else out._levels = nums.map(v => clamp(Number(v) || 1, 0, 1.5)).slice(0, 6);
+    }
+
+    out._warn = String(warn || '').trim();
+    return out;
+  }
+
+  function ensureBellChordOverridesArray() {
+    if (!Array.isArray(state.bellChordOverrides) || state.bellChordOverrides.length < 13) {
+      state.bellChordOverrides = new Array(13);
+      for (let b = 0; b < 13; b++) state.bellChordOverrides[b] = bellChordOverrideDefaults();
+      return;
+    }
+    for (let b = 0; b < 13; b++) {
+      state.bellChordOverrides[b] = sanitizeBellChordOverride(state.bellChordOverrides[b]);
+    }
+  }
+
+  function loadBellChordOverridesFromLS() {
+    ensureBellChordOverridesArray();
+    const raw = safeJsonParse(safeGetLS(LS_BELL_CHORD_OVERRIDES) || '') || null;
+    if (!raw || typeof raw !== 'object') return;
+    for (const k in raw) {
+      if (!Object.prototype.hasOwnProperty.call(raw, k)) continue;
+      const b = parseInt(k, 10);
+      if (!Number.isFinite(b) || b < 1 || b > 12) continue;
+      state.bellChordOverrides[b] = sanitizeBellChordOverride(raw[k]);
+    }
+  }
+
+  function saveBellChordOverridesToLS() {
+    ensureBellChordOverridesArray();
+    const out = {};
+    for (let b = 1; b <= 12; b++) {
+      const cfg = sanitizeBellChordOverride(state.bellChordOverrides[b]);
+      state.bellChordOverrides[b] = cfg;
+      if (cfg.mode !== 'override') continue;
+      // Persist only user-facing fields; keep storage resilient across versions.
+      out[b] = {
+        mode: cfg.mode,
+        enabled: !!cfg.enabled,
+        preset: String(cfg.preset || 'unison'),
+        inversion: String(cfg.inversion || 'root'),
+        spread: String(cfg.spread || 'close'),
+        splitStrikeMode: String(cfg.splitStrikeMode || 'inherit'),
+        splitStepMs: clamp(parseInt(String(cfg.splitStepMs), 10) || 0, 0, 15),
+        splitMaxMs: clamp(parseInt(String(cfg.splitMaxMs), 10) || 0, 0, 18),
+        customIntervals: String(cfg.customIntervals || ''),
+        customSplitOffsetsMs: String(cfg.customSplitOffsetsMs || ''),
+        customDetuneCents: String(cfg.customDetuneCents || ''),
+        customLevelGains: String(cfg.customLevelGains || ''),
+      };
+    }
+    if (!Object.keys(out).length) safeDelLS(LS_BELL_CHORD_OVERRIDES);
+    else safeSetLS(LS_BELL_CHORD_OVERRIDES, JSON.stringify(out));
+  }
+
   function fmtHz(v) {
     const n = Number(v);
     if (!Number.isFinite(n)) return '—';
@@ -4000,9 +4766,90 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     return def ? def.label : k;
   }
 
+
+  // v10_p06_sound_per_bell_piano_keypicker: per-bell Key piano picker (UI + mapping helpers)
+  const PIANO_WHITE_NOTES = ['C','D','E','F','G','A','B'];
+  const PIANO_BLACK_NOTES = ['C#','Eb','F#','Ab','Bb'];
+  const PIANO_NOTE_TO_PREFIX = { 'C':'C', 'C#':'Cs', 'D':'D', 'Eb':'Ef', 'E':'E', 'F':'F', 'F#':'Fs', 'G':'G', 'Ab':'Af', 'A':'A', 'Bb':'Bf', 'B':'B' };
+
+  function scaleModeFromScaleKey(key) {
+    const k = String(key || '');
+    if (k.endsWith('_minor')) return 'minor';
+    return 'major';
+  }
+
+  function scaleKeyFromPianoNote(note, mode) {
+    const n = String(note || '');
+    const pref = PIANO_NOTE_TO_PREFIX[n];
+    if (!pref) return '';
+    const m = (mode === 'minor') ? 'minor' : 'major';
+    const key = pref + '_' + m;
+    return SCALE_LIBRARY.some(s => s.key === key) ? key : '';
+  }
+
+  function pianoNoteFromScaleKey(key) {
+    const k = String(key || '');
+    if (!k || k === 'custom_hz') return '';
+    const def = SCALE_LIBRARY.find(s => s.key === k);
+    return def ? String(def.root || '') : '';
+  }
+
+  function effectiveBellScaleKeyForPiano(bell) {
+    ensureBellOverridesArrays();
+    const b = clamp(parseInt(bell, 10) || 0, 1, 12);
+    const ov = (state.bellKeyOverride && state.bellKeyOverride[b] != null) ? String(state.bellKeyOverride[b] || '').trim() : '';
+    if (ov) return ov;
+    return String(state.scaleKey || '');
+  }
+
+  function effectiveBellOctaveForPiano(bell) {
+    ensureBellOverridesArrays();
+    const b = clamp(parseInt(bell, 10) || 0, 1, 12);
+    const raw = (state.bellOctaveOverride && state.bellOctaveOverride[b] != null) ? parseInt(String(state.bellOctaveOverride[b]), 10) : NaN;
+    if (Number.isFinite(raw)) return clamp(raw, 1, 6);
+    return clamp(parseInt(String(state.octaveC), 10) || 4, 1, 6);
+  }
+
+  function bellPianoKeyboardHtml(bell, glyph) {
+    const b = clamp(parseInt(bell, 10) || 0, 1, 12);
+    const g = String(glyph || bellToGlyph(b));
+    let html = '<div class="rg-piano" data-bell="' + b + '" role="group" aria-label="Bell ' + g + ' key picker">';
+    html += '<div class="rg-piano-white">';
+    for (const n of PIANO_WHITE_NOTES) {
+      html += '<button type="button" class="rg-piano-key rg-piano-key--white" data-note="' + n + '" aria-label="' + n + '">' + n + '</button>';
+    }
+    html += '</div>';
+    for (const n of PIANO_BLACK_NOTES) {
+      html += '<button type="button" class="rg-piano-key rg-piano-key--black" data-note="' + n + '" aria-label="' + n + '">' + n + '</button>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function syncBellPianoKeypickerUI(bell) {
+    if (!bellOverridesList) return;
+    const b = clamp(parseInt(bell, 10) || 0, 1, 12);
+    const piano = bellOverridesList.querySelector('.rg-piano[data-bell="' + b + '"]');
+    if (!piano) return;
+
+    const keys = piano.querySelectorAll('.rg-piano-key');
+    for (const k of keys) {
+      try { k.classList.remove('is-selected'); } catch (_) {}
+    }
+
+    const effKey = effectiveBellScaleKeyForPiano(b);
+    const note = pianoNoteFromScaleKey(effKey);
+    if (!note) return;
+    const sel = piano.querySelector('.rg-piano-key[data-note="' + note + '"]');
+    if (sel) {
+      try { sel.classList.add('is-selected'); } catch (_) {}
+    }
+  }
+
   function syncBellOverridesEffectiveUI() {
     if (!bellOverridesList) return;
     ensureBellOverridesArrays();
+    ensureBellChordOverridesArray();
     const base = clamp(Number(state.bellVolume) || 0, 0, 100);
 
     for (let b = 1; b <= state.stage; b++) {
@@ -4021,6 +4868,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
         const effKey = hasKeyOv ? String(state.bellKeyOverride[b]) : String(state.scaleKey);
         keyEl.textContent = 'Eff: ' + scaleKeyLabel(effKey) + (hasKeyOv ? ' (override)' : '');
       }
+      try { syncBellPianoKeypickerUI(b); } catch (_) {}
 
       const octEl = document.getElementById('bellOctEffective_' + b);
       if (octEl) {
@@ -4037,25 +4885,189 @@ Google Analytics is provided by Google. Their processing of data is governed by 
         const eff = base * factor;
         volEl.textContent = 'Eff: ' + fmtPct(eff) + '%' + (hasOv ? (' (x' + fmtPct(ovRaw) + '%)') : '');
       }
+
+      // v10_p09_sound_per_bell_chords_overrides: per-bell chord effective label + control visibility
+      try {
+        const chordEl = document.getElementById('bellChordEffective_' + b);
+        if (chordEl) chordEl.textContent = bellChordEffectiveLabel(b);
+        syncBellChordOverrideRowUI(b);
+      } catch (_) {}
     }
   }
 
+  // v10_p08_sound_global_chords_splitstrike: Sound menu UI (global)
+  function buildGlobalChordControlsUI() {
+    // Presets
+    if (globalChordPresetSelect && (!globalChordPresetSelect.options || globalChordPresetSelect.options.length === 0)) {
+      globalChordPresetSelect.innerHTML = '';
+      for (const k of GLOBAL_CHORD_PRESET_ORDER) {
+        if (!GLOBAL_CHORD_PRESETS[k]) continue;
+        const opt = document.createElement('option');
+        opt.value = k;
+        opt.textContent = chordPresetLabel(k);
+        globalChordPresetSelect.appendChild(opt);
+      }
+    }
+
+    // Split-strike
+    if (globalChordSplitSelect && (!globalChordSplitSelect.options || globalChordSplitSelect.options.length === 0)) {
+      globalChordSplitSelect.innerHTML = '';
+      {
+        const opt = document.createElement('option');
+        opt.value = 'simultaneous';
+        opt.textContent = 'Simultaneous';
+        globalChordSplitSelect.appendChild(opt);
+      }
+      {
+        const opt = document.createElement('option');
+        opt.value = 'belllike';
+        opt.textContent = 'Bell-like';
+        globalChordSplitSelect.appendChild(opt);
+      }
+    }
+
+    // Inversion (optional)
+    if (globalChordInversionSelect && (!globalChordInversionSelect.options || globalChordInversionSelect.options.length === 0)) {
+      globalChordInversionSelect.innerHTML = '';
+      const invLabel = { root: 'Root', first: '1st', second: '2nd', third: '3rd' };
+      for (const k of GLOBAL_CHORD_INVERSION_ORDER) {
+        const opt = document.createElement('option');
+        opt.value = k;
+        opt.textContent = invLabel[k] || k;
+        globalChordInversionSelect.appendChild(opt);
+      }
+    }
+
+    // Spread (optional)
+    if (globalChordSpreadSelect && (!globalChordSpreadSelect.options || globalChordSpreadSelect.options.length === 0)) {
+      globalChordSpreadSelect.innerHTML = '';
+      {
+        const opt = document.createElement('option');
+        opt.value = 'close';
+        opt.textContent = 'Close';
+        globalChordSpreadSelect.appendChild(opt);
+      }
+      {
+        const opt = document.createElement('option');
+        opt.value = 'open';
+        opt.textContent = 'Open';
+        globalChordSpreadSelect.appendChild(opt);
+      }
+    }
+
+    syncGlobalChordControlsUI();
+  }
+
+  function syncGlobalChordControlsUI() {
+    if (!state.globalChord) state.globalChord = globalChordDefaults();
+    state.globalChord = sanitizeGlobalChordConfig(state.globalChord);
+    const cfg = state.globalChord;
+
+    if (globalChordOnOffBtn) {
+      const on = !!cfg.enabled;
+      globalChordOnOffBtn.textContent = on ? 'Chords (global) On' : 'Chords (global) Off';
+      globalChordOnOffBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      try { globalChordOnOffBtn.classList.toggle('active', on); } catch (_) {}
+    }
+
+    if (globalChordPresetSelect) {
+      try { globalChordPresetSelect.value = String(cfg.preset || 'unison'); } catch (_) {}
+    }
+    if (globalChordSplitSelect) {
+      try { globalChordSplitSelect.value = String(cfg.splitStrike || 'simultaneous'); } catch (_) {}
+    }
+    if (globalChordInversionSelect) {
+      const invEnabled = (cfg.size !== 'single' && cfg.size !== 'dyad');
+      globalChordInversionSelect.disabled = !invEnabled;
+      try { globalChordInversionSelect.value = invEnabled ? String(cfg.inversion || 'root') : 'root'; } catch (_) {}
+    }
+    if (globalChordSpreadSelect) {
+      const spEnabled = (cfg.size !== 'single' && cfg.size !== 'dyad');
+      globalChordSpreadSelect.disabled = !spEnabled;
+      try { globalChordSpreadSelect.value = String(cfg.spread || 'close'); } catch (_) {}
+    }
+
+    const belllike = String(cfg.splitStrike || 'simultaneous') === 'belllike';
+    if (globalChordSplitStepControl) globalChordSplitStepControl.classList.toggle('hidden', !belllike);
+    if (globalChordSplitMaxControl) globalChordSplitMaxControl.classList.toggle('hidden', !belllike);
+
+    if (globalChordStepMs) {
+      try { globalChordStepMs.value = String(clamp(parseInt(String(cfg.stepMs), 10) || 0, 0, 15)); } catch (_) {}
+    }
+    if (globalChordMaxMs) {
+      try { globalChordMaxMs.value = String(clamp(parseInt(String(cfg.maxMs), 10) || 0, 0, 18)); } catch (_) {}
+    }
+
+    // Keep per-bell effective labels in sync when global chord changes.
+    try { syncBellOverridesEffectiveUI(); } catch (_) {}
+  }
+
+  // v10_p04_sound_quick_bell_row: stage-sized quick test row (Sound menu)
+  function rebuildSoundQuickBellRow() {
+    if (!soundQuickBellRow) return;
+    const stage = clamp(parseInt(state.stage, 10) || 6, 4, 12);
+    const stageKey = String(stage);
+    if (soundQuickBellRow.dataset && soundQuickBellRow.dataset.stage === stageKey && soundQuickBellRow.childElementCount === stage) return;
+
+    let html = '';
+    for (let b = 1; b <= stage; b++) {
+      const g = bellToGlyph(b);
+      html += '<button type="button" class="rg-quick-bell-btn" data-bell="' + b + '" aria-label="Ring bell ' + g + '">' + g + '</button>';
+    }
+    soundQuickBellRow.innerHTML = html;
+    try { soundQuickBellRow.dataset.stage = stageKey; } catch (_) {}
+  }
+
   function rebuildBellOverridesUI() {
+    // Keep the Sound quick-test row in sync with stage, even if the overrides list is not present.
+    try { rebuildSoundQuickBellRow(); } catch (_) {}
+    // v10_p05_sound_per_bell_hz_slider_preview: rebuilding the list should never leave the preview tone running.
+    try { cancelHzSliderPreviewGesture(); } catch (_) {}
+    try { stopHzPreviewTone(); } catch (_) {}
     if (!bellOverridesList) return;
     ensureBellOverridesArrays();
+    ensureBellChordOverridesArray();
+
+    function escAttr(s) {
+      const t = String(s == null ? '' : s);
+      return t.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function chordPresetOptionsHtml(selected) {
+      let out = '';
+      for (const k of GLOBAL_CHORD_PRESET_ORDER) {
+        if (!GLOBAL_CHORD_PRESETS[k]) continue;
+        const sel = (String(selected || '') === String(k)) ? ' selected' : '';
+        out += '<option value="' + String(k) + '"' + sel + '>' + escAttr(chordPresetLabel(k)) + '</option>';
+      }
+      return out;
+    }
 
     let html = '';
     for (let b = 1; b <= state.stage; b++) {
       const g = bellToGlyph(b);
       const hzV = (state.bellHzOverride[b] != null && Number.isFinite(Number(state.bellHzOverride[b]))) ? String(state.bellHzOverride[b]) : '';
+      const hzSliderV = String(clamp(getBellHz(b), PER_BELL_HZ_SLIDER_MIN, PER_BELL_HZ_SLIDER_MAX));
       const volV = (state.bellVolOverride[b] != null && Number.isFinite(Number(state.bellVolOverride[b]))) ? String(state.bellVolOverride[b]) : '';
 
-      const keyV = (state.bellKeyOverride[b] != null) ? String(state.bellKeyOverride[b] || '') : '';
-      let keyOpts = '<option value="">(global)</option>';
-      for (const s of SCALE_LIBRARY) {
-        const sel = (keyV && s.key === keyV) ? ' selected' : '';
-        keyOpts += '<option value="' + s.key + '"' + sel + '>' + s.label + '</option>';
-      }
+      // v10_p09_sound_per_bell_chords_overrides: per-bell chord editor state
+      const cCfg = sanitizeBellChordOverride(state.bellChordOverrides[b] || bellChordOverrideDefaults());
+      state.bellChordOverrides[b] = cCfg;
+      const cMode = (String(cCfg.mode || 'inherit') === 'override') ? 'override' : 'inherit';
+      const cEn = !!cCfg.enabled;
+      const cPreset = (cCfg.preset && GLOBAL_CHORD_PRESETS[cCfg.preset]) ? String(cCfg.preset) : 'unison';
+      const cInv = GLOBAL_CHORD_INVERSION_ORDER.includes(String(cCfg.inversion || 'root')) ? String(cCfg.inversion) : 'root';
+      const cSpread = GLOBAL_CHORD_SPREAD_ORDER.includes(String(cCfg.spread || 'close')) ? String(cCfg.spread) : 'close';
+      const cSplit = (String(cCfg.splitStrikeMode || 'inherit') === 'simultaneous' || String(cCfg.splitStrikeMode) === 'belllike') ? String(cCfg.splitStrikeMode) : 'inherit';
+      const cStep = String(clamp(parseInt(String(cCfg.splitStepMs), 10) || 0, 0, 15));
+      const cMax = String(clamp(parseInt(String(cCfg.splitMaxMs), 10) || 0, 0, 18));
+      const cWarn = String(cCfg._warn || '').trim();
+      const cIntervals = escAttr(String(cCfg.customIntervals || ''));
+      const cSplitOffsets = escAttr(String(cCfg.customSplitOffsetsMs || ''));
+      const cDetune = escAttr(String(cCfg.customDetuneCents || ''));
+      const cLevels = escAttr(String(cCfg.customLevelGains || ''));
+
+      const pianoHtml = bellPianoKeyboardHtml(b, g);
 
       const octRaw = (state.bellOctaveOverride[b] != null) ? parseInt(String(state.bellOctaveOverride[b]), 10) : NaN;
       const octV = Number.isFinite(octRaw) ? String(clamp(octRaw, 1, 6)) : '';
@@ -4074,6 +5086,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
             '</div>' +
             '<div class="rg-bell-override-group-controls">' +
               '<input id="bellHzOverride_' + b + '" type="number" min="20" max="5000" step="0.01" placeholder="(default)" value="' + hzV + '" />' +
+              '<input id="bellHzSlider_' + b + '" class="rg-bell-hz-slider" type="range" min="' + String(PER_BELL_HZ_SLIDER_MIN) + '" max="' + String(PER_BELL_HZ_SLIDER_MAX) + '" step="' + String(PER_BELL_HZ_SLIDER_STEP) + '" value="' + hzSliderV + '" aria-label="Bell ' + g + ' Hz slider" />' +
               '<button type="button" class="pill rg-mini" data-act="clearHz" data-bell="' + b + '">Clear</button>' +
             '</div>' +
           '</div>' +
@@ -4083,7 +5096,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
               '<div id="bellKeyEffective_' + b + '" class="rg-bell-override-effective"></div>' +
             '</div>' +
             '<div class="rg-bell-override-group-controls">' +
-              '<select id="bellKeyOverride_' + b + '">' + keyOpts + '</select>' +
+              pianoHtml +
               '<button type="button" class="pill rg-mini" data-act="clearKey" data-bell="' + b + '">Clear</button>' +
             '</div>' +
           '</div>' +
@@ -4107,12 +5120,145 @@ Google Analytics is provided by Google. Their processing of data is governed by 
               '<button type="button" class="pill rg-mini" data-act="clearVol" data-bell="' + b + '">Clear</button>' +
             '</div>' +
           '</div>' +
+          '<div class="rg-bell-override-group rg-bell-override-group--chord">' +
+            '<div class="rg-bell-override-group-head">' +
+              '<div class="rg-bell-override-group-title">Chord</div>' +
+              '<div id="bellChordEffective_' + b + '" class="rg-bell-override-effective"></div>' +
+            '</div>' +
+            '<div class="rg-bell-override-group-controls">' +
+              '<div class="rg-bell-chord-controls">' +
+                '<div class="rg-bell-chord-row">' +
+                  '<select id="bellChordMode_' + b + '" aria-label="Chord mode for bell ' + g + '">' +
+                    '<option value="inherit"' + (cMode === 'inherit' ? ' selected' : '') + '>Inherit (global)</option>' +
+                    '<option value="override"' + (cMode === 'override' ? ' selected' : '') + '>Override</option>' +
+                  '</select>' +
+                  '<label class="rg-chord-enable' + (cMode === 'override' ? '' : ' hidden') + '"><input id="bellChordEnabled_' + b + '" type="checkbox"' + (cEn ? ' checked' : '') + ' /> Enable</label>' +
+                '</div>' +
+                '<div id="bellChordOverrideBody_' + b + '" class="rg-bell-chord-override' + (cMode === 'override' ? '' : ' hidden') + '">' +
+                  '<div class="rg-bell-chord-row">' +
+                    '<select id="bellChordPreset_' + b + '" aria-label="Chord preset for bell ' + g + '">' + chordPresetOptionsHtml(cPreset) + '</select>' +
+                    '<select id="bellChordSplit_' + b + '" aria-label="Split-strike mode for bell ' + g + '">' +
+                      '<option value="inherit"' + (cSplit === 'inherit' ? ' selected' : '') + '>Split: Inherit (global)</option>' +
+                      '<option value="simultaneous"' + (cSplit === 'simultaneous' ? ' selected' : '') + '>Split: Simultaneous</option>' +
+                      '<option value="belllike"' + (cSplit === 'belllike' ? ' selected' : '') + '>Split: Bell-like</option>' +
+                    '</select>' +
+                  '</div>' +
+                  '<div class="rg-bell-chord-row">' +
+                    '<select id="bellChordInversion_' + b + '" aria-label="Inversion for bell ' + g + '">' +
+                      '<option value="root"' + (cInv === 'root' ? ' selected' : '') + '>Inv: Root</option>' +
+                      '<option value="first"' + (cInv === 'first' ? ' selected' : '') + '>Inv: 1st</option>' +
+                      '<option value="second"' + (cInv === 'second' ? ' selected' : '') + '>Inv: 2nd</option>' +
+                      '<option value="third"' + (cInv === 'third' ? ' selected' : '') + '>Inv: 3rd</option>' +
+                    '</select>' +
+                    '<select id="bellChordSpread_' + b + '" aria-label="Spread for bell ' + g + '">' +
+                      '<option value="close"' + (cSpread === 'close' ? ' selected' : '') + '>Spread: Close</option>' +
+                      '<option value="open"' + (cSpread === 'open' ? ' selected' : '') + '>Spread: Open</option>' +
+                    '</select>' +
+                  '</div>' +
+                  '<div id="bellChordBelllikeRow_' + b + '" class="rg-bell-chord-row' + (cSplit === 'belllike' ? '' : ' hidden') + '">' +
+                    '<label class="rg-chord-num">Step <input id="bellChordStepMs_' + b + '" type="number" min="0" max="15" step="1" value="' + cStep + '" /></label>' +
+                    '<label class="rg-chord-num">Max <input id="bellChordMaxMs_' + b + '" type="number" min="0" max="18" step="1" value="' + cMax + '" /></label>' +
+                  '</div>' +
+                  '<div id="bellChordWarn_' + b + '" class="rg-inline-warn' + (cWarn ? '' : ' hidden') + '">' + escAttr(cWarn) + '</div>' +
+                  '<button id="bellChordAdvBtn_' + b + '" type="button" class="pill rg-mini" data-act="toggleChordAdv" data-bell="' + b + '" aria-expanded="false">Advanced</button>' +
+                  '<div id="bellChordAdv_' + b + '" class="rg-bell-chord-adv hidden">' +
+                    '<div class="rg-bell-chord-adv-grid">' +
+                      '<div class="rg-bell-chord-adv-field">' +
+                        '<div class="rg-bell-chord-adv-label">Custom intervals (semitones)</div>' +
+                        '<input id="bellChordIntervals_' + b + '" type="text" placeholder="0,4,7" value="' + cIntervals + '" />' +
+                      '</div>' +
+                      '<div class="rg-bell-chord-adv-field">' +
+                        '<div class="rg-bell-chord-adv-label">Custom split offsets (ms)</div>' +
+                        '<input id="bellChordSplitOffsets_' + b + '" type="text" placeholder="0,6,12" value="' + cSplitOffsets + '" />' +
+                      '</div>' +
+                      '<div class="rg-bell-chord-adv-field">' +
+                        '<div class="rg-bell-chord-adv-label">Detune (cents)</div>' +
+                        '<input id="bellChordDetune_' + b + '" type="text" placeholder="0, -10, 0, +5" value="' + cDetune + '" />' +
+                      '</div>' +
+                      '<div class="rg-bell-chord-adv-field">' +
+                        '<div class="rg-bell-chord-adv-label">Levels</div>' +
+                        '<input id="bellChordLevels_' + b + '" type="text" placeholder="1, 0.8, 0.7" value="' + cLevels + '" />' +
+                      '</div>' +
+                    '</div>' +
+                    '<div class="rg-muted rg-bell-chord-adv-note">Detune clamps to ±50 cents. Levels clamp to 0..1.5. Max 6 tones.</div>' +
+                  '</div>' +
+                '</div>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
         '</div>' +
       '</div>';
     }
 
     bellOverridesList.innerHTML = html;
     syncBellOverridesEffectiveUI();
+  }
+
+  // v10_p09_sound_per_bell_chords_overrides: per-bell chord UI helpers
+  function bellChordToneCountHint(cfg) {
+    const c = cfg || bellChordOverrideDefaults();
+    if (c && c._intervals && Array.isArray(c._intervals) && c._intervals.length) return clamp(c._intervals.length, 1, 6);
+    const preset = (c && c.preset && GLOBAL_CHORD_PRESETS[c.preset]) ? String(c.preset) : 'unison';
+    const arr = GLOBAL_CHORD_PRESETS[preset] || [0];
+    return clamp(arr.length, 1, 6);
+  }
+
+  function bellChordEffectiveLabel(bell) {
+    const b = clamp(parseInt(bell, 10) || 0, 1, 12);
+    ensureBellChordOverridesArray();
+    const bc = state.bellChordOverrides ? state.bellChordOverrides[b] : null;
+    const cfg = sanitizeBellChordOverride(bc || bellChordOverrideDefaults());
+    state.bellChordOverrides[b] = cfg;
+
+    const g = state.globalChord ? sanitizeGlobalChordConfig(state.globalChord) : globalChordDefaults();
+    const globalOn = !!(g && g.enabled);
+    const globalLine = globalOn ? ('Global: On • ' + chordPresetLabel(g.preset)) : 'Global: Off';
+
+    if (cfg.mode === 'override') {
+      if (!cfg.enabled) return 'Override: Off • ' + globalLine;
+      const toneHint = bellChordToneCountHint(cfg);
+      const name = (cfg._intervals && cfg._intervals.length) ? 'Custom intervals' : chordPresetLabel(cfg.preset);
+      return 'Override: On • ' + name + ' • ' + String(toneHint) + ' tone' + (toneHint === 1 ? '' : 's');
+    }
+    return globalLine;
+  }
+
+  function syncBellChordOverrideRowUI(bell) {
+    const b = clamp(parseInt(bell, 10) || 0, 1, 12);
+    if (!bellOverridesList) return;
+    ensureBellChordOverridesArray();
+    const cfg = sanitizeBellChordOverride(state.bellChordOverrides[b] || bellChordOverrideDefaults());
+    state.bellChordOverrides[b] = cfg;
+
+    const body = document.getElementById('bellChordOverrideBody_' + b);
+    if (body) body.classList.toggle('hidden', cfg.mode !== 'override');
+
+    const enableBox = document.getElementById('bellChordEnabled_' + b);
+    if (enableBox) {
+      try { enableBox.checked = !!cfg.enabled; } catch (_) {}
+      const lab = enableBox.closest ? enableBox.closest('label') : null;
+      if (lab) lab.classList.toggle('hidden', cfg.mode !== 'override');
+    }
+
+    const splitSel = document.getElementById('bellChordSplit_' + b);
+    const splitVal = splitSel ? String(splitSel.value || cfg.splitStrikeMode || 'inherit') : String(cfg.splitStrikeMode || 'inherit');
+    const belllikeRow = document.getElementById('bellChordBelllikeRow_' + b);
+    if (belllikeRow) belllikeRow.classList.toggle('hidden', !(cfg.mode === 'override' && splitVal === 'belllike'));
+
+    // Disable inversion/spread when the chord has fewer than 3 tones (triad+ only).
+    const N = bellChordToneCountHint(cfg);
+    const invSel = document.getElementById('bellChordInversion_' + b);
+    const spSel = document.getElementById('bellChordSpread_' + b);
+    const canInv = (N >= 3);
+    if (invSel) invSel.disabled = !canInv;
+    if (spSel) spSel.disabled = !canInv;
+
+    const warnEl = document.getElementById('bellChordWarn_' + b);
+    if (warnEl) {
+      const w = String(cfg._warn || '').trim();
+      warnEl.textContent = w;
+      warnEl.classList.toggle('hidden', !w);
+    }
   }
 
   function clearBellHzOverride(b) {
@@ -4122,6 +5268,8 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     saveBellHzOverridesToLS();
     const input = document.getElementById('bellHzOverride_' + bb);
     if (input) input.value = '';
+    const slider = document.getElementById('bellHzSlider_' + bb);
+    if (slider) slider.value = String(clamp(getBellHz(bb), PER_BELL_HZ_SLIDER_MIN, PER_BELL_HZ_SLIDER_MAX));
     syncBellOverridesEffectiveUI();
   }
 
@@ -4160,10 +5308,13 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     state.bellVolOverride = new Array(13).fill(null);
     state.bellKeyOverride = new Array(13).fill(null);
     state.bellOctaveOverride = new Array(13).fill(null);
+    state.bellChordOverrides = new Array(13);
+    for (let b = 0; b < 13; b++) state.bellChordOverrides[b] = bellChordOverrideDefaults();
     safeDelLS(LS_BELL_HZ_OVERRIDE);
     safeDelLS(LS_BELL_VOL_OVERRIDE);
     safeDelLS(LS_BELL_KEY_OVERRIDE);
     safeDelLS(LS_BELL_OCT_OVERRIDE);
+    safeDelLS(LS_BELL_CHORD_OVERRIDES);
     rebuildBellOverridesUI();
   }
 
@@ -4994,6 +6145,9 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     const b = parseInt(bell, 10) || 0;
     if (b < 1 || b > state.stage) return;
     const now = perfNow();
+    // v10_p05_sound_per_bell_hz_slider_preview: stop any ongoing continuous Hz preview before other previews.
+    cancelHzSliderPreviewGesture();
+    stopHzPreviewTone();
     playBellAt(b, now);
   }
 
@@ -7197,6 +8351,20 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   }
 
   // === Inputs ===
+
+  // v10_p07_global_default_ring_keys: global default bell ring keys.
+  // 1-0 => bells 1-10 (0 is 10), E => 11, T => 12.
+  // Applied only as a fallback when the configured keybinding system does not handle the key.
+  function globalDefaultRingBellForKey(k) {
+    const kk = String(k || '');
+    if (kk.length !== 1) return null;
+    if (kk >= '1' && kk <= '9') return parseInt(kk, 10);
+    if (kk === '0') return 10;
+    if (kk === 'E') return 11;
+    if (kk === 'T') return 12;
+    return null;
+  }
+
   document.addEventListener('keydown', (e) => {
     if (e.altKey || e.ctrlKey || e.metaKey) return;
 
@@ -7233,17 +8401,26 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     // v08_p06_sound_testpad_tap_to_ring: Sound screen keyboard test pad (no scoring)
     if (ui && ui.screen === 'sound') {
       let found = null;
+      let hits = 0;
       const stage = clamp(parseInt(state.stage, 10) || 0, 1, 12);
       for (let b = 1; b <= stage; b++) {
         if (state.keyBindings && state.keyBindings[b] === k) {
-          if (found != null) { found = null; break; }
-          found = b;
+          hits += 1;
+          if (hits === 1) found = b;
+          else { found = null; break; }
         }
       }
+      // Preserve existing conflict behavior (ignore if ambiguous).
+      if (hits > 1) return;
       if (found != null) {
         if (k === 'Space') e.preventDefault();
         ringBellTestPad(found);
+        return;
       }
+
+      // v10_p07_global_default_ring_keys: fallback default bell keys (Sound screen: audio-only).
+      const defBell = globalDefaultRingBellForKey(k);
+      if (defBell != null && defBell <= stage) ringBellTestPad(defBell);
       return;
     }
 
@@ -7256,15 +8433,27 @@ Google Analytics is provided by Google. Their processing of data is governed by 
 
     // Keybinding match for live bells (ignore conflicts).
     let found = null;
+    let hits = 0;
     for (const b of state.liveBells) {
       if (state.keyBindings[b] === k) {
-        if (found != null) { found = null; break; }
-        found = b;
+        hits += 1;
+        if (hits === 1) found = b;
+        else { found = null; break; }
       }
     }
+    // If the user's bindings are ambiguous, don't fall back to defaults.
+    if (hits > 1) return;
     if (found != null) {
       if (k === 'Space') e.preventDefault();
       ringBell(found);
+      return;
+    }
+
+    // v10_p07_global_default_ring_keys: global fallback mapping (does not override custom bindings).
+    const defBell = globalDefaultRingBellForKey(k);
+    if (defBell != null) {
+      const stage = clamp(parseInt(state.stage, 10) || 0, 1, 12);
+      if (defBell <= stage) ringBell(defBell);
       return;
     }
   });
@@ -7727,6 +8916,80 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   }
 
   if (bellOverridesList) {
+
+    // v10_p06_sound_per_bell_piano_keypicker: tap/drag piano keys to preview + assign
+    const bellPianoPicker = {
+      active: false,
+      pointerId: null,
+      pianoEl: null,
+      bell: 0,
+      lastNote: null,
+      activeEl: null,
+      ignoreClickUntilMs: 0
+    };
+
+    function bellPianoPickerSetActive(el) {
+      const prev = bellPianoPicker.activeEl;
+      if (prev && prev !== el) {
+        try { prev.classList.remove('is-active'); } catch (_) {}
+      }
+      bellPianoPicker.activeEl = el || null;
+      if (el) {
+        try { el.classList.add('is-active'); } catch (_) {}
+      }
+    }
+
+    function bellPianoPickerReset() {
+      bellPianoPicker.active = false;
+      bellPianoPicker.pointerId = null;
+      bellPianoPicker.pianoEl = null;
+      bellPianoPicker.bell = 0;
+      bellPianoPicker.lastNote = null;
+      bellPianoPickerSetActive(null);
+    }
+
+    function bellPianoHitTest(e, pianoEl) {
+      const piano = pianoEl || bellPianoPicker.pianoEl;
+      if (!piano) return null;
+      const x = (e && typeof e.clientX === 'number') ? e.clientX : 0;
+      const y = (e && typeof e.clientY === 'number') ? e.clientY : 0;
+      const el = document.elementFromPoint ? document.elementFromPoint(x, y) : null;
+      const key = (el && el.closest) ? el.closest('.rg-piano-key[data-note]') : null;
+      if (!key || !piano.contains(key)) return null;
+      const note = key.dataset && key.dataset.note ? String(key.dataset.note) : '';
+      if (!note) return null;
+      return { note, el: key, piano };
+    }
+
+    function applyBellPianoKey(bell, note) {
+      const b = clamp(parseInt(bell, 10) || 0, 1, 12);
+      if (b < 1 || b > state.stage) return;
+      const n = String(note || '').trim();
+      if (!n) return;
+      ensureBellOverridesArrays();
+
+      // Stop any continuous Hz-slider preview so strikes don't overlap.
+      cancelHzSliderPreviewGesture();
+      stopHzPreviewTone();
+
+      // Keep the bell's existing major/minor mode (or fall back to global).
+      const baseKey = effectiveBellScaleKeyForPiano(b);
+      const mode = scaleModeFromScaleKey(baseKey);
+      const key = scaleKeyFromPianoNote(n, mode);
+      if (!key) return;
+
+      markUserTouchedConfig();
+      state.bellKeyOverride[b] = key;
+      saveBellKeyOverridesToLS();
+
+      const oct = effectiveBellOctaveForPiano(b);
+      const hz = getBellFrequencyFromKeyOct(b, key, oct);
+      playBellStrikePreviewAtHz(b, hz, perfNow());
+
+      syncBellOverridesEffectiveUI();
+      onBellTuningChanged();
+    }
+
     bellOverridesList.addEventListener('input', (e) => {
       const el = e && e.target ? e.target : null;
       if (!el || !el.id) return;
@@ -7741,6 +9004,17 @@ Google Analytics is provided by Google. Their processing of data is governed by 
           const v = parseFloat(raw);
           state.bellHzOverride[b] = Number.isFinite(v) ? clamp(v, 20, 5000) : null;
         }
+        const slider = document.getElementById('bellHzSlider_' + b);
+        if (slider) slider.value = String(clamp(getBellHz(b), PER_BELL_HZ_SLIDER_MIN, PER_BELL_HZ_SLIDER_MAX));
+        syncBellOverridesEffectiveUI();
+      } else if (el.id.startsWith('bellHzSlider_')) {
+        const b = parseInt(el.id.slice('bellHzSlider_'.length), 10) || 0;
+        if (b < 1 || b > 12) return;
+        const v = parseFloat(String(el.value || '').trim());
+        state.bellHzOverride[b] = Number.isFinite(v) ? clamp(v, 20, 5000) : null;
+        const input = document.getElementById('bellHzOverride_' + b);
+        if (input) input.value = (state.bellHzOverride[b] != null) ? String(state.bellHzOverride[b]) : '';
+        if (Number.isFinite(v)) updateHzPreviewTone(b, v);
         syncBellOverridesEffectiveUI();
       } else if (el.id.startsWith('bellVolOverride_')) {
         const b = parseInt(el.id.slice('bellVolOverride_'.length), 10) || 0;
@@ -7752,6 +9026,54 @@ Google Analytics is provided by Google. Their processing of data is governed by 
           state.bellVolOverride[b] = Number.isFinite(v) ? clamp(v, 0, 100) : null;
         }
         syncBellOverridesEffectiveUI();
+      } else if (el.id.startsWith('bellChordStepMs_')) {
+        const b = parseInt(el.id.slice('bellChordStepMs_'.length), 10) || 0;
+        if (b < 1 || b > 12) return;
+        ensureBellChordOverridesArray();
+        const cfg = sanitizeBellChordOverride(state.bellChordOverrides[b] || bellChordOverrideDefaults());
+        cfg.splitStepMs = clamp(parseInt(String(el.value || '0'), 10) || 0, 0, 15);
+        state.bellChordOverrides[b] = sanitizeBellChordOverride(cfg);
+        syncBellOverridesEffectiveUI();
+      } else if (el.id.startsWith('bellChordMaxMs_')) {
+        const b = parseInt(el.id.slice('bellChordMaxMs_'.length), 10) || 0;
+        if (b < 1 || b > 12) return;
+        ensureBellChordOverridesArray();
+        const cfg = sanitizeBellChordOverride(state.bellChordOverrides[b] || bellChordOverrideDefaults());
+        cfg.splitMaxMs = clamp(parseInt(String(el.value || '0'), 10) || 0, 0, 18);
+        state.bellChordOverrides[b] = sanitizeBellChordOverride(cfg);
+        syncBellOverridesEffectiveUI();
+      } else if (el.id.startsWith('bellChordIntervals_')) {
+        const b = parseInt(el.id.slice('bellChordIntervals_'.length), 10) || 0;
+        if (b < 1 || b > 12) return;
+        ensureBellChordOverridesArray();
+        const cfg = sanitizeBellChordOverride(state.bellChordOverrides[b] || bellChordOverrideDefaults());
+        cfg.customIntervals = String(el.value || '');
+        state.bellChordOverrides[b] = sanitizeBellChordOverride(cfg);
+        syncBellOverridesEffectiveUI();
+      } else if (el.id.startsWith('bellChordSplitOffsets_')) {
+        const b = parseInt(el.id.slice('bellChordSplitOffsets_'.length), 10) || 0;
+        if (b < 1 || b > 12) return;
+        ensureBellChordOverridesArray();
+        const cfg = sanitizeBellChordOverride(state.bellChordOverrides[b] || bellChordOverrideDefaults());
+        cfg.customSplitOffsetsMs = String(el.value || '');
+        state.bellChordOverrides[b] = sanitizeBellChordOverride(cfg);
+        syncBellOverridesEffectiveUI();
+      } else if (el.id.startsWith('bellChordDetune_')) {
+        const b = parseInt(el.id.slice('bellChordDetune_'.length), 10) || 0;
+        if (b < 1 || b > 12) return;
+        ensureBellChordOverridesArray();
+        const cfg = sanitizeBellChordOverride(state.bellChordOverrides[b] || bellChordOverrideDefaults());
+        cfg.customDetuneCents = String(el.value || '');
+        state.bellChordOverrides[b] = sanitizeBellChordOverride(cfg);
+        syncBellOverridesEffectiveUI();
+      } else if (el.id.startsWith('bellChordLevels_')) {
+        const b = parseInt(el.id.slice('bellChordLevels_'.length), 10) || 0;
+        if (b < 1 || b > 12) return;
+        ensureBellChordOverridesArray();
+        const cfg = sanitizeBellChordOverride(state.bellChordOverrides[b] || bellChordOverrideDefaults());
+        cfg.customLevelGains = String(el.value || '');
+        state.bellChordOverrides[b] = sanitizeBellChordOverride(cfg);
+        syncBellOverridesEffectiveUI();
       }
     });
 
@@ -7761,6 +9083,10 @@ Google Analytics is provided by Google. Their processing of data is governed by 
       let did = false;
 
       if (el.id.startsWith('bellHzOverride_')) {
+        did = true;
+        markUserTouchedConfig();
+        saveBellHzOverridesToLS();
+      } else if (el.id.startsWith('bellHzSlider_')) {
         did = true;
         markUserTouchedConfig();
         saveBellHzOverridesToLS();
@@ -7794,6 +9120,157 @@ Google Analytics is provided by Google. Their processing of data is governed by 
         saveBellOctOverridesToLS();
       }
 
+      // v10_p09_sound_per_bell_chords_overrides: per-bell chord overrides (persisted)
+      else if (el.id.startsWith('bellChordMode_')) {
+        did = true;
+        markUserTouchedConfig();
+        ensureBellChordOverridesArray();
+        const b = parseInt(el.id.slice('bellChordMode_'.length), 10) || 0;
+        if (b < 1 || b > 12) return;
+        const newMode = (String(el.value || '') === 'override') ? 'override' : 'inherit';
+        const cfg = sanitizeBellChordOverride(state.bellChordOverrides[b] || bellChordOverrideDefaults());
+        if (newMode === 'override' && cfg.mode !== 'override') {
+          const g = state.globalChord ? sanitizeGlobalChordConfig(state.globalChord) : globalChordDefaults();
+          cfg.mode = 'override';
+          cfg.enabled = !!(g && g.enabled);
+          cfg.preset = (g && g.preset && GLOBAL_CHORD_PRESETS[g.preset]) ? String(g.preset) : 'unison';
+          cfg.inversion = String((g && g.inversion) || 'root');
+          cfg.spread = String((g && g.spread) || 'close');
+          cfg.splitStrikeMode = 'inherit';
+          cfg.splitStepMs = clamp(parseInt(String(g && g.stepMs), 10) || 0, 0, 15);
+          cfg.splitMaxMs = clamp(parseInt(String(g && g.maxMs), 10) || 0, 0, 18);
+        } else {
+          cfg.mode = newMode;
+        }
+        state.bellChordOverrides[b] = sanitizeBellChordOverride(cfg);
+        saveBellChordOverridesToLS();
+      } else if (el.id.startsWith('bellChordEnabled_')) {
+        did = true;
+        markUserTouchedConfig();
+        ensureBellChordOverridesArray();
+        const b = parseInt(el.id.slice('bellChordEnabled_'.length), 10) || 0;
+        if (b < 1 || b > 12) return;
+        const cfg = sanitizeBellChordOverride(state.bellChordOverrides[b] || bellChordOverrideDefaults());
+        cfg.enabled = !!el.checked;
+        cfg.mode = 'override';
+        state.bellChordOverrides[b] = sanitizeBellChordOverride(cfg);
+        saveBellChordOverridesToLS();
+      } else if (el.id.startsWith('bellChordPreset_')) {
+        did = true;
+        markUserTouchedConfig();
+        ensureBellChordOverridesArray();
+        const b = parseInt(el.id.slice('bellChordPreset_'.length), 10) || 0;
+        if (b < 1 || b > 12) return;
+        const v = String(el.value || 'unison');
+        const cfg = sanitizeBellChordOverride(state.bellChordOverrides[b] || bellChordOverrideDefaults());
+        cfg.preset = GLOBAL_CHORD_PRESETS[v] ? v : 'unison';
+        cfg.mode = 'override';
+        state.bellChordOverrides[b] = sanitizeBellChordOverride(cfg);
+        saveBellChordOverridesToLS();
+      } else if (el.id.startsWith('bellChordSplit_')) {
+        did = true;
+        markUserTouchedConfig();
+        ensureBellChordOverridesArray();
+        const b = parseInt(el.id.slice('bellChordSplit_'.length), 10) || 0;
+        if (b < 1 || b > 12) return;
+        const v = String(el.value || 'inherit');
+        const cfg = sanitizeBellChordOverride(state.bellChordOverrides[b] || bellChordOverrideDefaults());
+        cfg.splitStrikeMode = (v === 'belllike' || v === 'simultaneous') ? v : 'inherit';
+        cfg.mode = 'override';
+        state.bellChordOverrides[b] = sanitizeBellChordOverride(cfg);
+        saveBellChordOverridesToLS();
+      } else if (el.id.startsWith('bellChordInversion_')) {
+        did = true;
+        markUserTouchedConfig();
+        ensureBellChordOverridesArray();
+        const b = parseInt(el.id.slice('bellChordInversion_'.length), 10) || 0;
+        if (b < 1 || b > 12) return;
+        const v = String(el.value || 'root');
+        const cfg = sanitizeBellChordOverride(state.bellChordOverrides[b] || bellChordOverrideDefaults());
+        cfg.inversion = GLOBAL_CHORD_INVERSION_ORDER.includes(v) ? v : 'root';
+        cfg.mode = 'override';
+        state.bellChordOverrides[b] = sanitizeBellChordOverride(cfg);
+        saveBellChordOverridesToLS();
+      } else if (el.id.startsWith('bellChordSpread_')) {
+        did = true;
+        markUserTouchedConfig();
+        ensureBellChordOverridesArray();
+        const b = parseInt(el.id.slice('bellChordSpread_'.length), 10) || 0;
+        if (b < 1 || b > 12) return;
+        const v = String(el.value || 'close');
+        const cfg = sanitizeBellChordOverride(state.bellChordOverrides[b] || bellChordOverrideDefaults());
+        cfg.spread = GLOBAL_CHORD_SPREAD_ORDER.includes(v) ? v : 'close';
+        cfg.mode = 'override';
+        state.bellChordOverrides[b] = sanitizeBellChordOverride(cfg);
+        saveBellChordOverridesToLS();
+      } else if (el.id.startsWith('bellChordStepMs_')) {
+        did = true;
+        markUserTouchedConfig();
+        ensureBellChordOverridesArray();
+        const b = parseInt(el.id.slice('bellChordStepMs_'.length), 10) || 0;
+        if (b < 1 || b > 12) return;
+        const cfg = sanitizeBellChordOverride(state.bellChordOverrides[b] || bellChordOverrideDefaults());
+        cfg.splitStepMs = clamp(parseInt(String(el.value || '0'), 10) || 0, 0, 15);
+        cfg.mode = 'override';
+        state.bellChordOverrides[b] = sanitizeBellChordOverride(cfg);
+        saveBellChordOverridesToLS();
+      } else if (el.id.startsWith('bellChordMaxMs_')) {
+        did = true;
+        markUserTouchedConfig();
+        ensureBellChordOverridesArray();
+        const b = parseInt(el.id.slice('bellChordMaxMs_'.length), 10) || 0;
+        if (b < 1 || b > 12) return;
+        const cfg = sanitizeBellChordOverride(state.bellChordOverrides[b] || bellChordOverrideDefaults());
+        cfg.splitMaxMs = clamp(parseInt(String(el.value || '0'), 10) || 0, 0, 18);
+        cfg.mode = 'override';
+        state.bellChordOverrides[b] = sanitizeBellChordOverride(cfg);
+        saveBellChordOverridesToLS();
+      } else if (el.id.startsWith('bellChordIntervals_')) {
+        did = true;
+        markUserTouchedConfig();
+        ensureBellChordOverridesArray();
+        const b = parseInt(el.id.slice('bellChordIntervals_'.length), 10) || 0;
+        if (b < 1 || b > 12) return;
+        const cfg = sanitizeBellChordOverride(state.bellChordOverrides[b] || bellChordOverrideDefaults());
+        cfg.customIntervals = String(el.value || '');
+        cfg.mode = 'override';
+        state.bellChordOverrides[b] = sanitizeBellChordOverride(cfg);
+        saveBellChordOverridesToLS();
+      } else if (el.id.startsWith('bellChordSplitOffsets_')) {
+        did = true;
+        markUserTouchedConfig();
+        ensureBellChordOverridesArray();
+        const b = parseInt(el.id.slice('bellChordSplitOffsets_'.length), 10) || 0;
+        if (b < 1 || b > 12) return;
+        const cfg = sanitizeBellChordOverride(state.bellChordOverrides[b] || bellChordOverrideDefaults());
+        cfg.customSplitOffsetsMs = String(el.value || '');
+        cfg.mode = 'override';
+        state.bellChordOverrides[b] = sanitizeBellChordOverride(cfg);
+        saveBellChordOverridesToLS();
+      } else if (el.id.startsWith('bellChordDetune_')) {
+        did = true;
+        markUserTouchedConfig();
+        ensureBellChordOverridesArray();
+        const b = parseInt(el.id.slice('bellChordDetune_'.length), 10) || 0;
+        if (b < 1 || b > 12) return;
+        const cfg = sanitizeBellChordOverride(state.bellChordOverrides[b] || bellChordOverrideDefaults());
+        cfg.customDetuneCents = String(el.value || '');
+        cfg.mode = 'override';
+        state.bellChordOverrides[b] = sanitizeBellChordOverride(cfg);
+        saveBellChordOverridesToLS();
+      } else if (el.id.startsWith('bellChordLevels_')) {
+        did = true;
+        markUserTouchedConfig();
+        ensureBellChordOverridesArray();
+        const b = parseInt(el.id.slice('bellChordLevels_'.length), 10) || 0;
+        if (b < 1 || b > 12) return;
+        const cfg = sanitizeBellChordOverride(state.bellChordOverrides[b] || bellChordOverrideDefaults());
+        cfg.customLevelGains = String(el.value || '');
+        cfg.mode = 'override';
+        state.bellChordOverrides[b] = sanitizeBellChordOverride(cfg);
+        saveBellChordOverridesToLS();
+      }
+
       if (did) {
         syncBellOverridesEffectiveUI();
         onBellTuningChanged();
@@ -7808,10 +9285,36 @@ Google Analytics is provided by Google. Their processing of data is governed by 
         return;
       }
 
+
+      const pianoKey = (e && e.target && e.target.closest) ? e.target.closest('.rg-piano-key[data-note]') : null;
+      if (pianoKey) {
+        const now = perfNow();
+        if (bellPianoPicker && bellPianoPicker.ignoreClickUntilMs && now < bellPianoPicker.ignoreClickUntilMs) return;
+        const piano = pianoKey.closest ? pianoKey.closest('.rg-piano[data-bell]') : null;
+        const bRaw = piano && piano.dataset && piano.dataset.bell ? parseInt(piano.dataset.bell, 10) : 0;
+        const b = clamp(bRaw || 0, 1, 12);
+        const note = pianoKey.dataset && pianoKey.dataset.note ? String(pianoKey.dataset.note) : '';
+        if (note) {
+          applyBellPianoKey(b, note);
+          return;
+        }
+      }
+
       const btn = (e && e.target && e.target.closest) ? e.target.closest('button[data-act]') : null;
       if (!btn) return;
       const act = btn.dataset && btn.dataset.act ? String(btn.dataset.act) : '';
       const b = clamp(parseInt((btn.dataset && btn.dataset.bell) || '0', 10) || 0, 1, 12);
+
+      // v10_p09_sound_per_bell_chords_overrides: toggle Advanced expander
+      if (act === 'toggleChordAdv') {
+        const adv = document.getElementById('bellChordAdv_' + b);
+        if (adv) {
+          const willOpen = adv.classList.contains('hidden');
+          adv.classList.toggle('hidden', !willOpen);
+          try { btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false'); } catch (_) {}
+        }
+        return;
+      }
 
       if (act === 'clearHz') {
         markUserTouchedConfig();
@@ -7830,6 +9333,309 @@ Google Analytics is provided by Google. Their processing of data is governed by 
         clearBellOctOverride(b);
         onBellTuningChanged();
       }
+    });
+
+
+
+    // v10_p06_sound_per_bell_piano_keypicker: tap + drag across keys (Spotlight-like semantics)
+    function handleBellPianoPointerDown(e) {
+      const key = (e && e.target && e.target.closest) ? e.target.closest('.rg-piano-key[data-note]') : null;
+      if (!key) return;
+      const piano = key.closest ? key.closest('.rg-piano[data-bell]') : null;
+      if (!piano || !bellOverridesList.contains(piano)) return;
+      const bRaw = piano.dataset && piano.dataset.bell ? parseInt(piano.dataset.bell, 10) : 0;
+      const b = clamp(bRaw || 0, 1, 12);
+      if (b < 1 || b > state.stage) return;
+
+      // If another pointer is already dragging, ignore additional touches.
+      if (bellPianoPicker.active && bellPianoPicker.pointerId != null && e && typeof e.pointerId === 'number' && e.pointerId !== bellPianoPicker.pointerId) return;
+
+      // Supersede any existing piano gesture immediately.
+      bellPianoPickerReset();
+
+      bellPianoPicker.active = true;
+      bellPianoPicker.pointerId = (e && typeof e.pointerId === 'number') ? e.pointerId : null;
+      bellPianoPicker.pianoEl = piano;
+      bellPianoPicker.bell = b;
+      bellPianoPicker.lastNote = null;
+      bellPianoPicker.ignoreClickUntilMs = perfNow() + 350;
+
+      try { if (typeof piano.setPointerCapture === 'function' && bellPianoPicker.pointerId != null) piano.setPointerCapture(bellPianoPicker.pointerId); } catch (_) {}
+
+      const note = key.dataset && key.dataset.note ? String(key.dataset.note) : '';
+      if (note) {
+        bellPianoPicker.lastNote = note;
+        bellPianoPickerSetActive(key);
+        applyBellPianoKey(b, note);
+      }
+
+      if (e && e.cancelable) {
+        try { e.preventDefault(); } catch (_) {}
+      }
+    }
+
+    function handleBellPianoPointerMove(e) {
+      if (!bellPianoPicker.active) return;
+      if (bellPianoPicker.pointerId != null && e && typeof e.pointerId === 'number' && e.pointerId !== bellPianoPicker.pointerId) return;
+
+      const hit = bellPianoHitTest(e);
+      if (!hit) {
+        // Leaving the keyboard clears the last note so re-entry can ring again.
+        bellPianoPicker.lastNote = null;
+        bellPianoPickerSetActive(null);
+        if (e && e.cancelable) {
+          try { e.preventDefault(); } catch (_) {}
+        }
+        return;
+      }
+
+      bellPianoPickerSetActive(hit.el);
+
+      const note = hit.note;
+      if (note && note === bellPianoPicker.lastNote) {
+        if (e && e.cancelable) {
+          try { e.preventDefault(); } catch (_) {}
+        }
+        return;
+      }
+
+      bellPianoPicker.lastNote = note || null;
+      if (note) applyBellPianoKey(bellPianoPicker.bell, note);
+
+      if (e && e.cancelable) {
+        try { e.preventDefault(); } catch (_) {}
+      }
+    }
+
+    function handleBellPianoPointerUp(e) {
+      if (!bellPianoPicker.active) return;
+      if (bellPianoPicker.pointerId != null && e && typeof e.pointerId === 'number' && e.pointerId !== bellPianoPicker.pointerId) return;
+      bellPianoPickerReset();
+    }
+
+    function handleBellPianoPointerCancel(e) {
+      if (!bellPianoPicker.active) return;
+      if (bellPianoPicker.pointerId != null && e && typeof e.pointerId === 'number' && e.pointerId !== bellPianoPicker.pointerId) return;
+      bellPianoPickerReset();
+    }
+
+    bellOverridesList.addEventListener('pointerdown', handleBellPianoPointerDown, { passive: false });
+    bellOverridesList.addEventListener('pointermove', handleBellPianoPointerMove, { passive: false });
+    bellOverridesList.addEventListener('pointerup', handleBellPianoPointerUp);
+    bellOverridesList.addEventListener('pointercancel', handleBellPianoPointerCancel);
+    window.addEventListener('pointerup', handleBellPianoPointerUp);
+    window.addEventListener('pointercancel', handleBellPianoPointerCancel);
+
+    // v10_p05_sound_per_bell_hz_slider_preview: Option B slider preview (tap=strike, hold/drag=continuous tone)
+    // Uses shared hzSliderPreview + HZ_SLIDER_* constants declared in the audio section.
+
+    function hzSliderPreviewClearTimer() {
+      if (!hzSliderPreview.holdTimer) return;
+      try { window.clearTimeout(hzSliderPreview.holdTimer); } catch (_) {}
+      hzSliderPreview.holdTimer = null;
+    }
+
+    function hzSliderPreviewReset() {
+      hzSliderPreviewClearTimer();
+      hzSliderPreview.active = false;
+      hzSliderPreview.pointerId = null;
+      hzSliderPreview.el = null;
+      hzSliderPreview.bell = 0;
+      hzSliderPreview.didStartTone = false;
+      hzSliderPreview.downX = 0;
+      hzSliderPreview.downY = 0;
+    }
+
+    function endHzSliderPreviewInteraction(e, cancelled) {
+      if (!hzSliderPreview.active) return;
+      const el = hzSliderPreview.el;
+      const b = hzSliderPreview.bell;
+      const didTone = !!hzSliderPreview.didStartTone;
+      hzSliderPreviewReset();
+
+      if (didTone) {
+        stopHzPreviewTone();
+        return;
+      }
+      if (cancelled) return;
+      if (!el) return;
+      const f = parseFloat(String(el.value || '').trim());
+      if (!Number.isFinite(f)) return;
+      stopHzPreviewTone();
+      playBellStrikePreviewAtHz(b, f, perfNow());
+    }
+
+    function handleHzSliderPointerDown(e) {
+      const el = e && e.target ? e.target : null;
+      if (!el || !el.id || !el.id.startsWith('bellHzSlider_')) return;
+      const b = parseInt(el.id.slice('bellHzSlider_'.length), 10) || 0;
+      if (b < 1 || b > 12) return;
+
+      // Supersede any existing preview immediately.
+      stopHzPreviewTone();
+      hzSliderPreviewReset();
+
+      hzSliderPreview.active = true;
+      hzSliderPreview.pointerId = (typeof e.pointerId === 'number') ? e.pointerId : null;
+      hzSliderPreview.el = el;
+      hzSliderPreview.bell = b;
+      hzSliderPreview.didStartTone = false;
+      hzSliderPreview.downX = (typeof e.clientX === 'number') ? e.clientX : 0;
+      hzSliderPreview.downY = (typeof e.clientY === 'number') ? e.clientY : 0;
+
+      try { if (typeof el.setPointerCapture === 'function' && hzSliderPreview.pointerId != null) el.setPointerCapture(hzSliderPreview.pointerId); } catch (_) {}
+
+      hzSliderPreview.holdTimer = window.setTimeout(() => {
+        if (!hzSliderPreview.active || hzSliderPreview.didStartTone || hzSliderPreview.el !== el) return;
+        const f = parseFloat(String(el.value || '').trim());
+        if (!Number.isFinite(f)) return;
+        hzSliderPreview.didStartTone = true;
+        startHzPreviewTone(b, f);
+      }, HZ_SLIDER_HOLD_MS);
+    }
+
+    function handleHzSliderPointerMove(e) {
+      if (!hzSliderPreview.active) return;
+      if (hzSliderPreview.pointerId != null && typeof e.pointerId === 'number' && e.pointerId !== hzSliderPreview.pointerId) return;
+      const el = hzSliderPreview.el;
+      if (!el) return;
+
+      const x = (typeof e.clientX === 'number') ? e.clientX : hzSliderPreview.downX;
+      const y = (typeof e.clientY === 'number') ? e.clientY : hzSliderPreview.downY;
+      const dx = x - hzSliderPreview.downX;
+      const dy = y - hzSliderPreview.downY;
+      const dist2 = dx * dx + dy * dy;
+
+      if (!hzSliderPreview.didStartTone && dist2 >= HZ_SLIDER_MOVE_PX2) {
+        hzSliderPreviewClearTimer();
+        const b = hzSliderPreview.bell;
+        const f = parseFloat(String(el.value || '').trim());
+        if (Number.isFinite(f)) {
+          hzSliderPreview.didStartTone = true;
+          startHzPreviewTone(b, f);
+        }
+      }
+
+      if (hzSliderPreview.didStartTone) {
+        const b = hzSliderPreview.bell;
+        const f = parseFloat(String(el.value || '').trim());
+        if (Number.isFinite(f)) updateHzPreviewTone(b, f);
+      }
+
+      if (hzSliderPreview.didStartTone && e && e.cancelable) {
+        try { e.preventDefault(); } catch (_) {}
+      }
+    }
+
+    function handleHzSliderPointerUp(e) {
+      if (!hzSliderPreview.active) return;
+      if (hzSliderPreview.pointerId != null && typeof e.pointerId === 'number' && e.pointerId !== hzSliderPreview.pointerId) return;
+      endHzSliderPreviewInteraction(e, false);
+    }
+
+    function handleHzSliderPointerCancel(e) {
+      if (!hzSliderPreview.active) return;
+      if (hzSliderPreview.pointerId != null && typeof e.pointerId === 'number' && e.pointerId !== hzSliderPreview.pointerId) return;
+      endHzSliderPreviewInteraction(e, true);
+    }
+
+    bellOverridesList.addEventListener('pointerdown', handleHzSliderPointerDown);
+    bellOverridesList.addEventListener('pointermove', handleHzSliderPointerMove);
+    bellOverridesList.addEventListener('pointerup', handleHzSliderPointerUp);
+    bellOverridesList.addEventListener('pointercancel', handleHzSliderPointerCancel);
+    window.addEventListener('pointerup', handleHzSliderPointerUp);
+    window.addEventListener('pointercancel', handleHzSliderPointerCancel);
+  }
+
+  // v10_p04_sound_quick_bell_row: Spotlight-style quick tap/drag to ring (Sound menu)
+  function soundQuickRowSetActive(el) {
+    const prev = ui.soundQuickRowActiveEl;
+    if (prev && prev !== el) {
+      try { prev.classList.remove('is-active'); } catch (_) {}
+    }
+    ui.soundQuickRowActiveEl = el || null;
+    if (el) {
+      try { el.classList.add('is-active'); } catch (_) {}
+    }
+  }
+
+  function hitTestSoundQuickRow(e) {
+    if (!soundQuickBellRow) return null;
+    const x = (e && typeof e.clientX === 'number') ? e.clientX : 0;
+    const y = (e && typeof e.clientY === 'number') ? e.clientY : 0;
+    const el = document.elementFromPoint ? document.elementFromPoint(x, y) : null;
+    const btn = (el && el.closest) ? el.closest('.rg-quick-bell-btn[data-bell]') : null;
+    if (!btn || !soundQuickBellRow.contains(btn)) return null;
+    const b = parseInt(btn.dataset && btn.dataset.bell ? btn.dataset.bell : '0', 10) || 0;
+    if (b < 1 || b > state.stage) return null;
+    return { bell: b, el: btn };
+  }
+
+  function endSoundQuickRowDrag(e) {
+    if (!ui.soundQuickRowDragActive) return;
+    if (ui.soundQuickRowDragPointerId != null && e && e.pointerId != null && e.pointerId !== ui.soundQuickRowDragPointerId) return;
+    ui.soundQuickRowDragActive = false;
+    ui.soundQuickRowDragPointerId = null;
+    ui.soundQuickRowDragLastBell = null;
+    soundQuickRowSetActive(null);
+  }
+
+  if (soundQuickBellRow) {
+    soundQuickBellRow.addEventListener('pointerdown', (e) => {
+      const hit = hitTestSoundQuickRow(e);
+      if (!hit) return;
+
+      // If another pointer is already dragging, ignore additional touches.
+      if (ui.soundQuickRowDragActive && ui.soundQuickRowDragPointerId != null && e.pointerId !== ui.soundQuickRowDragPointerId) return;
+
+      ui.soundQuickRowDragActive = true;
+      ui.soundQuickRowDragPointerId = e.pointerId;
+      ui.soundQuickRowDragLastBell = hit.bell;
+      ui.soundQuickRowIgnoreClickUntilMs = perfNow() + 350;
+      soundQuickRowSetActive(hit.el);
+      try { soundQuickBellRow.setPointerCapture(e.pointerId); } catch (_) {}
+
+      ringBellTestPad(hit.bell);
+      e.preventDefault();
+    }, { passive: false });
+
+    soundQuickBellRow.addEventListener('pointermove', (e) => {
+      if (!ui.soundQuickRowDragActive) return;
+      if (ui.soundQuickRowDragPointerId != null && e.pointerId !== ui.soundQuickRowDragPointerId) return;
+
+      const hit = hitTestSoundQuickRow(e);
+      if (!hit) {
+        // Leaving the row clears the last bell so re-entry can ring again.
+        ui.soundQuickRowDragLastBell = null;
+        soundQuickRowSetActive(null);
+        e.preventDefault();
+        return;
+      }
+
+      if (hit.bell === ui.soundQuickRowDragLastBell) {
+        e.preventDefault();
+        return;
+      }
+
+      ui.soundQuickRowDragLastBell = hit.bell;
+      soundQuickRowSetActive(hit.el);
+      ringBellTestPad(hit.bell);
+      e.preventDefault();
+    }, { passive: false });
+
+    soundQuickBellRow.addEventListener('pointerup', endSoundQuickRowDrag);
+    soundQuickBellRow.addEventListener('pointercancel', endSoundQuickRowDrag);
+    window.addEventListener('pointerup', endSoundQuickRowDrag);
+    window.addEventListener('pointercancel', endSoundQuickRowDrag);
+
+    // Fallback: keyboard activation / click when pointer events are not used.
+    soundQuickBellRow.addEventListener('click', (e) => {
+      const btn = (e && e.target && e.target.closest) ? e.target.closest('.rg-quick-bell-btn[data-bell]') : null;
+      if (!btn) return;
+      const now = perfNow();
+      if (ui.soundQuickRowIgnoreClickUntilMs && now < ui.soundQuickRowIgnoreClickUntilMs) return;
+      const b = parseInt(btn.dataset && btn.dataset.bell ? btn.dataset.bell : '0', 10) || 0;
+      ringBellTestPad(b);
     });
   }
 
@@ -7879,6 +9685,91 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     applyBellMasterGain();
     try { syncBellOverridesEffectiveUI(); } catch (_) {}
   });
+
+  // v10_p08_sound_global_chords_splitstrike: global chord controls
+  if (globalChordOnOffBtn) {
+    globalChordOnOffBtn.addEventListener('click', () => {
+      markUserTouchedConfig();
+      if (!state.globalChord) state.globalChord = globalChordDefaults();
+      state.globalChord.enabled = !state.globalChord.enabled;
+      state.globalChord = sanitizeGlobalChordConfig(state.globalChord);
+      saveGlobalChordToLS();
+      syncGlobalChordControlsUI();
+    });
+  }
+
+  if (globalChordPresetSelect) {
+    globalChordPresetSelect.addEventListener('change', () => {
+      markUserTouchedConfig();
+      if (!state.globalChord) state.globalChord = globalChordDefaults();
+      state.globalChord.preset = String(globalChordPresetSelect.value || 'unison');
+      state.globalChord = sanitizeGlobalChordConfig(state.globalChord);
+      saveGlobalChordToLS();
+      syncGlobalChordControlsUI();
+    });
+  }
+
+  if (globalChordSplitSelect) {
+    globalChordSplitSelect.addEventListener('change', () => {
+      markUserTouchedConfig();
+      if (!state.globalChord) state.globalChord = globalChordDefaults();
+      state.globalChord.splitStrike = String(globalChordSplitSelect.value || 'simultaneous');
+      state.globalChord = sanitizeGlobalChordConfig(state.globalChord);
+      saveGlobalChordToLS();
+      syncGlobalChordControlsUI();
+    });
+  }
+
+  if (globalChordInversionSelect) {
+    globalChordInversionSelect.addEventListener('change', () => {
+      markUserTouchedConfig();
+      if (!state.globalChord) state.globalChord = globalChordDefaults();
+      state.globalChord.inversion = String(globalChordInversionSelect.value || 'root');
+      state.globalChord = sanitizeGlobalChordConfig(state.globalChord);
+      saveGlobalChordToLS();
+      syncGlobalChordControlsUI();
+    });
+  }
+
+  if (globalChordSpreadSelect) {
+    globalChordSpreadSelect.addEventListener('change', () => {
+      markUserTouchedConfig();
+      if (!state.globalChord) state.globalChord = globalChordDefaults();
+      state.globalChord.spread = String(globalChordSpreadSelect.value || 'close');
+      state.globalChord = sanitizeGlobalChordConfig(state.globalChord);
+      saveGlobalChordToLS();
+      syncGlobalChordControlsUI();
+    });
+  }
+
+  const commitGlobalChordSplitParamsFromUI = () => {
+    if (!state.globalChord) state.globalChord = globalChordDefaults();
+    if (globalChordStepMs) state.globalChord.stepMs = clamp(parseInt(globalChordStepMs.value, 10) || 0, 0, 15);
+    if (globalChordMaxMs) state.globalChord.maxMs = clamp(parseInt(globalChordMaxMs.value, 10) || 0, 0, 18);
+    state.globalChord = sanitizeGlobalChordConfig(state.globalChord);
+    saveGlobalChordToLS();
+    syncGlobalChordControlsUI();
+  };
+
+  if (globalChordStepMs) {
+    globalChordStepMs.addEventListener('input', () => {
+      markUserTouchedConfig();
+      if (!state.globalChord) state.globalChord = globalChordDefaults();
+      state.globalChord.stepMs = clamp(parseInt(globalChordStepMs.value, 10) || 0, 0, 15);
+    });
+    globalChordStepMs.addEventListener('change', () => { markUserTouchedConfig(); commitGlobalChordSplitParamsFromUI(); });
+    globalChordStepMs.addEventListener('blur', () => { commitGlobalChordSplitParamsFromUI(); });
+  }
+
+  if (globalChordMaxMs) {
+    globalChordMaxMs.addEventListener('input', () => {
+      markUserTouchedConfig();
+      if (!state.globalChord) state.globalChord = globalChordDefaults();
+      state.globalChord.maxMs = clamp(parseInt(globalChordMaxMs.value, 10) || 0, 0, 18);
+    });
+    globalChordMaxMs.addEventListener('change', () => { markUserTouchedConfig(); commitGlobalChordSplitParamsFromUI(); });
+    globalChordMaxMs.addEventListener('blur', () => { commitGlobalChordSplitParamsFromUI(); });
+  }
 
   if (droneOnOffBtn) {
     droneOnOffBtn.addEventListener('click', () => {
@@ -8070,6 +9961,18 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     if (lblP) lblP.classList.toggle('is-selected', on);
   }
 
+  function showPrivacyRefreshNotice(show) {
+    if (!privacyRefreshNotice) return;
+    privacyRefreshNotice.classList.toggle('hidden', !show);
+    privacyRefreshNotice.setAttribute('aria-hidden', show ? 'false' : 'true');
+  }
+
+  function syncPrivacyRefreshNoticeUI() {
+    // Show only when opted out and GA was loaded earlier in this tab session.
+    const show = (!isAudienceMeasurementEnabled() && gaNeedsRefreshNotice);
+    showPrivacyRefreshNotice(show);
+  }
+
 
 
   function syncPrivacyToggleUI() { syncAudienceConsentUI(); }
@@ -8077,11 +9980,13 @@ Google Analytics is provided by Google. Their processing of data is governed by 
   function enableAudienceMeasurement() {
     setAudienceConsent('1');
     syncAudienceConsentUI();
+    syncPrivacyRefreshNoticeUI();
   }
 
   function disableAudienceMeasurement() {
     setAudienceConsent('0');
     syncAudienceConsentUI();
+    syncPrivacyRefreshNoticeUI();
   }
 
   function initPrivacyConsentUI() {
@@ -8095,6 +10000,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     }
 
     syncAudienceConsentUI();
+    syncPrivacyRefreshNoticeUI();
     applyGADisableFlagFromStoredChoice();
 
     if (c === '1') {
@@ -8112,6 +10018,7 @@ Google Analytics is provided by Google. Their processing of data is governed by 
           privacyAudienceCheckbox.addEventListener('change', () => {
             setAudienceConsent(privacyAudienceCheckbox.checked ? '1' : '0');
             syncAudienceConsentUI();
+            syncPrivacyRefreshNoticeUI();
           });
         }
 
@@ -8170,6 +10077,11 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     loadMicPrefs();
 
     loadBellOverridesFromLS();
+    loadBellChordOverridesFromLS();
+
+    // v10_p08_sound_global_chords_splitstrike
+    state.globalChord = loadGlobalChordFromLS();
+    try { buildGlobalChordControlsUI(); } catch (_) {}
 
     if (!state.spotlightShowN && !state.spotlightShowN1 && !state.spotlightShowN2) state.spotlightShowN = true;
 
@@ -8336,10 +10248,17 @@ Google Analytics is provided by Google. Their processing of data is governed by 
     window.addEventListener('beforeunload', stopMicCapture);
     window.addEventListener('pagehide', stopDrone);
     window.addEventListener('beforeunload', stopDrone);
+    window.addEventListener('blur', () => {
+      // v10_p05_sound_per_bell_hz_slider_preview: best-effort safety stop.
+      try { cancelHzSliderPreviewGesture(); } catch (_) {}
+      try { stopHzPreviewTone(); } catch (_) {}
+    });
 
 
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
+        try { cancelHzSliderPreviewGesture(); } catch (_) {}
+        try { stopHzPreviewTone(); } catch (_) {}
         // Interactive-only: do not auto-stop runs on desktop tab switches.
         // Browsers may release wake locks while hidden; we re-request on return.
         syncWakeLockForRun();

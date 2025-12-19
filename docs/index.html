@@ -153,14 +153,13 @@
                   <label class="toggle"><input id="privacyAudienceCheckbox" type="checkbox" /> Audience measurement</label>
                 </div>
                 <div class="control-note rg-muted">Optional. Counts site visits and page/screen views only.<br />No user profiles, no cross-visit tracking, no gameplay data.</div>
+                <div id="privacyRefreshNotice" class="rg-privacy-refresh-note hidden" aria-hidden="true">Audience measurement disabled. To ensure analytics is not loaded at all, please refresh the page.</div>
               </div>
             </div>
 
             <div id="privacyPolicyPre" class="rg-privacy-policy" aria-label="Privacy policy">
               <h2>Privacy &amp; Analytics</h2>
               <p><strong>Ringer Game is a client-only web app.</strong></p>
-
-              <p>Contact: <a href="mailto:ringergame143@gmail.com">ringergame143@gmail.com</a></p>
 
               <h3>What Ringer Game does not do</h3>
               <ul>
@@ -179,10 +178,17 @@
               <p>Gameplay statistics and preferences may be stored in your browser (for example, via localStorage) so the game can remember settings and show your performance stats. This data stays on your device.</p>
 
               <h3>Your choice</h3>
-              <p>Audience measurement is off by default. You can enable or disable it at any time from the Privacy page. When disabled, Google Analytics is not loaded.</p>
+              <p>Audience measurement is off by default. You can enable or disable it at any time from the Privacy page.</p>
+              <p>When Audience measurement is turned off, analytics is stopped immediately. A page refresh ensures it is not loaded at all.</p>
+
+              <h3>CCCBR method library (optional)</h3>
+              <p>From Setup, you can optionally choose to download a method library from CCCBR. If you choose it, your browser will request data from CCCBR-hosted resources.</p>
+              <p>CCCBR is a third party; their handling of data is governed by their terms. Ringer Game does not claim ownership of CCCBR content. See: <a href="https://www.cccbr.org.uk/" target="_blank" rel="noopener">https://www.cccbr.org.uk/</a></p>
 
               <h3>Third party</h3>
               <p>Google Analytics is provided by Google. Their processing of data is governed by Google’s own privacy terms.</p>
+
+              <p>Contact: <a href="mailto:ringergame143@gmail.com">ringergame143@gmail.com</a></p>
             </div>
             <div class="rg-nav">
               <button class="pill" type="button" data-go-screen="home">Home</button>
@@ -198,9 +204,44 @@
           <div class="pane-title"><span>Sound</span></div>
           <div class="rg-screen-body">
             <div id="soundMenuControls" class="rg-controls" aria-label="Sound controls"></div>
+
+            <!-- v10_p08_sound_global_chords_splitstrike: global chord controls -->
+            <div id="soundChordControls" class="rg-controls rg-sound-chords" aria-label="Chord controls">
+              <div class="control">
+                <label>Chords</label>
+                <button id="globalChordOnOffBtn" class="pill" type="button" aria-pressed="false">Chords (global) Off</button>
+                <div class="control-note rg-muted">Applies to all bell strikes.</div>
+              </div>
+              <div class="control">
+                <label for="globalChordPresetSelect">Chord preset</label>
+                <select id="globalChordPresetSelect"></select>
+              </div>
+              <div class="control">
+                <label for="globalChordSplitSelect">Split-strike</label>
+                <select id="globalChordSplitSelect"></select>
+              </div>
+              <div class="control">
+                <label for="globalChordInversionSelect">Inversion</label>
+                <select id="globalChordInversionSelect"></select>
+              </div>
+              <div class="control">
+                <label for="globalChordSpreadSelect">Spread</label>
+                <select id="globalChordSpreadSelect"></select>
+              </div>
+              <div id="globalChordSplitStepControl" class="control hidden">
+                <label for="globalChordStepMs">Step (ms)</label>
+                <input id="globalChordStepMs" type="number" min="0" max="15" step="1" value="6" />
+              </div>
+              <div id="globalChordSplitMaxControl" class="control hidden">
+                <label for="globalChordMaxMs">Max (ms)</label>
+                <input id="globalChordMaxMs" type="number" min="0" max="18" step="1" value="12" />
+              </div>
+            </div>
+
             <div id="bellOverridesControl" class="control rg-bell-overrides-control" aria-label="Per-bell sound">
               <label>Per-bell sound</label>
               <div class="rg-bell-overrides-actions">
+                <div id="soundQuickBellRow" class="rg-quick-bell-row" aria-label="Quick bell row"></div>
                 <button id="bellOverridesResetBtn" class="pill" type="button">Reset all per-bell overrides</button>
               </div>
               <div id="bellOverridesList" class="rg-bell-overrides-list" aria-label="Per-bell overrides list"></div>

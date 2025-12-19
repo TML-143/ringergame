@@ -1191,6 +1191,17 @@ select option { background-color: #0b1026; color: #e8eeff; }
   border-radius:18px;
 }
 
+#screenPrivacy .rg-privacy-refresh-note{
+  margin-top:8px;
+  padding:10px 12px;
+  background:var(--panel);
+  border:1px solid var(--stroke);
+  border-radius:14px;
+  color:rgba(232,238,255,0.92);
+  font-size:13px;
+  line-height:1.45;
+}
+
 #screenPrivacy .rg-privacy-policy{
   width:100%;
   max-width:900px;
@@ -1265,6 +1276,63 @@ select option { background-color: #0b1026; color: #e8eeff; }
 .rg-bell-overrides-actions{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 .rg-bell-overrides-list{ display:flex; flex-direction:column; gap:10px; margin-top:6px; }
 
+/* v10_p08_sound_global_chords_splitstrike: global chord controls (Sound menu) */
+#screenSound #soundChordControls{
+  width:100%;
+  margin-top:6px;
+  padding:8px 10px;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,0.08);
+  background:rgba(255,255,255,0.02);
+}
+
+#screenSound #soundChordControls .control{
+  min-width:140px;
+}
+
+#screenSound #soundChordControls .control-note{
+  max-width:260px;
+}
+
+/* v10_p04_sound_quick_bell_row: Spotlight-style quick test row (Sound menu) */
+.rg-quick-bell-row{
+  flex-basis:100%;
+  display:flex;
+  align-items:center;
+  gap:6px;
+  flex-wrap:wrap;
+  padding:6px 8px;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,0.08);
+  background:rgba(255,255,255,0.02);
+  touch-action:none;
+  -webkit-tap-highlight-color: transparent;
+  user-select:none;
+  -webkit-user-select:none;
+}
+
+.rg-quick-bell-btn{
+  width:34px;
+  height:34px;
+  border-radius:12px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-weight:800;
+  font-size:16px;
+  color:rgba(232,238,255,0.96);
+  background:rgba(255,255,255,0.05);
+  border:1px solid rgba(255,255,255,0.10);
+  cursor:pointer;
+  user-select:none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action:none;
+}
+
+.rg-quick-bell-btn:hover{ background:rgba(255,255,255,0.07); }
+.rg-quick-bell-btn:active{ transform:scale(0.98); }
+.rg-quick-bell-btn.is-active{ background:rgba(255,255,255,0.09); }
+
 .rg-bell-override-row{
   display:grid;
   grid-template-columns:44px 1fr;
@@ -1306,11 +1374,138 @@ select option { background-color: #0b1026; color: #e8eeff; }
 .rg-bell-override-group-controls input{ flex:1 1 120px; min-width:120px; }
 .rg-bell-override-group-controls select{ flex:1 1 140px; min-width:140px; }
 
+/* v10_p09_sound_per_bell_chords_overrides: per-bell chord override UI */
+.rg-bell-override-group--chord{ flex:2 1 360px; min-width:300px; }
+.rg-bell-chord-controls{ display:flex; flex-direction:column; gap:8px; width:100%; }
+.rg-bell-chord-row{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.rg-bell-chord-row select{ flex:1 1 160px; min-width:160px; }
+.rg-bell-chord-row input{ flex:1 1 160px; min-width:160px; }
+.rg-chord-enable{ display:flex; align-items:center; gap:6px; font-size:12px; color:rgba(232,238,255,0.88); }
+.rg-chord-enable input{ flex:0 0 auto; min-width:auto; }
+.rg-chord-num{ display:flex; align-items:center; gap:6px; font-size:12px; color:rgba(232,238,255,0.88); }
+.rg-chord-num input{ width:74px; min-width:74px; flex:0 0 auto; }
+.rg-bell-chord-adv{ width:100%; padding:8px; border:1px solid rgba(255,255,255,0.10); border-radius:12px; background:rgba(255,255,255,0.02); }
+.rg-bell-chord-adv-grid{ display:grid; grid-template-columns:repeat(2, minmax(160px, 1fr)); gap:10px; }
+.rg-bell-chord-adv-field{ display:flex; flex-direction:column; gap:6px; }
+.rg-bell-chord-adv-label{ font-size:12px; color:rgba(232,238,255,0.78); }
+.rg-bell-chord-adv-note{ margin-top:8px; font-size:12px; }
+.rg-inline-warn{ font-size:12px; color:rgba(255,196,128,0.95); }
+
+/* v10_p06_sound_per_bell_piano_keypicker: per-bell Key piano keyboard */
+.rg-bell-override-group-controls .rg-piano{ flex:1 1 220px; min-width:220px; }
+
+.rg-piano{
+  position:relative;
+  height:46px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,0.10);
+  background:rgba(255,255,255,0.02);
+  overflow:hidden;
+  touch-action:none;
+  -webkit-tap-highlight-color: transparent;
+  user-select:none;
+  -webkit-user-select:none;
+}
+
+.rg-piano-white{
+  position:absolute;
+  inset:0;
+  display:flex;
+  z-index:1;
+}
+
+.rg-piano-key{
+  font:inherit;
+  border:0;
+  margin:0;
+  padding:0;
+  cursor:pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action:none;
+  user-select:none;
+  -webkit-user-select:none;
+}
+
+.rg-piano-key--white{
+  flex:1 1 0;
+  height:100%;
+  background:rgba(255,255,255,0.07);
+  border-right:1px solid rgba(0,0,0,0.25);
+  color:rgba(232,238,255,0.78);
+  font-size:10px;
+  display:flex;
+  align-items:flex-end;
+  justify-content:center;
+  padding-bottom:4px;
+}
+.rg-piano-key--white:last-child{ border-right:0; }
+
+.rg-piano-key--black{
+  position:absolute;
+  top:0;
+  height:62%;
+  width:10%;
+  transform:translateX(-50%);
+  z-index:2;
+  border-radius:0 0 9px 9px;
+  background:rgba(0,0,0,0.68);
+  border:1px solid rgba(255,255,255,0.08);
+  color:rgba(232,238,255,0.70);
+  font-size:9px;
+  display:flex;
+  align-items:flex-end;
+  justify-content:center;
+  padding-bottom:3px;
+}
+
+.rg-piano-key--black[data-note="C#"]{ left:14.2857%; }
+.rg-piano-key--black[data-note="Eb"]{ left:28.5714%; }
+.rg-piano-key--black[data-note="F#"]{ left:57.1429%; }
+.rg-piano-key--black[data-note="Ab"]{ left:71.4286%; }
+.rg-piano-key--black[data-note="Bb"]{ left:85.7143%; }
+
+.rg-piano-key.is-selected{
+  background:rgba(249,199,79,0.20);
+  color:rgba(232,238,255,0.96);
+}
+.rg-piano-key--black.is-selected{
+  background:rgba(249,199,79,0.50);
+  border-color:rgba(249,199,79,0.55);
+}
+
+.rg-piano-key.is-active{
+  box-shadow: inset 0 0 0 2px rgba(249,199,79,0.55);
+}
+
+.rg-piano-key:focus{
+  outline:2px solid var(--accent);
+  outline-offset:-2px;
+}
+
+@media (max-width: 520px){
+  .rg-bell-override-group-controls .rg-piano{ min-width:180px; }
+  .rg-piano{ height:44px; }
+  .rg-piano-key--white{ font-size:9px; padding-bottom:3px; }
+  .rg-piano-key--black{ font-size:8px; }
+}
+
+
+
+/* v10_p05_sound_per_bell_hz_slider_preview: per-bell Hz slider */
+.rg-bell-override-group-controls input.rg-bell-hz-slider{
+  flex:2 1 200px;
+  min-width:170px;
+  touch-action:none;
+  -webkit-tap-highlight-color: transparent;
+ }
+
 .pill.rg-mini{ padding:6px 10px; font-size:12px; }
 
 @media (max-width: 520px){
   .rg-bell-override-row{ grid-template-columns:40px 1fr; padding:10px; }
   .rg-bell-override-group{ min-width:180px; }
+  .rg-bell-override-group--chord{ min-width:220px; }
+  .rg-bell-chord-adv-grid{ grid-template-columns:1fr; }
 }
 
 
