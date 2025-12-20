@@ -58,6 +58,7 @@ body{
     #screenPlay .rg-nav,
     #screenView .rg-nav,
     #screenSound .rg-nav,
+    #screenSoundIntro .rg-nav,
     #screenLibrary .rg-nav{margin-top:14px;padding-top:10px;flex-wrap:wrap;gap:10px;}
 .top-bar{
   display:flex;
@@ -1275,6 +1276,403 @@ select option { background-color: #0b1026; color: #e8eeff; }
 .rg-bell-overrides-control{ width:100%; }
 .rg-bell-overrides-actions{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 .rg-bell-overrides-list{ display:flex; flex-direction:column; gap:10px; margin-top:6px; }
+
+/* v011_p01_sound_intro_page: Sound Menu Introduction entry (Sound menu) */
+#screenSound .rg-sound-intro-entry{
+  width:100%;
+  max-width:900px;
+  margin:0 auto 10px auto;
+  padding:10px 12px;
+  border-radius:16px;
+  border:1px solid rgba(255,255,255,0.10);
+  background:rgba(255,255,255,0.02);
+}
+
+#screenSound .rg-sound-intro-link{
+  display:inline-block;
+  font:inherit;
+  font-weight:800;
+  letter-spacing:0.2px;
+  color:var(--accent);
+  text-decoration:underline;
+  text-underline-offset:3px;
+  cursor:pointer;
+}
+
+#screenSound .rg-sound-intro-link:hover{ opacity:0.92; }
+
+#screenSound .rg-sound-intro-link:focus{
+  outline:2px solid var(--accent);
+  outline-offset:3px;
+  border-radius:10px;
+}
+
+#screenSound .rg-sound-intro-helper{
+  margin-top:4px;
+  font-size:13px;
+  line-height:1.35;
+}
+
+/* v011_p03_sound_layout_drone_first: section blocks (Sound menu) */
+#screenSound .rg-sound-block{
+  width:100%;
+  max-width:900px;
+  margin:0 auto 10px auto;
+  padding:10px 12px;
+  border-radius:16px;
+  border:1px solid rgba(255,255,255,0.10);
+  background:rgba(255,255,255,0.02);
+}
+
+#screenSound .rg-sound-block-head{ margin:0 0 8px 0; }
+
+#screenSound .rg-sound-block-title{
+  font-size:12px;
+  font-weight:900;
+  letter-spacing:1.2px;
+  opacity:0.92;
+}
+
+#screenSound details.rg-sound-block > summary{
+  list-style:none;
+  cursor:pointer;
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  gap:10px;
+}
+
+#screenSound details.rg-sound-block > summary::-webkit-details-marker{ display:none; }
+
+#screenSound .rg-sound-block-summary{
+  font-size:12px;
+  line-height:1.25;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  max-width:70%;
+}
+
+#screenSound details.rg-sound-block[open] > summary{
+  margin-bottom:8px;
+  padding-bottom:8px;
+  border-bottom:1px solid rgba(255,255,255,0.08);
+}
+/* v011_p04_bell_pitch_collapsible_blocks: Bell Pitch summary caret + pitch pattern blocks */
+#screenSound .rg-sound-block-summaryline{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  cursor:pointer;
+  list-style:none;
+}
+
+#screenSound .rg-sound-block-summaryline:focus{
+  outline:2px solid var(--accent);
+  outline-offset:2px;
+  border-radius:12px;
+}
+
+#screenSound .rg-sound-block-summaryline .rg-sound-block-summary{
+  flex:1 1 auto;
+  min-width:0;
+}
+
+#screenSound .rg-sound-block-caret{
+  margin-left:auto;
+  width:0;
+  height:0;
+  border-left:6px solid transparent;
+  border-right:6px solid transparent;
+  border-top:8px solid rgba(232,238,255,0.75);
+  opacity:0.85;
+  transform:rotate(-90deg);
+  transition:transform 120ms ease;
+}
+
+#screenSound details.rg-sound-block[open] > summary .rg-sound-block-caret{
+  transform:rotate(0deg);
+}
+
+#screenSound .rg-bell-pitch-root{
+  margin:2px 0 10px 0;
+  padding:8px 10px;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,0.08);
+  background:rgba(255,255,255,0.02);
+}
+
+#screenSound .rg-bell-pitch-root-title{
+  font-size:12px;
+  font-weight:800;
+  letter-spacing:0.2px;
+  margin:0 0 6px 0;
+  color:rgba(232,238,255,0.90);
+}
+
+#screenSound .rg-bell-pitch-blocks{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+
+#screenSound .rg-pitch-card{
+  display:flex;
+  gap:10px;
+  padding:10px 10px;
+  border-radius:16px;
+  border:1px solid rgba(255,255,255,0.10);
+  background:rgba(255,255,255,0.02);
+}
+
+#screenSound .rg-pitch-card.is-selected{
+  border-color:rgba(249,199,79,0.55);
+  box-shadow:0 0 0 3px rgba(249,199,79,0.12) inset;
+  background:rgba(249,199,79,0.07);
+}
+
+#screenSound .rg-pitch-card-check{
+  flex:0 0 auto;
+  display:flex;
+  align-items:flex-start;
+  padding-top:2px;
+  position:relative;
+}
+
+#screenSound .rg-pitch-card input[type="radio"]{
+  position:absolute;
+  left:0;
+  top:0;
+  width:26px;
+  height:26px;
+  margin:0;
+  opacity:0;
+  cursor:pointer;
+}
+
+#screenSound .rg-pitch-check{
+  position:relative;
+  pointer-events:none;
+  width:26px;
+  height:26px;
+  border-radius:7px;
+  border:2px solid rgba(255,255,255,0.32);
+  background:rgba(0,0,0,0.12);
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+}
+
+#screenSound .rg-pitch-card input[type="radio"]:checked + .rg-pitch-check{
+  border-color:rgba(249,199,79,0.75);
+  background:rgba(249,199,79,0.14);
+}
+
+#screenSound .rg-pitch-card input[type="radio"]:checked + .rg-pitch-check::after{
+  content:"";
+  width:10px;
+  height:10px;
+  border-radius:3px;
+  background:rgba(249,199,79,0.85);
+}
+
+#screenSound .rg-pitch-card-body{
+  flex:1 1 auto;
+  min-width:0;
+}
+
+#screenSound .rg-pitch-card-title-row{
+  display:flex;
+  align-items:baseline;
+  gap:10px;
+  margin:0 0 4px 0;
+}
+
+#screenSound .rg-pitch-card-title{
+  font-size:14px;
+  font-weight:850;
+  color:rgba(232,238,255,0.95);
+}
+
+#screenSound .rg-pitch-card-sub{
+  font-size:12px;
+  line-height:1.25;
+  color:rgba(232,238,255,0.70);
+}
+
+#screenSound .rg-pitch-card-controls{
+  margin-top:6px;
+}
+
+#screenSound .rg-pitch-card-controls .control{
+  margin-top:8px;
+}
+
+#screenSound .rg-pitch-card:focus-within{
+  outline:2px solid rgba(249,199,79,0.55);
+  outline-offset:2px;
+}
+
+
+
+
+/* v011_p04b_bell_pitch_blocks_custom_collapsible: Custom sub-collapse inside Bell Pitch */
+#screenSound details.rg-pitch-custom-details{
+  margin-top:6px;
+  padding:6px 8px;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,0.08);
+  background:rgba(255,255,255,0.015);
+}
+
+#screenSound details.rg-pitch-custom-details > summary::-webkit-details-marker{ display:none; }
+
+#screenSound .rg-pitch-custom-summaryline{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  cursor:pointer;
+  list-style:none;
+}
+
+#screenSound .rg-pitch-custom-summaryline:focus{
+  outline:2px solid var(--accent);
+  outline-offset:2px;
+  border-radius:12px;
+}
+
+#screenSound .rg-pitch-custom-title{
+  font-size:13px;
+  font-weight:820;
+  color:rgba(232,238,255,0.90);
+}
+
+#screenSound .rg-pitch-custom-summary{
+  flex:1 1 auto;
+  min-width:0;
+  font-size:12px;
+}
+
+#screenSound .rg-pitch-custom-caret{
+  margin-left:auto;
+  width:0;
+  height:0;
+  border-left:5px solid transparent;
+  border-right:5px solid transparent;
+  border-top:7px solid rgba(232,238,255,0.70);
+  opacity:0.85;
+  transform:rotate(-90deg);
+  transition:transform 120ms ease;
+}
+
+#screenSound details.rg-pitch-custom-details[open] > summary .rg-pitch-custom-caret{
+  transform:rotate(0deg);
+}
+
+#screenSound .rg-pitch-custom-body{
+  margin-top:8px;
+}
+/* v011_p02a_sound_test_row_spotlight_style: Bell Test Instrument Row (Sound menu) */
+#screenSound .rg-sound-test-row{
+  width:100%;
+  max-width:900px;
+  margin:12px auto 12px auto;
+}
+
+/* Reuse Spotlight-style "track" container styling via .rg-quick-bell-row (visual only). */
+#screenSound #soundTestInstrumentRow.rg-quick-bell-row{
+  padding:8px 10px;
+  gap:8px;
+  border-radius:16px;
+}
+
+/* Bigger, touch-friendly Spotlight-style pill buttons (visual only). */
+#screenSound #soundTestInstrumentRow .rg-sound-test-btn{
+  height:62px;
+  min-height:56px;
+  min-width:60px;
+  flex:1 1 0;
+  width:auto;
+  padding:0 18px;
+  border-radius:999px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-weight:850;
+  font-size:20px;
+  letter-spacing:0.2px;
+  color:rgba(232,238,255,0.96);
+  background:rgba(255,255,255,0.05);
+  border:1px solid rgba(255,255,255,0.10);
+  cursor:pointer;
+  user-select:none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action:none;
+}
+
+#screenSound #soundTestInstrumentRow .rg-sound-test-btn:hover{ background:rgba(255,255,255,0.07); }
+#screenSound #soundTestInstrumentRow .rg-sound-test-btn:active{ transform:scale(0.98); }
+
+/* Match Spotlight selection/active feel without changing any Sound settings. */
+#screenSound #soundTestInstrumentRow .rg-sound-test-btn.is-active{
+  border-color:rgba(249,199,79,0.50);
+  box-shadow:0 0 0 3px rgba(249,199,79,0.12) inset;
+  background:rgba(249,199,79,0.10);
+}
+
+#screenSound #soundTestInstrumentRow .rg-sound-test-btn:focus{
+  outline:2px solid var(--accent);
+  outline-offset:2px;
+}
+
+@media (max-width: 480px){
+  #screenSound #soundTestInstrumentRow.rg-quick-bell-row{ padding:7px 8px; gap:6px; }
+  #screenSound #soundTestInstrumentRow .rg-sound-test-btn{ height:58px; min-width:56px; padding:0 16px; font-size:19px; }
+}
+
+/* v011_p01_sound_intro_page: Sound Menu Introduction screen */
+#screenSoundIntro .rg-sound-intro{
+  width:100%;
+  max-width:900px;
+  margin:0 auto;
+  padding:12px 14px;
+  background:var(--panel);
+  border:1px solid var(--stroke);
+  border-radius:18px;
+  color:var(--text);
+  font-size:14px;
+  line-height:1.55;
+}
+
+#screenSoundIntro .rg-sound-intro h2{
+  margin:0 0 10px 0;
+  font-size:18px;
+}
+
+#screenSoundIntro .rg-sound-intro h3{
+  margin:14px 0 6px 0;
+  font-size:15px;
+}
+
+#screenSoundIntro .rg-sound-intro h4{
+  margin:12px 0 4px 0;
+  font-size:14px;
+  opacity:0.95;
+}
+
+#screenSoundIntro .rg-sound-intro p{
+  margin:0 0 10px 0;
+}
+
+#screenSoundIntro .rg-sound-intro ul{
+  margin:0 0 12px 18px;
+  padding:0;
+}
+
+#screenSoundIntro .rg-sound-intro li{
+  margin:0 0 6px 0;
+}
 
 /* v10_p08_sound_global_chords_splitstrike: global chord controls (Sound menu) */
 #screenSound #soundChordControls{

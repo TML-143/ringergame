@@ -75,7 +75,7 @@
   // === Analytics (GA4) ===
   const GA_MEASUREMENT_ID = 'G-7TEG531231';
   const GA_ID = GA_MEASUREMENT_ID;
-  const SITE_VERSION = 'v10_p09_sound_per_bell_chords_overrides';
+  const SITE_VERSION = 'v011_p04b_bell_pitch_blocks_custom_collapsible';
 
   function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
   function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
@@ -261,7 +261,8 @@ Contact: ringergame143@gmail.com`;
   function analyticsScreenName(screenKey) {
     const s = String(screenKey || '').toLowerCase();
     if (s === 'play') return 'setup';
-    if (s === 'home' || s === 'view' || s === 'sound' || s === 'library' || s === 'game' || s === 'privacy') return s;
+    if (s === 'sound_intro') return 'sound';
+    if (s === 'home' || s === 'view' || s === 'sound' || s === 'sound_intro' || s === 'library' || s === 'game' || s === 'privacy') return s;
     return 'home';
   }
 
@@ -452,7 +453,7 @@ Contact: ringergame143@gmail.com`;
 
   function rgHamburgerIsHeaderAnchoredScreen(screenName) {
     const s = String(screenName || '').toLowerCase();
-    return (s === 'play' || s === 'view' || s === 'sound' || s === 'privacy');
+    return (s === 'play' || s === 'view' || s === 'sound' || s === 'sound_intro' || s === 'privacy');
   }
 
   function rgHamburgerResetDropdownInlinePosition() {
@@ -660,6 +661,7 @@ Contact: ringergame143@gmail.com`;
   const screenPlay = document.getElementById('screenPlay');
   const screenView = document.getElementById('screenView');
   const screenSound = document.getElementById('screenSound');
+  const screenSoundIntro = document.getElementById('screenSoundIntro');
   const screenLibrary = document.getElementById('screenLibrary');
   const screenGame = document.getElementById('screenGame');
   const screenPrivacy = document.getElementById('screenPrivacy');
@@ -685,6 +687,7 @@ Contact: ringergame143@gmail.com`;
       const screenEl = (n === 'play') ? screenPlay :
                        (n === 'view') ? screenView :
                        (n === 'sound') ? screenSound :
+                       (n === 'sound_intro') ? screenSound :
                        (n === 'privacy') ? screenPrivacy : null;
       const titleEl = screenEl ? screenEl.querySelector('.pane-title') : null;
       if (titleEl) {
@@ -727,6 +730,13 @@ Contact: ringergame143@gmail.com`;
     soundQuickRowActiveEl: null,
     soundQuickRowIgnoreClickUntilMs: 0,
 
+    // v011_p02_sound_test_instrument_row
+    soundTestRowDragActive: false,
+    soundTestRowDragPointerId: null,
+    soundTestRowDragLastBell: null,
+    soundTestRowActiveEl: null,
+    soundTestRowIgnoreClickUntilMs: 0,
+
     // v06_p12d_library_browser
     libraryIndex: null,
     librarySelectedIdx: null,
@@ -751,7 +761,8 @@ Contact: ringergame143@gmail.com`;
   function setScreen(name) {
     try { closeHamburgerMenu(); } catch (_) {}
     const n = String(name || '').toLowerCase();
-    const next = (n === 'home' || n === 'play' || n === 'view' || n === 'sound' || n === 'library' || n === 'game' || n === 'privacy') ? n : 'home';
+const nn = (n === 'sound_intro') ? 'sound' : n;
+const next = (nn === 'home' || nn === 'play' || nn === 'view' || nn === 'sound' || nn === 'library' || nn === 'game' || nn === 'privacy') ? nn : 'home';
 
     // v10_p05_sound_per_bell_hz_slider_preview: safety stop for any ongoing continuous Hz preview when leaving Sound.
     try {
@@ -761,7 +772,7 @@ Contact: ringergame143@gmail.com`;
       }
     } catch (_) {}
 
-    const screens = { home: screenHome, play: screenPlay, view: screenView, sound: screenSound, library: screenLibrary, game: screenGame, privacy: screenPrivacy };
+    const screens = { home: screenHome, play: screenPlay, view: screenView, sound: screenSound, sound_intro: screenSoundIntro, library: screenLibrary, game: screenGame, privacy: screenPrivacy };
     for (const k in screens) {
       const el = screens[k];
       if (!el) continue;
@@ -792,7 +803,8 @@ Contact: ringergame143@gmail.com`;
     }
 
     if (next === 'sound') {
-      // v10_p04_sound_quick_bell_row: stage-sized test row updates when revisiting Sound.
+      // v011_p02_sound_test_instrument_row: stage-sized test rows update when revisiting Sound.
+      try { rebuildSoundTestInstrumentRow(); } catch (_) {}
       try { rebuildSoundQuickBellRow(); } catch (_) {}
     }
 
@@ -1748,10 +1760,429 @@ Contact: ringergame143@gmail.com`;
     destEl.appendChild(controlEl);
   }
 
+// v011_p04_bell_pitch_collapsible_blocks: Bell Pitch UI blocks + summary
+function coerceBellPitchFamily(raw) {
+  const v = String(raw || '').trim();
+  if (v === 'diatonic' || v === 'pent_hex' || v === 'chromatic' || v === 'fifths_fourths' || v === 'partials' || v === 'custom') return v;
+  return 'diatonic';
+}
+
+function fmtAccidentals(label) {
+  return String(label || '')
+    .replace(/([A-G])#/g, '$1♯')
+    .replace(/([A-G])b/g, '$1♭');
+}
+
+function getBellPitchSummaryText() {
+  const stateFam0 = coerceBellPitchFamily(state.bellPitchFamily);
+  const u = ui._bellPitchUi;
+  const uiFam = coerceBellPitchFamily((u && u.selectedFamily) ? u.selectedFamily : stateFam0);
+
+  // "Custom" is a UI-only selection. For summary text, always describe the effective pattern mapping,
+  // and optionally prefix with "Custom —".
+  const fam = (stateFam0 === 'custom') ? 'diatonic' : stateFam0;
+
+  const spanLabel = (String(state.bellPitchSpan || 'compact') === 'extended') ? 'Extended' : 'Compact';
+
+  const keyLabel = (() => {
+    if (state.scaleKey === 'custom_hz') return `Custom (${Math.round(state.bellCustomHz || 440)} Hz)`;
+    const def = getScaleDefByKey(state.scaleKey) || getScaleDef();
+    return fmtAccidentals(def && def.label ? def.label : 'Diatonic');
+  })();
+
+  const pentaLabel = (() => {
+    const v = String(state.bellPitchPentVariant || 'major_pent');
+    if (v === 'minor_pent') return 'Minor Pentatonic';
+    if (v === 'whole_tone') return 'Whole Tone';
+    if (v === 'blues_hex') return 'Blues Hexatonic';
+    return 'Major Pentatonic';
+  })();
+
+  const chromLabel = (() => {
+    const d = String(state.bellPitchChromaticDirection || 'descending');
+    return (d === 'ascending') ? 'Ascending' : 'Descending';
+  })();
+
+  const fifthsTitle = (() => {
+    const t = String(state.bellPitchFifthsType || 'fifths');
+    return (t === 'fourths') ? 'Fourths Ladder' : 'Fifths Ladder';
+  })();
+
+  const fifthsShape = (() => {
+    const s = String(state.bellPitchFifthsShape || 'folded');
+    return (s === 'ladder') ? 'Ladder' : 'Folded';
+  })();
+
+  const partialsShape = (() => {
+    const s = String(state.bellPitchPartialsShape || 'ladder');
+    return (s === 'folded') ? 'Folded' : 'Ladder';
+  })();
+
+  let base = `Diatonic — ${keyLabel} — ${spanLabel}`;
+  if (fam === 'diatonic') base = `Diatonic — ${keyLabel} — ${spanLabel}`;
+  else if (fam === 'pent_hex') base = `Pentatonic/Hexatonic — ${pentaLabel} — ${spanLabel}`;
+  else if (fam === 'chromatic') base = `Chromatic — ${chromLabel}`;
+  else if (fam === 'fifths_fourths') base = `${fifthsTitle} — ${fifthsShape}`;
+  else if (fam === 'partials') base = `Bell Partials — ${partialsShape}`;
+
+  const wantCustom = (uiFam === 'custom') || (stateFam0 === 'custom');
+  return wantCustom ? `Custom — ${base}` : base;
+}
+
+function syncBellPitchSummaryUI() {
+  const el = document.getElementById('soundPitchSummary');
+  if (!el) return;
+  el.textContent = getBellPitchSummaryText();
+}
+
+function setBellPitchUiSelection(family) {
+  // UI-only selection of the Bell Pitch block. Must NOT mutate mapping / scheduler / audio engine.
+  const u = ui._bellPitchUi;
+  if (!u) return;
+  u.selectedFamily = coerceBellPitchFamily(family);
+  syncBellPitchFamilyUI();
+  syncBellPitchSummaryUI();
+}
+
+function syncBellPitchFamilyUI() {
+  const u = ui._bellPitchUi;
+  if (!u || !u.cards) return;
+  const stateFam = coerceBellPitchFamily(state.bellPitchFamily);
+  const uiFam = coerceBellPitchFamily(u.selectedFamily || stateFam);
+  if (!u.selectedFamily) u.selectedFamily = uiFam;
+
+  Object.keys(u.cards).forEach((k) => {
+    const card = u.cards[k];
+    if (!card) return;
+    const isOn = (k === uiFam);
+    if (card.radio) card.radio.checked = isOn;
+    if (card.el) card.el.classList.toggle('is-selected', isOn);
+  });
+}
+
+function syncBellPitchSpanUI() {
+  const u = ui._bellPitchUi;
+  if (!u) return;
+  const val = (String(state.bellPitchSpan || 'compact') === 'extended') ? 'extended' : 'compact';
+  if (u.spanSelectDiatonic) u.spanSelectDiatonic.value = val;
+  if (u.spanSelectPentHex) u.spanSelectPentHex.value = val;
+}
+
+function maybeApplyDefaultBellPitchSpanForStage(stage) {
+  const s = clamp(parseInt(stage, 10) || 0, 4, 12);
+  if (state.bellPitchSpanUser) return;
+  const desired = (s >= 9) ? 'extended' : 'compact';
+  if (String(state.bellPitchSpan || 'compact') !== desired) {
+    state.bellPitchSpan = desired;
+    syncBellPitchSpanUI();
+    syncBellPitchSummaryUI();
+  }
+}
+
+function setBellPitchFamily(family, forceRebuild) {
+  markUserTouchedConfig();
+  const fam = coerceBellPitchFamily(family);
+  const changed = (state.bellPitchFamily !== fam);
+  state.bellPitchFamily = fam;
+  try { if (ui._bellPitchUi) ui._bellPitchUi.selectedFamily = fam; } catch (_) {}
+  syncBellPitchFamilyUI();
+  syncBellPitchSummaryUI();
+  if (changed || forceRebuild) {
+    rebuildBellFrequencies();
+    onBellTuningChanged();
+  }
+}
+
+function ensureBellPitchPatternBlocks(destEl) {
+  if (!destEl) return null;
+  if (ui._bellPitchUi && ui._bellPitchUi.built) return ui._bellPitchUi;
+
+  // Build structure inside the Bell Pitch controls container.
+  destEl.innerHTML = '';
+
+  const rootWrap = document.createElement('div');
+  rootWrap.className = 'rg-bell-pitch-root';
+  const rootTitle = document.createElement('div');
+  rootTitle.className = 'rg-bell-pitch-root-title';
+  rootTitle.textContent = 'Root & Register';
+  const rootDest = document.createElement('div');
+  rootDest.className = 'rg-controls';
+  rootWrap.appendChild(rootTitle);
+  rootWrap.appendChild(rootDest);
+  destEl.appendChild(rootWrap);
+
+  const blocksDest = document.createElement('div');
+  blocksDest.className = 'rg-bell-pitch-blocks';
+  destEl.appendChild(blocksDest);
+
+  const makeCard = (family, title, sub) => {
+    const el = document.createElement('div');
+    el.className = 'rg-pitch-card';
+    el.dataset.family = family;
+
+    const checkCol = document.createElement('div');
+    checkCol.className = 'rg-pitch-card-check';
+
+    const radio = document.createElement('input');
+    radio.type = 'radio';
+    radio.name = 'bellPitchFamily';
+    radio.value = family;
+    radio.id = `bellPitchFamily_${family}`;
+
+    const check = document.createElement('span');
+    check.className = 'rg-pitch-check';
+
+    checkCol.appendChild(radio);
+    checkCol.appendChild(check);
+
+    const body = document.createElement('div');
+    body.className = 'rg-pitch-card-body';
+
+    const titleRow = document.createElement('div');
+    titleRow.className = 'rg-pitch-card-title-row';
+
+    const t = document.createElement('div');
+    t.className = 'rg-pitch-card-title';
+    t.textContent = title;
+
+    const s = document.createElement('div');
+    s.className = 'rg-pitch-card-sub rg-muted';
+    s.textContent = sub || '';
+
+    titleRow.appendChild(t);
+    titleRow.appendChild(s);
+
+    const controls = document.createElement('div');
+    controls.className = 'rg-pitch-card-controls';
+    controls.id = `bellPitchControls_${family}`;
+
+    body.appendChild(titleRow);
+    body.appendChild(controls);
+
+    el.appendChild(checkCol);
+    el.appendChild(body);
+
+    // Click anywhere on the card selects it. Custom selection is UI-only and must not mutate mapping.
+    if (family !== 'custom') {
+      el.addEventListener('click', () => setBellPitchFamily(family, false));
+      radio.addEventListener('change', () => { if (radio.checked) setBellPitchFamily(family, false); });
+    } else {
+      const pick = () => setBellPitchUiSelection('custom');
+      el.addEventListener('click', pick);
+      el.addEventListener('pointerdown', pick);
+      el.addEventListener('focusin', pick);
+      radio.addEventListener('change', () => { if (radio.checked) pick(); });
+    }
+    return { el, radio, controls };
+  };
+
+  // Build cards in the required order.
+  const cards = {
+    diatonic: makeCard('diatonic', 'Diatonic', 'Major/minor scales'),
+    pent_hex: makeCard('pent_hex', 'Pentatonic & Hexatonic', '5–6 note scales'),
+    chromatic: makeCard('chromatic', 'Chromatic', 'Semitone steps'),
+    fifths_fourths: makeCard('fifths_fourths', 'Fifths & Fourths', 'Stacked intervals'),
+    partials: makeCard('partials', 'Harmonic / Bell Partials', 'Overtone ladder'),
+    custom: makeCard('custom', 'Custom', 'Per-bell overrides')
+  };
+
+  // Append in order.
+  blocksDest.appendChild(cards.diatonic.el);
+  blocksDest.appendChild(cards.pent_hex.el);
+  blocksDest.appendChild(cards.chromatic.el);
+  blocksDest.appendChild(cards.fifths_fourths.el);
+  blocksDest.appendChild(cards.partials.el);
+  blocksDest.appendChild(cards.custom.el);
+
+  // Custom: collapsible per-bell pitch editor (infrastructure unchanged).
+  const customDetails = document.createElement('details');
+  customDetails.className = 'rg-pitch-custom-details';
+  const customSummary = document.createElement('summary');
+  customSummary.className = 'rg-pitch-custom-summaryline';
+  const customTitle = document.createElement('span');
+  customTitle.className = 'rg-pitch-custom-title';
+  customTitle.textContent = 'Per-bell pitch editor';
+  const customSum = document.createElement('span');
+  customSum.className = 'rg-pitch-custom-summary rg-muted';
+  customSum.textContent = 'Showing effective pitches';
+  const customCaret = document.createElement('span');
+  customCaret.className = 'rg-pitch-custom-caret';
+  customCaret.setAttribute('aria-hidden', 'true');
+  customSummary.appendChild(customTitle);
+  customSummary.appendChild(customSum);
+  customSummary.appendChild(customCaret);
+  const customBody = document.createElement('div');
+  customBody.className = 'rg-pitch-custom-body';
+  customDetails.appendChild(customSummary);
+  customDetails.appendChild(customBody);
+  cards.custom.controls.appendChild(customDetails);
+  cards.custom.customDetails = customDetails;
+  cards.custom.customBody = customBody;
+
+  customDetails.addEventListener('toggle', () => {
+    if (!customDetails.open) return;
+    try { syncBellOverridesEffectiveUI(); } catch (_) {}
+  });
+
+
+  // Build internal controls (pattern variants).
+  const makeSelectControl = (id, labelText, options) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'control';
+    const label = document.createElement('label');
+    label.setAttribute('for', id);
+    label.textContent = labelText;
+    const sel = document.createElement('select');
+    sel.id = id;
+    options.forEach(([val, text]) => {
+      const opt = document.createElement('option');
+      opt.value = val;
+      opt.textContent = text;
+      sel.appendChild(opt);
+    });
+    wrap.appendChild(label);
+    wrap.appendChild(sel);
+    return { wrap, sel };
+  };
+
+  // Diatonic: Pitch span
+  const spanD = makeSelectControl('bellPitchSpanSelectDiatonic', 'Pitch span', [
+    ['compact', 'Compact'],
+    ['extended', 'Extended']
+  ]);
+  cards.diatonic.controls.appendChild(spanD.wrap);
+
+  // Pent/Hex: variant + pitch span
+  const pentV = makeSelectControl('bellPitchPentVariantSelect', 'Scale', [
+    ['major_pent', 'Major Pentatonic'],
+    ['minor_pent', 'Minor Pentatonic'],
+    ['whole_tone', 'Whole Tone (Hexatonic)'],
+    ['blues_hex', 'Blues Hexatonic']
+  ]);
+  cards.pent_hex.controls.appendChild(pentV.wrap);
+
+  const spanP = makeSelectControl('bellPitchSpanSelectPentHex', 'Pitch span', [
+    ['compact', 'Compact'],
+    ['extended', 'Extended']
+  ]);
+  cards.pent_hex.controls.appendChild(spanP.wrap);
+
+  // Chromatic: direction
+  const chromDir = makeSelectControl('bellPitchChromaticDirSelect', 'Direction', [
+    ['descending', 'Descending'],
+    ['ascending', 'Ascending']
+  ]);
+  cards.chromatic.controls.appendChild(chromDir.wrap);
+
+  // Fifths & Fourths: type + shape
+  const fifthType = makeSelectControl('bellPitchFifthsTypeSelect', 'Ladder', [
+    ['fifths', 'Fifths ladder'],
+    ['fourths', 'Fourths ladder']
+  ]);
+  cards.fifths_fourths.controls.appendChild(fifthType.wrap);
+
+  const fifthShape = makeSelectControl('bellPitchFifthsShapeSelect', 'Shape', [
+    ['folded', 'Folded'],
+    ['ladder', 'Ladder']
+  ]);
+  cards.fifths_fourths.controls.appendChild(fifthShape.wrap);
+
+  // Partials: shape
+  const partShape = makeSelectControl('bellPitchPartialsShapeSelect', 'Shape', [
+    ['ladder', 'Ladder'],
+    ['folded', 'Folded']
+  ]);
+  cards.partials.controls.appendChild(partShape.wrap);
+
+  // Store refs.
+  ui._bellPitchUi = {
+    built: true,
+    rootDest,
+    cards,
+    selectedFamily: coerceBellPitchFamily(state.bellPitchFamily),
+    spanSelectDiatonic: spanD.sel,
+    spanSelectPentHex: spanP.sel,
+    pentVariantSelect: pentV.sel,
+    chromDirSelect: chromDir.sel,
+    fifthsTypeSelect: fifthType.sel,
+    fifthsShapeSelect: fifthShape.sel,
+    partialsShapeSelect: partShape.sel
+  };
+
+  // Wire events (controls must select their block and apply immediately).
+  spanD.sel.addEventListener('change', () => {
+    markUserTouchedConfig();
+    state.bellPitchSpanUser = true;
+    state.bellPitchSpan = spanD.sel.value === 'extended' ? 'extended' : 'compact';
+    syncBellPitchSpanUI();
+    setBellPitchFamily('diatonic', true);
+  });
+
+  pentV.sel.addEventListener('change', () => {
+    markUserTouchedConfig();
+    state.bellPitchPentVariant = pentV.sel.value;
+    setBellPitchFamily('pent_hex', true);
+  });
+
+  spanP.sel.addEventListener('change', () => {
+    markUserTouchedConfig();
+    state.bellPitchSpanUser = true;
+    state.bellPitchSpan = spanP.sel.value === 'extended' ? 'extended' : 'compact';
+    syncBellPitchSpanUI();
+    setBellPitchFamily('pent_hex', true);
+  });
+
+  chromDir.sel.addEventListener('change', () => {
+    markUserTouchedConfig();
+    state.bellPitchChromaticDirection = chromDir.sel.value === 'ascending' ? 'ascending' : 'descending';
+    setBellPitchFamily('chromatic', true);
+  });
+
+  fifthType.sel.addEventListener('change', () => {
+    markUserTouchedConfig();
+    state.bellPitchFifthsType = (fifthType.sel.value === 'fourths') ? 'fourths' : 'fifths';
+    setBellPitchFamily('fifths_fourths', true);
+  });
+
+  fifthShape.sel.addEventListener('change', () => {
+    markUserTouchedConfig();
+    state.bellPitchFifthsShape = (fifthShape.sel.value === 'ladder') ? 'ladder' : 'folded';
+    setBellPitchFamily('fifths_fourths', true);
+  });
+
+  partShape.sel.addEventListener('change', () => {
+    markUserTouchedConfig();
+    state.bellPitchPartialsShape = (partShape.sel.value === 'folded') ? 'folded' : 'ladder';
+    setBellPitchFamily('partials', true);
+  });
+
+  // Initial sync.
+  syncBellPitchSpanUI();
+  if (pentV.sel) pentV.sel.value = state.bellPitchPentVariant || 'major_pent';
+  if (chromDir.sel) chromDir.sel.value = state.bellPitchChromaticDirection || 'descending';
+  if (fifthType.sel) fifthType.sel.value = state.bellPitchFifthsType || 'fifths';
+  if (fifthShape.sel) fifthShape.sel.value = state.bellPitchFifthsShape || 'folded';
+  if (partShape.sel) partShape.sel.value = state.bellPitchPartialsShape || 'ladder';
+
+  syncBellPitchFamilyUI();
+  syncBellPitchSummaryUI();
+  return ui._bellPitchUi;
+}
+
+
   function mountMenuControls() {
     const playDest = document.getElementById('playMenuControls');
     const viewDest = document.getElementById('viewMenuControls');
     const soundDest = document.getElementById('soundMenuControls');
+    // v011_p03_sound_layout_drone_first: split Sound menu into Drone / Pitch / Sound containers.
+    const soundDroneDest = document.getElementById('soundDroneControls') || soundDest;
+    const soundPitchEl = document.getElementById('soundPitchControls');
+    const soundPitchDest = soundPitchEl || soundDest;
+    const pitchUI = soundPitchEl ? ensureBellPitchPatternBlocks(soundPitchEl) : null;
+    const soundPitchRootDest = (pitchUI && pitchUI.rootDest) ? pitchUI.rootDest : soundPitchDest;
+    const soundPitchCustomDest = (pitchUI && pitchUI.cards && pitchUI.cards.custom && (pitchUI.cards.custom.customBody || pitchUI.cards.custom.controls))
+      ? (pitchUI.cards.custom.customBody || pitchUI.cards.custom.controls)
+      : soundPitchDest;
 
     if (!playDest && !viewDest && !soundDest) return;
 
@@ -1800,16 +2231,19 @@ Contact: ringergame143@gmail.com`;
     moveControlByChildId('pathNoneBtn', viewDest);
 
     // SOUND
-    moveControlByChildId('scaleSelect', soundDest);
-    moveControlByChildId('octaveSelect', soundDest);
-    moveControlByChildId('bellCustomHzInput', soundDest);
+    moveControlByChildId('droneOnOffBtn', soundDroneDest);
+    moveControlByChildId('droneTypeSelect', soundDroneDest);
+    moveControlByChildId('droneScaleSelect', soundDroneDest);
+    moveControlByChildId('droneOctaveSelect', soundDroneDest);
+    moveControlByChildId('droneCustomHzInput', soundDroneDest);
+    moveControlByChildId('droneVolume', soundDroneDest);
+
+    moveControlByChildId('scaleSelect', soundPitchRootDest);
+    moveControlByChildId('octaveSelect', soundPitchRootDest);
+    moveControlByChildId('bellCustomHzInput', soundPitchRootDest);
+    moveControlByChildId('bellOverridesControl', soundPitchCustomDest);
+
     moveControlByChildId('bellVolume', soundDest);
-    moveControlByChildId('droneOnOffBtn', soundDest);
-    moveControlByChildId('droneTypeSelect', soundDest);
-    moveControlByChildId('droneScaleSelect', soundDest);
-    moveControlByChildId('droneOctaveSelect', soundDest);
-    moveControlByChildId('droneCustomHzInput', soundDest);
-    moveControlByChildId('droneVolume', soundDest);
   }
 
   // Home / placeholder navigation buttons
@@ -1829,6 +2263,12 @@ Contact: ringergame143@gmail.com`;
 
   const soundBtnEnterGame = document.getElementById('soundBtnEnterGame');
   const soundBtnDemo = document.getElementById('soundBtnDemo');
+
+  // v011_p01_sound_intro_page: Sound Menu Introduction entry link (Sound screen)
+  const soundIntroLink = document.getElementById('soundIntroLink');
+
+  // v011_p02_sound_test_instrument_row: Sound menu bell test instrument row
+  const soundTestInstrumentRow = document.getElementById('soundTestInstrumentRow');
 
   const libraryBtnEnterGame = document.getElementById('libraryBtnEnterGame');
   const libraryBtnDemo = document.getElementById('libraryBtnDemo');
@@ -1957,6 +2397,14 @@ Contact: ringergame143@gmail.com`;
   if (homeBtnPlay) homeBtnPlay.addEventListener('click', () => setScreen('play'));
   if (homeBtnView) homeBtnView.addEventListener('click', () => setScreen('view'));
   if (homeBtnSound) homeBtnSound.addEventListener('click', () => setScreen('sound'));
+
+  // v011_p01_sound_intro_page: Sound -> Sound Menu Introduction (SPA navigation)
+  if (soundIntroLink) {
+    soundIntroLink.addEventListener('click', (e) => {
+      try { e.preventDefault(); } catch (_) {}
+      setScreen('sound_intro');
+    });
+  }
   if (homeBtnBegin) homeBtnBegin.addEventListener('click', () => {
     setScreen('game');
     requestAnimationFrame(() => {
@@ -2239,6 +2687,15 @@ Contact: ringergame143@gmail.com`;
     octaveC: 4,
     bellCustomHz: 440, // used when scaleKey === 'custom_hz' // UI shows C1..C6
 
+    // v011_p04_bell_pitch_collapsible_blocks: bell pitch pattern selection
+    bellPitchFamily: 'diatonic', // 'diatonic' | 'pent_hex' | 'chromatic' | 'fifths_fourths' | 'partials' | 'custom'
+    bellPitchSpan: 'compact', // 'compact' | 'extended' (stages 9–12 default to extended)
+    bellPitchSpanUser: false,
+    bellPitchPentVariant: 'major_pent',
+    bellPitchChromaticDirection: 'descending', // 'descending' (treble-high) | 'ascending' (treble-low)
+    bellPitchFifthsType: 'fifths', // 'fifths' | 'fourths'
+    bellPitchFifthsShape: 'folded', // 'ladder' | 'folded'
+    bellPitchPartialsShape: 'ladder', // 'ladder' | 'folded'
     // audio settings
     bellVolume: 100, // 0..100 master bell volume
     // v08_p07_drone_on_off_button: drone on/off is now a separate boolean; droneType is pattern only.
@@ -3273,6 +3730,7 @@ Contact: ringergame143@gmail.com`;
     if (state.scaleKey === 'custom_hz') {
       rebuildBellFrequencies();
       onBellTuningChanged();
+      syncBellPitchSummaryUI();
     }
   }
 
@@ -4420,18 +4878,141 @@ Contact: ringergame143@gmail.com`;
     return out;
   }
 
-  function rebuildBellFrequencies() {
-    const def = getScaleDef();
-    const rootFreq = getBellRootFrequency();
-    const intervals = downsampleIntervals(def.intervals, state.stage); // ascending low->high
-    const freq = [];
-    for (let bell = 1; bell <= state.stage; bell++) {
-      const off = intervals[state.stage - bell]; // bell 1 highest
-      freq.push(rootFreq * Math.pow(2, off / 12));
+  // v011_p04_bell_pitch_collapsible_blocks: bell pitch patterns (offsets in semitones from root)
+function expandIntervalsAcrossOctaves(baseIntervals, octaves) {
+  const base = Array.isArray(baseIntervals) ? baseIntervals.slice() : [0, 12];
+  const o = clamp(parseInt(octaves, 10) || 1, 1, 4);
+  if (o <= 1) return base.slice();
+  const out = [];
+  for (let oi = 0; oi < o; oi++) {
+    const add = oi * 12;
+    for (let j = 0; j < base.length; j++) {
+      // Avoid duplicating the octave root at boundaries.
+      if (oi > 0 && j === 0) continue;
+      out.push(Number(base[j]) + add);
     }
-    state.bellFreq = freq;
-    try { syncBellOverridesEffectiveUI(); } catch (_) {}
   }
+  return out;
+}
+
+function getBellPitchOffsets(stage) {
+  const s = clamp(parseInt(stage, 10) || 0, 1, 12);
+  const fam = String(state.bellPitchFamily || 'diatonic');
+  if (fam === 'pent_hex') return getBellPitchOffsetsPentHex(s);
+  if (fam === 'chromatic') return getBellPitchOffsetsChromatic(s);
+  if (fam === 'fifths_fourths') return getBellPitchOffsetsFifthsFourths(s);
+  if (fam === 'partials') return getBellPitchOffsetsPartials(s);
+  if (fam === 'custom') return getBellPitchOffsetsDiatonic(s); // Custom uses per-bell overrides layered on top.
+  return getBellPitchOffsetsDiatonic(s);
+}
+
+function getBellPitchOffsetsDiatonic(stage) {
+  // Use existing major/minor scale intervals.
+  let intervals;
+  if (state.scaleKey && state.scaleKey !== 'custom_hz') {
+    const def = getScaleDefByKey(state.scaleKey) || SCALE_LIBRARY[0];
+    intervals = (def && def.intervals) ? def.intervals : [0,2,4,5,7,9,11,12];
+  } else {
+    // "Custom (Hz)" keeps diatonic intervals (major) while allowing a custom root frequency.
+    const def0 = SCALE_LIBRARY[0] || { intervals: [0,2,4,5,7,9,11,12] };
+    intervals = def0.intervals || [0,2,4,5,7,9,11,12];
+  }
+
+  const span = String(state.bellPitchSpan || 'compact');
+  // Ensure enough distinct scale degrees for the current stage so the effective mapping is computed immediately.
+  // (e.g., stage 8 minor pentatonic needs >1 octave to avoid duplicated pitches.)
+  if (span === 'extended' || stage > intervals.length) intervals = expandIntervalsAcrossOctaves(intervals, 2);
+  const ds = downsampleIntervals(intervals, stage); // ascending low->high
+  const offsets = [];
+  for (let bell = 1; bell <= stage; bell++) offsets.push(ds[stage - bell] || 0); // bell 1 highest
+  return offsets;
+}
+
+function getBellPitchOffsetsPentHex(stage) {
+  const v = String(state.bellPitchPentVariant || 'major_pent');
+  let intervals;
+  if (v === 'minor_pent') intervals = [0,3,5,7,10,12];
+  else if (v === 'whole_tone') intervals = [0,2,4,6,8,10,12];
+  else if (v === 'blues_hex') intervals = [0,3,5,6,7,10,12];
+  else intervals = [0,2,4,7,9,12]; // major pentatonic
+
+  const span = String(state.bellPitchSpan || 'compact');
+  if (span === 'extended') intervals = expandIntervalsAcrossOctaves(intervals, 2);
+
+  const ds = downsampleIntervals(intervals, stage); // ascending low->high
+  const offsets = [];
+  for (let bell = 1; bell <= stage; bell++) offsets.push(ds[stage - bell] || 0); // bell 1 highest
+  return offsets;
+}
+
+function getBellPitchOffsetsChromatic(stage) {
+  const span = String(state.bellPitchSpan || 'compact');
+  const maxSemi = (span === 'extended') ? 23 : 11;
+  const intervals = [];
+  for (let i = 0; i <= maxSemi; i++) intervals.push(i);
+
+  const ds = downsampleIntervals(intervals, stage); // ascending
+  const dir = String(state.bellPitchChromaticDirection || 'descending');
+
+  const offsets = [];
+  if (dir === 'ascending') {
+    // Bell 1 lowest -> bell N highest
+    for (let bell = 1; bell <= stage; bell++) offsets.push(ds[bell - 1] || 0);
+  } else {
+    // Bell 1 highest -> bell N lowest (traditional treble-high mapping)
+    for (let bell = 1; bell <= stage; bell++) offsets.push(ds[stage - bell] || 0);
+  }
+  return offsets;
+}
+
+function getBellPitchOffsetsFifthsFourths(stage) {
+  const type = String(state.bellPitchFifthsType || 'fifths');
+  const shape = String(state.bellPitchFifthsShape || 'folded');
+  const step = (type === 'fourths') ? 5 : 7;
+
+  // Build from low->high, then map so bell 1 is "top" (last).
+  const lowToHigh = [];
+  for (let i = 0; i < stage; i++) {
+    let off = i * step;
+    if (shape === 'folded') off = ((off % 12) + 12) % 12;
+    lowToHigh.push(off);
+  }
+
+  const offsets = [];
+  for (let bell = 1; bell <= stage; bell++) offsets.push(lowToHigh[stage - bell] || 0);
+  return offsets;
+}
+
+function getBellPitchOffsetsPartials(stage) {
+  const shape = String(state.bellPitchPartialsShape || 'ladder');
+
+  // Harmonic series: partial n has ratio n:1 relative to the fundamental.
+  // Represent as semitone offsets (can be fractional).
+  const lowToHigh = [];
+  for (let n = 1; n <= stage; n++) {
+    let off = 12 * (Math.log(n) / Math.log(2));
+    if (shape === 'folded') off = off % 12;
+    lowToHigh.push(off);
+  }
+
+  const offsets = [];
+  for (let bell = 1; bell <= stage; bell++) offsets.push(lowToHigh[stage - bell] || 0);
+  return offsets;
+}
+
+function rebuildBellFrequencies() {
+  const rootFreq = getBellRootFrequency();
+  const stage = clamp(parseInt(state.stage, 10) || 1, 1, 12);
+  const offsets = getBellPitchOffsets(stage) || [];
+  const freq = [];
+  for (let bell = 1; bell <= stage; bell++) {
+    const off = (offsets[bell - 1] != null) ? Number(offsets[bell - 1]) : 0;
+    freq.push(rootFreq * Math.pow(2, off / 12));
+  }
+  state.bellFreq = freq;
+  try { syncBellOverridesEffectiveUI(); } catch (_) {}
+}
+
 
   // v08_p05_sound_per_bell_overrides: per-bell sound overrides (UI + persistence)
   function ensureBellOverridesArrays() {
@@ -5002,6 +5583,23 @@ Contact: ringergame143@gmail.com`;
     try { syncBellOverridesEffectiveUI(); } catch (_) {}
   }
 
+  // v011_p02_sound_test_instrument_row: stage-sized bell test instrument row (Sound menu)
+  function rebuildSoundTestInstrumentRow() {
+    if (!soundTestInstrumentRow) return;
+    const stage = clamp(parseInt(state.stage, 10) || 6, 4, 12);
+    const stageKey = String(stage);
+    if (soundTestInstrumentRow.dataset && soundTestInstrumentRow.dataset.stage === stageKey && soundTestInstrumentRow.childElementCount === stage) return;
+
+    let html = '';
+    for (let b = 1; b <= stage; b++) {
+      const g = bellToGlyph(b);
+      // Add Spotlight-row base button class for shared styling (visual only).
+      html += '<button type="button" class="rg-sound-test-btn rg-quick-bell-btn" data-bell="' + b + '" aria-label="Ring bell ' + g + '">' + g + '</button>';
+    }
+    soundTestInstrumentRow.innerHTML = html;
+    try { soundTestInstrumentRow.dataset.stage = stageKey; } catch (_) {}
+  }
+
   // v10_p04_sound_quick_bell_row: stage-sized quick test row (Sound menu)
   function rebuildSoundQuickBellRow() {
     if (!soundQuickBellRow) return;
@@ -5019,7 +5617,8 @@ Contact: ringergame143@gmail.com`;
   }
 
   function rebuildBellOverridesUI() {
-    // Keep the Sound quick-test row in sync with stage, even if the overrides list is not present.
+    // Keep Sound test rows in sync with stage, even if the overrides list is not present.
+    try { rebuildSoundTestInstrumentRow(); } catch (_) {}
     try { rebuildSoundQuickBellRow(); } catch (_) {}
     // v10_p05_sound_per_bell_hz_slider_preview: rebuilding the list should never leave the preview tone running.
     try { cancelHzSliderPreviewGesture(); } catch (_) {}
@@ -8738,7 +9337,7 @@ Contact: ringergame143@gmail.com`;
     state.stage = clamp(parseInt(bellCountSelect.value,10)||6, 4, 12);
     if (state.method === 'custom') { state.method = 'plainhunt'; methodSelect.value='plainhunt'; state.customRows=null; state.methodSource='built_in'; state.methodMeta=null; }
     rebuildLiveCountOptions(); ensureLiveBells(); rebuildBellPicker();
-    ensurePathBells(); rebuildPathPicker(); computeRows(); resetStats(); rebuildBellFrequencies(); rebuildBellOverridesUI();
+    ensurePathBells(); rebuildPathPicker(); computeRows(); resetStats(); maybeApplyDefaultBellPitchSpanForStage(state.stage); rebuildBellFrequencies(); rebuildBellOverridesUI();
     syncGameHeaderMeta();
     renderScoringExplanation();
   });
@@ -9547,6 +10146,114 @@ Contact: ringergame143@gmail.com`;
     window.addEventListener('pointercancel', handleHzSliderPointerCancel);
   }
 
+  // v011_p02_sound_test_instrument_row: Spotlight-style tap/drag to ring (Sound menu)
+  function soundTestRowSetActive(el) {
+    const prev = ui.soundTestRowActiveEl;
+    if (prev && prev !== el) {
+      try { prev.classList.remove('is-active'); } catch (_) {}
+    }
+    ui.soundTestRowActiveEl = el || null;
+    if (el) {
+      try { el.classList.add('is-active'); } catch (_) {}
+    }
+  }
+
+  function hitTestSoundTestRow(e) {
+    if (!soundTestInstrumentRow) return null;
+    const x = (e && typeof e.clientX === 'number') ? e.clientX : 0;
+    const y = (e && typeof e.clientY === 'number') ? e.clientY : 0;
+    const el = document.elementFromPoint ? document.elementFromPoint(x, y) : null;
+    const btn = (el && el.closest) ? el.closest('.rg-sound-test-btn[data-bell]') : null;
+    if (!btn || !soundTestInstrumentRow.contains(btn)) return null;
+    const b = parseInt(btn.dataset && btn.dataset.bell ? btn.dataset.bell : '0', 10) || 0;
+    if (b < 1 || b > state.stage) return null;
+    return { bell: b, el: btn };
+  }
+
+  function endSoundTestRowDrag(e) {
+    if (!ui.soundTestRowDragActive) return;
+    if (ui.soundTestRowDragPointerId != null && e && e.pointerId != null && e.pointerId !== ui.soundTestRowDragPointerId) return;
+    ui.soundTestRowDragActive = false;
+    ui.soundTestRowDragPointerId = null;
+    ui.soundTestRowDragLastBell = null;
+    soundTestRowSetActive(null);
+  }
+
+  if (soundTestInstrumentRow) {
+    // v011_p02a_sound_test_row_spotlight_style: brief active flash for keyboard/click activation (visual only)
+    let soundTestRowClickFlashTimer = null;
+    function soundTestRowFlashActive(btn) {
+      if (!btn) return;
+      soundTestRowSetActive(btn);
+      if (soundTestRowClickFlashTimer) {
+        try { window.clearTimeout(soundTestRowClickFlashTimer); } catch (_) {}
+        soundTestRowClickFlashTimer = null;
+      }
+      soundTestRowClickFlashTimer = window.setTimeout(() => {
+        // Don't fight with an in-progress drag highlight.
+        if (!ui.soundTestRowDragActive) soundTestRowSetActive(null);
+      }, 160);
+    }
+
+    soundTestInstrumentRow.addEventListener('pointerdown', (e) => {
+      const hit = hitTestSoundTestRow(e);
+      if (!hit) return;
+
+      // If another pointer is already dragging, ignore additional touches.
+      if (ui.soundTestRowDragActive && ui.soundTestRowDragPointerId != null && e.pointerId !== ui.soundTestRowDragPointerId) return;
+
+      ui.soundTestRowDragActive = true;
+      ui.soundTestRowDragPointerId = e.pointerId;
+      ui.soundTestRowDragLastBell = hit.bell;
+      ui.soundTestRowIgnoreClickUntilMs = perfNow() + 350;
+      soundTestRowSetActive(hit.el);
+      try { soundTestInstrumentRow.setPointerCapture(e.pointerId); } catch (_) {}
+
+      ringBellTestPad(hit.bell);
+      e.preventDefault();
+    }, { passive: false });
+
+    soundTestInstrumentRow.addEventListener('pointermove', (e) => {
+      if (!ui.soundTestRowDragActive) return;
+      if (ui.soundTestRowDragPointerId != null && e.pointerId !== ui.soundTestRowDragPointerId) return;
+
+      const hit = hitTestSoundTestRow(e);
+      if (!hit) {
+        // Leaving the row clears the last bell so re-entry can ring again.
+        ui.soundTestRowDragLastBell = null;
+        soundTestRowSetActive(null);
+        e.preventDefault();
+        return;
+      }
+
+      if (hit.bell === ui.soundTestRowDragLastBell) {
+        e.preventDefault();
+        return;
+      }
+
+      ui.soundTestRowDragLastBell = hit.bell;
+      soundTestRowSetActive(hit.el);
+      ringBellTestPad(hit.bell);
+      e.preventDefault();
+    }, { passive: false });
+
+    soundTestInstrumentRow.addEventListener('pointerup', endSoundTestRowDrag);
+    soundTestInstrumentRow.addEventListener('pointercancel', endSoundTestRowDrag);
+    window.addEventListener('pointerup', endSoundTestRowDrag);
+    window.addEventListener('pointercancel', endSoundTestRowDrag);
+
+    // Fallback: keyboard activation / click when pointer events are not used.
+    soundTestInstrumentRow.addEventListener('click', (e) => {
+      const btn = (e && e.target && e.target.closest) ? e.target.closest('.rg-sound-test-btn[data-bell]') : null;
+      if (!btn) return;
+      const now = perfNow();
+      if (ui.soundTestRowIgnoreClickUntilMs && now < ui.soundTestRowIgnoreClickUntilMs) return;
+      const b = parseInt(btn.dataset && btn.dataset.bell ? btn.dataset.bell : '0', 10) || 0;
+      ringBellTestPad(b);
+      soundTestRowFlashActive(btn);
+    });
+  }
+
   // v10_p04_sound_quick_bell_row: Spotlight-style quick tap/drag to ring (Sound menu)
   function soundQuickRowSetActive(el) {
     const prev = ui.soundQuickRowActiveEl;
@@ -9645,6 +10352,7 @@ Contact: ringergame143@gmail.com`;
     syncBellCustomHzUI();
     rebuildBellFrequencies();
     onBellTuningChanged();
+    syncBellPitchSummaryUI();
   });
 
   octaveSelect.addEventListener('change', () => {
@@ -9652,6 +10360,7 @@ Contact: ringergame143@gmail.com`;
     state.octaveC = parseInt(octaveSelect.value, 10) || 3;
     rebuildBellFrequencies();
     onBellTuningChanged();
+    syncBellPitchSummaryUI();
   });
 
 
@@ -10299,6 +11008,12 @@ Contact: ringergame143@gmail.com`;
     syncLibraryEntryUI();
     syncLibraryScreenUI();
 
+    // Bell Pitch: keep collapsed header summary in sync.
+    try { maybeApplyDefaultBellPitchSpanForStage(state.stage); } catch (_) {}
+    try { syncBellPitchSpanUI(); } catch (_) {}
+    try { syncBellPitchFamilyUI(); } catch (_) {}
+    try { syncBellPitchSummaryUI(); } catch (_) {}
+
     ui.isBooting = false;
   }
 
@@ -10314,4 +11029,3 @@ if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
     });
   });
 }
-

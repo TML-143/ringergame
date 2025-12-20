@@ -203,50 +203,78 @@
         <section class="pane rg-splash">
           <div class="pane-title"><span>Sound</span></div>
           <div class="rg-screen-body">
-            <div id="soundMenuControls" class="rg-controls" aria-label="Sound controls"></div>
-
-            <!-- v10_p08_sound_global_chords_splitstrike: global chord controls -->
-            <div id="soundChordControls" class="rg-controls rg-sound-chords" aria-label="Chord controls">
-              <div class="control">
-                <label>Chords</label>
-                <button id="globalChordOnOffBtn" class="pill" type="button" aria-pressed="false">Chords (global) Off</button>
-                <div class="control-note rg-muted">Applies to all bell strikes.</div>
+            <!-- v011_p03_sound_layout_drone_first: DRONE block (moved above pitch + sound) -->
+            <div id="soundDroneBlock" class="rg-sound-block" aria-label="Drone">
+              <div class="rg-sound-block-head">
+                <div class="rg-sound-block-title">DRONE</div>
               </div>
-              <div class="control">
-                <label for="globalChordPresetSelect">Chord preset</label>
-                <select id="globalChordPresetSelect"></select>
-              </div>
-              <div class="control">
-                <label for="globalChordSplitSelect">Split-strike</label>
-                <select id="globalChordSplitSelect"></select>
-              </div>
-              <div class="control">
-                <label for="globalChordInversionSelect">Inversion</label>
-                <select id="globalChordInversionSelect"></select>
-              </div>
-              <div class="control">
-                <label for="globalChordSpreadSelect">Spread</label>
-                <select id="globalChordSpreadSelect"></select>
-              </div>
-              <div id="globalChordSplitStepControl" class="control hidden">
-                <label for="globalChordStepMs">Step (ms)</label>
-                <input id="globalChordStepMs" type="number" min="0" max="15" step="1" value="6" />
-              </div>
-              <div id="globalChordSplitMaxControl" class="control hidden">
-                <label for="globalChordMaxMs">Max (ms)</label>
-                <input id="globalChordMaxMs" type="number" min="0" max="18" step="1" value="12" />
-              </div>
+              <div id="soundDroneControls" class="rg-controls" aria-label="Drone controls"></div>
             </div>
 
-            <div id="bellOverridesControl" class="control rg-bell-overrides-control" aria-label="Per-bell sound">
-              <label>Per-bell sound</label>
-              <div class="rg-bell-overrides-actions">
-                <div id="soundQuickBellRow" class="rg-quick-bell-row" aria-label="Quick bell row"></div>
-                <button id="bellOverridesResetBtn" class="pill" type="button">Reset all per-bell overrides</button>
+                        <!-- v011_p03_sound_layout_drone_first: BELL SOUND block (existing sound controls) -->
+            <div id="soundBellSoundBlock" class="rg-sound-block" aria-label="Bell sound">
+              <div class="rg-sound-block-head">
+                <div class="rg-sound-block-title">BELL SOUND</div>
               </div>
-              <div id="bellOverridesList" class="rg-bell-overrides-list" aria-label="Per-bell overrides list"></div>
-              <div class="control-note rg-muted">Overrides layer on top of Bell key/register and Bell volume.</div>
-            </div>
+
+              <div id="soundMenuControls" class="rg-controls" aria-label="Sound controls"></div>
+
+              <!-- v10_p08_sound_global_chords_splitstrike: global chord controls -->
+              <div id="soundChordControls" class="rg-controls rg-sound-chords" aria-label="Chord controls">
+                <div class="control">
+                  <label>Chords</label>
+                  <button id="globalChordOnOffBtn" class="pill" type="button" aria-pressed="false">Chords (global) Off</button>
+                  <div class="control-note rg-muted">Applies to all bell strikes.</div>
+                </div>
+                <div class="control">
+                  <label for="globalChordPresetSelect">Chord preset</label>
+                  <select id="globalChordPresetSelect"></select>
+                </div>
+                <div class="control">
+                  <label for="globalChordSplitSelect">Split-strike</label>
+                  <select id="globalChordSplitSelect"></select>
+                </div>
+                <div class="control">
+                  <label for="globalChordInversionSelect">Inversion</label>
+                  <select id="globalChordInversionSelect"></select>
+                </div>
+                <div class="control">
+                  <label for="globalChordSpreadSelect">Spread</label>
+                  <select id="globalChordSpreadSelect"></select>
+                </div>
+                <div id="globalChordSplitStepControl" class="control hidden">
+                  <label for="globalChordStepMs">Step (ms)</label>
+                  <input id="globalChordStepMs" type="number" min="0" max="15" step="1" value="6" />
+                </div>
+                <div id="globalChordSplitMaxControl" class="control hidden">
+                  <label for="globalChordMaxMs">Max (ms)</label>
+                  <input id="globalChordMaxMs" type="number" min="0" max="18" step="1" value="12" />
+                </div>
+              </div>
+
+              <div id="bellOverridesControl" class="control rg-bell-overrides-control" aria-label="Per-bell sound">
+                <label>Per-bell sound</label>
+                <div class="rg-bell-overrides-actions">
+                  <div id="soundQuickBellRow" class="rg-quick-bell-row" aria-label="Quick bell row"></div>
+                  <button id="bellOverridesResetBtn" class="pill" type="button">Reset all per-bell overrides</button>
+                </div>
+                <div id="bellOverridesList" class="rg-bell-overrides-list" aria-label="Per-bell overrides list"></div>
+                <div class="control-note rg-muted">Overrides layer on top of Bell key/register and Bell volume.</div>
+              </div>
+            </div><!-- v011_p02_sound_test_instrument_row: Bell Test Instrument Row (tap + drag-to-ring) -->
+            <div id="soundTestInstrumentRow" class="rg-sound-test-row rg-quick-bell-row" aria-label="Bell test instrument"></div>
+
+            <!-- v011_p04_bell_pitch_collapsible_blocks: BELL PITCH block (collapsed-by-default) -->
+            <details id="soundPitchBlock" class="rg-sound-block rg-sound-block--collapsible" aria-label="Bell pitch">
+              <summary class="rg-sound-block-summaryline" aria-controls="soundPitchControls">
+                <span class="rg-sound-block-title">Bell Pitch</span>
+                <span id="soundPitchSummary" class="rg-sound-block-summary rg-muted">Diatonic — F♯ Major — Compact</span>
+                <span class="rg-sound-block-caret" aria-hidden="true"></span>
+              </summary>
+              <div id="soundPitchControls" class="rg-controls" aria-label="Bell pitch controls"></div>
+            </details>
+
+            
             <div class="rg-nav">
               <button class="pill" type="button" data-go-screen="home">Home</button>
               <button class="pill" type="button" data-go-screen="play">Setup</button>
@@ -258,6 +286,8 @@
           </div>
         </section>
       </div>
+
+      
 
       <div id="screenLibrary" class="rg-screen" aria-hidden="true">
         <section class="pane rg-splash">
