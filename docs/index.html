@@ -77,20 +77,47 @@
         <section class="pane rg-splash">
           <div class="pane-title"><span>Setup</span></div>
           <div class="rg-screen-body">
-            <div id="playMenuControls" class="rg-controls" aria-label="Setup controls"></div>
-            <div id="setupCCCBRLibraryControl" class="control">
-              <label>CCCBR Library</label>
-              <a id="setupCCCBRDownloadLink" href="https://methods.cccbr.org.uk/xml/CCCBR_methods.xml.zip" target="_blank" rel="noopener">CCCBR methods library (download ZIP)</a>
-              <button id="setupLoadCCCBRWebBtn" class="pill" type="button">Download &amp; Load CCCBR library</button>
-              <span id="setupLoadCCCBRWebStatus" class="rg-muted"></span>
+            <div id="playMenuControls" class="rg-controls" aria-label="Setup controls">
+              <div id="setupBlockLibrary" class="rg-setup-block">
+                <div class="rg-setup-block-head"><div class="rg-setup-block-title">Library</div></div>
+                <div id="setupBlockLibraryBody" class="rg-setup-block-body rg-controls">
+                  <div class="control">
+                                <label>Local library</label>
+                                <button id="setupLoadLibraryLocalBtn" class="pill" type="button">Load library XML/ZIP…</button>
+                              </div>
+                  <div id="setupCCCBRLibraryControl" class="control">
+                                <label>CCCBR Library</label>
+                                <a id="setupCCCBRDownloadLink" href="https://methods.cccbr.org.uk/xml/CCCBR_methods.xml.zip" target="_blank" rel="noopener">CCCBR methods library (download ZIP)</a>
+                                <button id="setupLoadCCCBRWebBtn" class="pill" type="button">Download &amp; Load CCCBR library</button>
+                                <span id="setupLoadCCCBRWebStatus" class="rg-muted"></span>
+                              </div>
+                  <div class="control rg-setup-library-status">
+                                <label>Status</label>
+                                <span id="setupLibraryLoadedStatus" class="rg-muted" aria-live="polite">No library loaded.</span>
+                              </div>
+                  <div class="control rg-setup-library-explore hidden">
+                                <button id="setupExploreLibraryBtn" class="pill" type="button" disabled title="Load a CCCBR library XML/ZIP first">Explore library</button>
+                              </div>
+                </div>
+              </div>
+              <div id="setupBlockMethod" class="rg-setup-block">
+                <div class="rg-setup-block-head"><div class="rg-setup-block-title">Method</div></div>
+                <div id="setupBlockMethodBody" class="rg-setup-block-body rg-controls"></div>
+              </div>
+              <div id="setupBlockTempo" class="rg-setup-block">
+                <div class="rg-setup-block-head"><div class="rg-setup-block-title">Tempo</div></div>
+                <div id="setupBlockTempoBody" class="rg-setup-block-body rg-controls"></div>
+              </div>
+              <div id="setupBlockBells" class="rg-setup-block">
+                <div class="rg-setup-block-head"><div class="rg-setup-block-title">Bells</div></div>
+                <div id="setupBlockBellsBody" class="rg-setup-block-body rg-controls"></div>
+              </div>
+              <div id="setupBlockMic" class="rg-setup-block">
+                <div class="rg-setup-block-head"><div class="rg-setup-block-title">Mic</div></div>
+                <div id="setupBlockMicBody" class="rg-setup-block-body rg-controls"></div>
+              </div>
             </div>
-            <div class="control">
-              <button id="setupExploreLibraryBtn" class="pill" type="button" disabled title="Load a CCCBR library XML/ZIP first">Explore library</button>
-            </div>
-            <div id="setupScoringExplain" class="stats-info">
-              Scoring: each row is divided into '6' bell windows. For each scored bell and row, you get one scoring chance. Hits inside the window score 5–10 points based on accuracy; hits outside score 0. Extra rings still sound but only the first ring for a bell in a row counts for scoring. MAE (ms) is Mean Absolute Error: average timing error per hit. Lower values mean greater overall accuracy.
-            </div>
-            <div class="rg-nav">
+<div class="rg-nav">
               <button class="pill" type="button" data-go-screen="home">Home</button>
               <button class="pill" type="button" data-go-screen="play">Setup</button>
               <button class="pill" type="button" data-go-screen="view">View</button>
@@ -391,7 +418,7 @@
               <option value="plainhunt">Plain Hunt</option>
               <option value="plainbob">Plain Bob (variation)</option>
               <option value="grandsire">Grandsire (variation)</option>
-              <option value="custom">Custom (text file)</option>
+              <option value="custom">Custom (TXT/XML file)</option>
             </select>
           </div>
 
@@ -499,7 +526,11 @@
 
           <div class="control">
             <label for="bpmInput">Tempo (BPM)</label>
-            <input id="bpmInput" type="number" min="1" max="240" value="120" />
+            <div class="path-row rg-tempo-row" aria-label="Tempo controls">
+              <input id="bpmInput" type="number" min="1" max="240" value="120" />
+              <button id="bpmTapBtn" class="pill" type="button">Tap</button>
+            </div>
+            <input id="bpmSlider" type="range" min="1" max="240" step="1" value="120" aria-label="Tempo slider" />
           </div>
 
           <div class="control mic-control">
@@ -578,11 +609,11 @@
           </div>
 
           <div class="control">
-            <label for="fileInput">Custom file</label>
-            <input id="fileInput" type="file" accept=".txt" />
+            <label for="fileInput">Method file (TXT/XML)</label>
+            <input id="fileInput" type="file" accept=".txt,.xml" />
           </div>
 
-          <div class="control">
+          <div class="control rg-file-input-offscreen">
             <label for="xmlInput">CCCBR XML / ZIP</label>
             <input id="xmlInput" type="file" accept=".xml,.zip" multiple />
           </div>

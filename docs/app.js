@@ -75,7 +75,7 @@
   // === Analytics (GA4) ===
   const GA_MEASUREMENT_ID = 'G-7TEG531231';
   const GA_ID = GA_MEASUREMENT_ID;
-  const SITE_VERSION = 'v011_p04b_bell_pitch_blocks_custom_collapsible';
+  const SITE_VERSION = 'v012_p02a_setup_library_info_placement';
 
   function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
   function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
@@ -408,6 +408,10 @@ Contact: ringergame143@gmail.com`;
   const keybindNote = document.getElementById('keybindNote');
   const bpmInput = document.getElementById('bpmInput');
 
+  const bpmSlider = document.getElementById('bpmSlider');
+  const bpmTapBtn = document.getElementById('bpmTapBtn');
+
+
   // Mic controls (top menu)
   const micToggleBtn = document.getElementById('micToggleBtn');
   const micCalibrateBtn = document.getElementById('micCalibrateBtn');
@@ -453,7 +457,7 @@ Contact: ringergame143@gmail.com`;
 
   function rgHamburgerIsHeaderAnchoredScreen(screenName) {
     const s = String(screenName || '').toLowerCase();
-    return (s === 'play' || s === 'view' || s === 'sound' || s === 'sound_intro' || s === 'privacy');
+    return (s === 'play' || s === 'view' || s === 'sound' || s === 'sound_intro' || s === 'library' || s === 'privacy');
   }
 
   function rgHamburgerResetDropdownInlinePosition() {
@@ -688,6 +692,7 @@ Contact: ringergame143@gmail.com`;
                        (n === 'view') ? screenView :
                        (n === 'sound') ? screenSound :
                        (n === 'sound_intro') ? screenSound :
+                       (n === 'library') ? screenLibrary :
                        (n === 'privacy') ? screenPrivacy : null;
       const titleEl = screenEl ? screenEl.querySelector('.pane-title') : null;
       if (titleEl) {
@@ -817,10 +822,23 @@ const next = (nn === 'home' || nn === 'play' || nn === 'view' || nn === 'sound' 
 
   // v06_p12c_library_entry: enable/disable Setup entry + keep Library screen filename current
   function syncLibraryEntryUI() {
+    const loaded = !!(state && state.libraryLoaded);
+    const name = (state && state.libraryFileName) ? String(state.libraryFileName) : '';
+
+    const statusEl = document.getElementById('setupLibraryLoadedStatus');
+    if (statusEl) {
+      if (loaded) {
+        statusEl.textContent = 'Loaded library: ' + (name || 'unknown');
+        try { statusEl.title = name || ''; } catch (_) {}
+      } else {
+        statusEl.textContent = 'No library loaded.';
+        try { statusEl.title = ''; } catch (_) {}
+      }
+    }
+
     const btn = document.getElementById('setupExploreLibraryBtn');
     if (!btn) return;
 
-    const loaded = !!(state && state.libraryLoaded);
     btn.disabled = !loaded;
     btn.classList.toggle('is-disabled', !loaded);
     if (!loaded) {
@@ -828,6 +846,10 @@ const next = (nn === 'home' || nn === 'play' || nn === 'view' || nn === 'sound' 
     } else {
       btn.title = '';
     }
+
+    // v012_p02_setup_library_block_and_library_header_hamburger: hide Explore until a library is loaded.
+    const wrap = btn.closest('.control') || btn.parentElement;
+    if (wrap) wrap.classList.toggle('hidden', !loaded);
   }
 
   function syncLibraryScreenUI() {
@@ -2187,39 +2209,61 @@ function ensureBellPitchPatternBlocks(destEl) {
     if (!playDest && !viewDest && !soundDest) return;
 
     // PLAY
-    moveControlByChildId('methodSelect', playDest);
-    moveControlByChildId('bellCount', playDest);
-    moveControlByChildId('bpmInput', playDest);
-    moveControlByChildId('liveCount', playDest);
-    moveControlByChildId('bellPicker', playDest);
-    moveControlByChildId('keybindPanel', playDest);
-    moveControlByChildId('micToggleBtn', playDest);
-    moveControlByChildId('micCooldown', playDest);
-    moveControlByChildId('fileInput', playDest);
-    moveControlByChildId('xmlInput', playDest);
+    // v012_p01_setup_blocks_layout: route Setup controls into the five Setup blocks if present.
+    const setupLibDest = document.getElementById('setupBlockLibraryBody') || playDest;
+    const setupMethodDest = document.getElementById('setupBlockMethodBody') || playDest;
+    const setupTempoDest = document.getElementById('setupBlockTempoBody') || playDest;
+    const setupBellsDest = document.getElementById('setupBlockBellsBody') || playDest;
+    const setupMicDest = document.getElementById('setupBlockMicBody') || playDest;
+
+    moveControlByChildId('methodSelect', setupMethodDest);
+    moveControlByChildId('fileInput', setupMethodDest);
+
+    moveControlByChildId('bpmInput', setupTempoDest);
+
+    moveControlByChildId('bellCount', setupBellsDest);
+    moveControlByChildId('liveCount', setupBellsDest);
+    moveControlByChildId('bellPicker', setupBellsDest);
+    moveControlByChildId('keybindPanel', setupBellsDest);
+
+    moveControlByChildId('micToggleBtn', setupMicDest);
+    moveControlByChildId('micCooldown', setupMicDest);
+
+    moveControlByChildId('xmlInput', setupLibDest);
 
     // v06_p12d_library_browser: CCCBR web download + load control (place next to the XML/ZIP upload)
     try {
       const cccb = document.getElementById('setupCCCBRLibraryControl');
-      if (cccb && playDest) {
+      if (cccb && setupLibDest) {
         const xmlCtl = xmlInput ? xmlInput.closest('.control') : null;
-        if (xmlCtl && xmlCtl.parentElement === playDest) {
-          playDest.insertBefore(cccb, xmlCtl.nextSibling);
+        // Keep the XML/ZIP upload first within the Library block (it may start after CCCBR controls in markup).
+        if (xmlCtl && xmlCtl.parentElement === setupLibDest && setupLibDest.firstChild !== xmlCtl) {
+          setupLibDest.insertBefore(xmlCtl, setupLibDest.firstChild);
+        }
+        if (xmlCtl && xmlCtl.parentElement === setupLibDest) {
+          setupLibDest.insertBefore(cccb, xmlCtl.nextSibling);
         } else {
-          playDest.appendChild(cccb);
+          setupLibDest.appendChild(cccb);
         }
       }
     } catch (_) {}
 
-    moveControlByChildId('setupExploreLibraryBtn', playDest);
+    moveControlByChildId('setupExploreLibraryBtn', setupLibDest);
 
-    // Move Method Library pane into Play screen (below controls)
+    // v012_p02a_setup_library_info_placement: place loaded-library summary under Library block (above Method)
     const playScreen = document.getElementById('screenPlay');
     const lib = document.getElementById('methodLibrary');
-    if (playScreen && lib) {
-      playScreen.appendChild(lib);
+    const setupControls = document.getElementById('playMenuControls');
+    const setupBlockMethod = document.getElementById('setupBlockMethod');
+    if (lib) {
+      if (setupControls && setupBlockMethod && setupBlockMethod.parentElement === setupControls) {
+        setupControls.insertBefore(lib, setupBlockMethod);
+      } else if (playScreen) {
+        playScreen.appendChild(lib);
+      }
       lib.classList.add('rg-splash');
-      lib.style.marginTop = '12px';
+      lib.style.width = '100%';
+      lib.style.marginTop = '0';
     }
 
     // VIEW
@@ -2277,6 +2321,7 @@ function ensureBellPitchPatternBlocks(destEl) {
   const privacyBtnDemo = document.getElementById('privacyBtnDemo');
 
   const setupExploreLibraryBtn = document.getElementById('setupExploreLibraryBtn');
+  const setupLoadLibraryLocalBtn = document.getElementById('setupLoadLibraryLocalBtn');
 
   // v06_p12d_library_browser: Setup CCCBR web download control
   const setupLoadCCCBRWebBtn = document.getElementById('setupLoadCCCBRWebBtn');
@@ -2429,7 +2474,14 @@ function ensureBellPitchPatternBlocks(destEl) {
     setScreen('library');
   });
 
-  // v06_p12d_library_browser: Setup -> Download & load CCCBR library from the web
+    // v012_p02_setup_library_block_and_library_header_hamburger: Setup -> Local load CCCBR XML/ZIP
+  if (setupLoadLibraryLocalBtn && xmlInput) {
+    setupLoadLibraryLocalBtn.addEventListener('click', () => {
+      try { xmlInput.click(); } catch (_) {}
+    });
+  }
+
+// v06_p12d_library_browser: Setup -> Download & load CCCBR library from the web
   if (setupLoadCCCBRWebBtn) {
     setupLoadCCCBRWebBtn.addEventListener('click', () => {
       downloadAndLoadCCCBRLibraryFromWeb();
@@ -4347,6 +4399,75 @@ function ensureBellPitchPatternBlocks(destEl) {
     return added;
   }
 
+  // v012_p03_setup_method_block_sources_dropdown: parse a single CCCBR-style method XML.
+  // Best-effort: expects one <method> element containing stage and place notation (pn).
+  // Throws on errors; caller must keep current method unchanged on failure.
+  function parseCCCBRSingleMethod(xmlText, filename) {
+    let text = xmlText == null ? '' : String(xmlText);
+    if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+
+    let doc;
+    try {
+      const parser = new DOMParser();
+      doc = parser.parseFromString(text, 'application/xml');
+    } catch (err) {
+      throw new Error('Could not parse XML.');
+    }
+
+    if (!doc || !doc.documentElement) {
+      throw new Error('Empty XML document.');
+    }
+
+    const perr = doc.getElementsByTagName('parsererror');
+    if (perr && perr.length) {
+      console.error('Method XML parsererror', filename, perr[0] && perr[0].textContent);
+      throw new Error('Could not parse XML.');
+    }
+
+    const methodEls = cccbGetElements(doc, 'method');
+    if (!methodEls || !methodEls.length) {
+      throw new Error('No <method> entry found.');
+    }
+
+    const mEl = methodEls[0];
+    const title = cccbFirstText(mEl, ['title', 'name']) || 'Untitled';
+    const pnRaw = cccbFirstText(mEl, ['pn', 'notation', 'placeNotation']);
+
+    let stageText = cccbFirstText(mEl, 'stage');
+    if (!stageText) {
+      let cur = mEl.parentElement;
+      while (cur && cur.nodeType === 1) {
+        const props = cccbGetElements(cur, 'properties');
+        for (let j = 0; j < props.length; j++) {
+          const p = props[j];
+          if (p.parentNode !== cur) continue;
+          const st = cccbFirstText(p, 'stage');
+          if (st) stageText = st;
+        }
+        if (stageText) break;
+        cur = cur.parentElement;
+      }
+    }
+
+    let stageNum = parseInt(stageText, 10);
+    if (!isFinite(stageNum)) {
+      throw new Error('Could not read stage (bell count) from method XML.');
+    }
+    stageNum = clamp(stageNum, 1, 16);
+    if (stageNum < 4 || stageNum > 12) {
+      throw new Error('Only 4–12 bell methods are supported in this game.');
+    }
+
+    let pnNorm = pnRaw == null ? '' : String(pnRaw);
+    pnNorm = pnNorm.replace(/;/g, ' ').replace(/\s+/g, ' ').trim();
+    pnNorm = pnNorm.replace(/\s*,\s*/g, ',');
+    if (!pnNorm) {
+      throw new Error('Could not read place notation (pn) from method XML.');
+    }
+
+    return { title: title, stage: stageNum, pn: pnNorm };
+  }
+
   function cccbParsePnTokens(pn) {
     if (pn == null) return [];
     let raw = String(pn);
@@ -4802,9 +4923,80 @@ function ensureBellPitchPatternBlocks(destEl) {
     return state.method;
   }
 
+  // v012_p03_setup_method_block_sources_dropdown: keep Method dropdown reflecting source (built-in / library / file).
+  function syncMethodSelectSourceDropdown() {
+    try {
+      if (!methodSelect) return;
+
+      // Remove dynamic source options (re-added as needed).
+      for (let i = methodSelect.options.length - 1; i >= 0; i--) {
+        const opt = methodSelect.options[i];
+        const val = opt && opt.value;
+        if (val === '__from_library' || val === '__from_file') {
+          try { methodSelect.remove(i); } catch (_) {
+            try { opt.parentNode && opt.parentNode.removeChild(opt); } catch (_) {}
+          }
+        }
+      }
+
+      // Built-in methods: just select the built-in value.
+      if (state.method !== 'custom') {
+        if (state.method && methodSelect.value !== state.method) {
+          methodSelect.value = state.method;
+        }
+        return;
+      }
+
+      // Custom: reflect whether this custom method came from library or a file.
+      let wantedVal = null;
+      let label = '';
+      if (state.methodSource === 'library') {
+        wantedVal = '__from_library';
+        const title = (state.methodMeta && state.methodMeta.title) ? String(state.methodMeta.title) : '';
+        label = '[method from library] ' + (title ? shortenForUi(title, 46) : 'Custom');
+      } else if (state.methodSource === 'custom_rows') {
+        wantedVal = '__from_file';
+        const fn = (state.methodMeta && state.methodMeta.fileName) ? String(state.methodMeta.fileName) : '';
+        label = '[method from file] ' + (fn ? shortenForUi(fn, 46) : 'Custom');
+      }
+
+      if (!wantedVal) {
+        methodSelect.value = 'custom';
+        return;
+      }
+
+      const opt = document.createElement('option');
+      opt.value = wantedVal;
+      opt.textContent = label;
+      opt.disabled = true;
+
+      // Insert after the existing "custom" option when possible.
+      let inserted = false;
+      for (let i = 0; i < methodSelect.childNodes.length; i++) {
+        const n = methodSelect.childNodes[i];
+        if (n && n.nodeType === 1 && n.tagName && n.tagName.toLowerCase() === 'option' && n.value === 'custom') {
+          try {
+            if (n.nextSibling) methodSelect.insertBefore(opt, n.nextSibling);
+            else methodSelect.appendChild(opt);
+            inserted = true;
+          } catch (_) {}
+          break;
+        }
+      }
+      if (!inserted) {
+        try { methodSelect.appendChild(opt); } catch (_) {}
+      }
+
+      methodSelect.value = wantedVal;
+    } catch (_) {}
+  }
+
   // Prompt 5: in-game header meta sync
   function syncGameHeaderMeta() {
     try {
+      // v012_p03_setup_method_block_sources_dropdown: dropdown should show method source.
+      syncMethodSelectSourceDropdown();
+
       if (!gameMetaMethod || !gameMetaSource || !gameMetaAttr || !gameMetaBpm) return;
 
       // Method name
@@ -8488,6 +8680,7 @@ function rebuildBellFrequencies() {
     const tempoBpm = clamp(parseInt(bpmInput.value, 10) || 80, 1, 240);
     state.bpm = tempoBpm;
     bpmInput.value = String(state.bpm);
+    if (bpmSlider) bpmSlider.value = String(state.bpm);
     syncGameHeaderMeta();
     const beatMs = 60000 / state.bpm;
 
@@ -9313,6 +9506,13 @@ function rebuildBellFrequencies() {
     markUserTouchedConfig();
     ensureIdleForPlayChange();
     const v = methodSelect.value;
+
+    // Dynamic display-only options should never be treated as a selection action.
+    if (v === '__from_library' || v === '__from_file') {
+      syncGameHeaderMeta();
+      return;
+    }
+
     state.method = v;
 
     if (v !== 'custom') {
@@ -9321,7 +9521,8 @@ function rebuildBellFrequencies() {
       state.methodMeta = null;
     } else {
       // Selecting "Custom" from the dropdown is not a library claim.
-      if (state.methodSource !== 'library') {
+      // Preserve existing attribution/file metadata when already in that mode.
+      if (state.methodSource !== 'library' && state.methodSource !== 'custom_rows') {
         state.methodSource = 'custom_rows';
         state.methodMeta = null;
       }
@@ -9349,13 +9550,92 @@ function rebuildBellFrequencies() {
     ensureLiveBells(); rebuildBellPicker(); resetStats();
   });
 
+  // v012_p04_setup_tempo_slider_tap: slider + tap tempo UI (Setup → Tempo block).
+  function syncBpmSliderFromInput() {
+    if (!bpmSlider || !bpmInput) return;
+    const v = parseInt(bpmInput.value, 10);
+    if (!Number.isFinite(v)) return;
+    const min = parseInt(bpmSlider.min, 10) || 1;
+    const max = parseInt(bpmSlider.max, 10) || 240;
+    bpmSlider.value = String(clamp(v, min, max));
+  }
+
+  bpmInput.addEventListener('input', () => {
+    syncBpmSliderFromInput();
+  });
+
   bpmInput.addEventListener('change', () => {
     markUserTouchedConfig();
     ensureIdleForPlayChange();
     state.bpm = clamp(parseInt(bpmInput.value,10)||80, 1, 240);
     bpmInput.value = String(state.bpm);
+    if (bpmSlider) bpmSlider.value = String(state.bpm);
     syncGameHeaderMeta();
   });
+
+  if (bpmSlider) {
+    bpmSlider.addEventListener('input', () => {
+      if (bpmInput) bpmInput.value = String(bpmSlider.value);
+      // Trigger the same stop-first behavior as typing BPM.
+      if (bpmInput) bpmInput.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  }
+
+  if (bpmTapBtn) {
+    let tapLast = 0;
+    let tapIntervals = [];
+    const TAP_RESET_MS = 2500;
+    const TAP_MAX_INTERVALS = 6;
+
+    bpmTapBtn.addEventListener('click', () => {
+      const now = performance.now();
+
+      // Long pause: restart the sequence.
+      if (tapLast && (now - tapLast) > TAP_RESET_MS) {
+        tapIntervals = [];
+        tapLast = 0;
+      }
+
+      if (tapLast) {
+        const dt = now - tapLast;
+        if (dt > TAP_RESET_MS) {
+          tapIntervals = [];
+        } else if (dt > 0) {
+          tapIntervals.push(dt);
+          if (tapIntervals.length > TAP_MAX_INTERVALS) tapIntervals.shift();
+        }
+      }
+      tapLast = now;
+
+      // Need at least a few taps for a stable estimate.
+      if (tapIntervals.length < 2) return;
+
+      // Average recent intervals, ignoring outliers.
+      const recent = tapIntervals.slice(-TAP_MAX_INTERVALS).filter(x => x > 0 && x <= TAP_RESET_MS);
+      if (recent.length < 2) return;
+
+      const sorted = recent.slice().sort((a,b)=>a-b);
+      const mid = Math.floor(sorted.length / 2);
+      const median = (sorted.length % 2) ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+      const tol = median * 0.20; // +/- 20%
+      let good = recent.filter(x => Math.abs(x - median) <= tol);
+      if (good.length < Math.min(2, recent.length)) good = recent.slice();
+
+      let goodSorted = good.slice().sort((a,b)=>a-b);
+      if (goodSorted.length >= 4) goodSorted = goodSorted.slice(1, -1);
+
+      const avg = goodSorted.reduce((s,x)=>s+x,0) / goodSorted.length;
+      if (!Number.isFinite(avg) || avg <= 0) return;
+
+      let bpm = Math.round(60000 / avg);
+      bpm = clamp(bpm, 1, 240);
+
+      if (bpmInput) bpmInput.value = String(bpm);
+      syncBpmSliderFromInput();
+      // Trigger the same stop-first behavior as typing BPM.
+      if (bpmInput) bpmInput.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  }
 
   // Mic controls
   if (micToggleBtn) {
@@ -10544,10 +10824,53 @@ function rebuildBellFrequencies() {
     const file = fileInput.files && fileInput.files[0];
     if (!file) return;
 
+    const name = (file && file.name) ? String(file.name) : '';
+    const lower = name.toLowerCase();
+    const isXml = lower.endsWith('.xml');
+
     markUserTouchedConfig();
 
     const reader = new FileReader();
     reader.onload = (ev) => {
+      if (isXml) {
+        // XML: attempt to parse a single CCCBR-style method.
+        try {
+          const m = parseCCCBRSingleMethod(String(ev.target.result), name);
+          const rows = cccbRowsFromPn(m.stage, m.pn, 5);
+          if (!rows || !rows.length) throw new Error('Could not generate rows from place notation.');
+
+          state.method = 'custom';
+          methodSelect.value = 'custom';
+          state.customRows = rows.slice();
+          state.stage = clamp(m.stage, 4, 12);
+
+          state.methodSource = 'custom_rows';
+          state.methodMeta = { fileName: name || '', title: m.title || '' };
+
+          if (bellCountSelect) bellCountSelect.value = String(state.stage);
+
+          rebuildLiveCountOptions();
+          ensureLiveBells();
+          rebuildBellPicker();
+          ensurePathBells();
+          rebuildPathPicker();
+          computeRows();
+          resetStats();
+          rebuildBellFrequencies();
+          rebuildBellOverridesUI();
+
+          syncGameHeaderMeta();
+          renderScoringExplanation();
+
+          alert('Method loaded from XML: ' + (m.title || 'Untitled') + ' on ' + m.stage + ' bells.');
+        } catch (err) {
+          const msg = err && err.message ? String(err.message) : String(err);
+          alert('Could not load method from XML: ' + msg);
+        }
+        return;
+      }
+
+      // TXT: existing behavior.
       try {
         const parsed = parseCustom(String(ev.target.result));
         state.method = 'custom';
@@ -10758,6 +11081,7 @@ function rebuildBellFrequencies() {
 
     state.bpm = 120;
     if (bpmInput) bpmInput.value = String(state.bpm);
+    if (bpmSlider) bpmSlider.value = String(state.bpm);
 
     loadKeyBindings();
 

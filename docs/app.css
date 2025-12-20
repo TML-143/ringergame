@@ -375,6 +375,17 @@ select option { background-color: #0b1026; color: #e8eeff; }
 
 .hidden{display:none !important}
 
+/* v012_p02_setup_library_block_and_library_header_hamburger */
+.rg-file-input-offscreen{
+  position:fixed;
+  left:-10000px;
+  top:0;
+  width:1px;
+  height:1px;
+  overflow:hidden;
+  opacity:0;
+}
+
 .footer{
   margin-top:12px;
   padding:10px 14px;
@@ -1916,3 +1927,27 @@ select option { background-color: #0b1026; color: #e8eeff; }
 #screenHome .rg-home-menu .pill{padding:12px 14px;}
 #screenHome .rg-home-bottom .pill{padding:12px 18px;}
 
+/* v012_p01_setup_blocks_layout: Setup screen blocks */
+#screenPlay #playMenuControls{ align-items:stretch; }
+
+#screenPlay .rg-setup-block{
+  width:100%;
+  max-width:900px;
+  margin:0 auto 10px auto;
+  padding:10px 12px;
+  border-radius:16px;
+  border:1px solid rgba(255,255,255,0.10);
+  background:rgba(255,255,255,0.02);
+}
+
+#screenPlay .rg-setup-block-head{ margin:0 0 8px 0; }
+
+#screenPlay .rg-setup-block-title{
+  font-size:12px;
+  font-weight:900;
+  letter-spacing:1.2px;
+  text-transform:uppercase;
+  color:rgba(232,238,255,0.85);
+}
+
+#screenPlay .rg-setup-block-body{ width:100%; }
