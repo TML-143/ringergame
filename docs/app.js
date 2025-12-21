@@ -75,7 +75,7 @@
   // === Analytics (GA4) ===
   const GA_MEASUREMENT_ID = 'G-7TEG531231';
   const GA_ID = GA_MEASUREMENT_ID;
-  const SITE_VERSION = 'v012_p02a_setup_library_info_placement';
+  const SITE_VERSION = 'v013_p03_setup_bells_block_ui_polish';
 
   function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
   function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
@@ -2830,6 +2830,14 @@ function ensureBellPitchPatternBlocks(destEl) {
     keyBindings: {}, // bell -> normalized key name
     keybindCaptureBell: null,
 
+    // v013_p01_setup_glyph_bindings_ui_persist: per-bell glyph bindings (UI/config only)
+    glyphBindings: {}, // bell -> single-character glyph
+    glyphCaptureBell: null,
+
+
+    // v013_p01c_setup_glyph_color_bindings: setup-only glyph styling (colors, per-bell overrides, and color-only mode)
+    glyphStyle: { defaultColor: '', bellColors: {}, colorOnly: {} },
+    glyphPickerBell: null,
     // swaps view settings
     spotlightSwapsView: true,
     spotlightShowN: true,
@@ -6182,6 +6190,253 @@ function rebuildBellFrequencies() {
 
   // === Keybindings ===
   const LS_KEYBINDS = 'rg_keybindings_v1';
+  const LS_GLYPHBINDS = 'rg_glyph_bindings_v1';
+
+  const LS_GLYPHSTYLE = 'rg_glyph_style_v1';
+  function loadGlyphBindings() {
+    state.glyphBindings = {};
+    const raw = safeGetLS(LS_GLYPHBINDS);
+    const parsed = raw ? safeJsonParse(raw) : null;
+    if (parsed && typeof parsed === 'object') {
+      for (const k in parsed) {
+        if (!Object.prototype.hasOwnProperty.call(parsed, k)) continue;
+        const bell = parseInt(k, 10);
+        if (!isFinite(bell) || bell < 1 || bell > 12) continue;
+        const val = parsed[k];
+        if (typeof val === 'string' && val.length === 1) state.glyphBindings[bell] = val;
+      }
+    }
+  }
+
+  function saveGlyphBindings() {
+    safeSetLS(LS_GLYPHBINDS, JSON.stringify(state.glyphBindings || {}));
+  }
+
+  // v013_p01c_setup_glyph_color_bindings: setup-only glyph styling persistence.
+  function ensureGlyphStyleState() {
+    if (!state.glyphStyle || typeof state.glyphStyle !== 'object') {
+      state.glyphStyle = { defaultColor: '', bellColors: {}, colorOnly: {} };
+    }
+    if (typeof state.glyphStyle.defaultColor !== 'string') state.glyphStyle.defaultColor = '';
+    if (!state.glyphStyle.bellColors || typeof state.glyphStyle.bellColors !== 'object') state.glyphStyle.bellColors = {};
+    if (!state.glyphStyle.colorOnly || typeof state.glyphStyle.colorOnly !== 'object') state.glyphStyle.colorOnly = {};
+  }
+
+  function normalizeHexColor(v) {
+    if (typeof v !== 'string') return '';
+    const s = v.trim();
+    const m = /^#([0-9a-fA-F]{6})$/.exec(s);
+    return m ? ('#' + m[1].toLowerCase()) : '';
+  }
+
+  function loadGlyphStyle() {
+    ensureGlyphStyleState();
+    state.glyphStyle.defaultColor = '';
+    state.glyphStyle.bellColors = {};
+    state.glyphStyle.colorOnly = {};
+
+    const raw = safeGetLS(LS_GLYPHSTYLE);
+    const parsed = raw ? safeJsonParse(raw) : null;
+    if (!parsed || typeof parsed !== 'object') return;
+
+    state.glyphStyle.defaultColor = normalizeHexColor(parsed.defaultColor);
+
+    const bc = parsed.bellColors;
+    if (bc && typeof bc === 'object') {
+      for (const k in bc) {
+        if (!Object.prototype.hasOwnProperty.call(bc, k)) continue;
+        const bell = parseInt(k, 10);
+        if (!isFinite(bell) || bell < 1 || bell > 12) continue;
+        const c = normalizeHexColor(bc[k]);
+        if (c) state.glyphStyle.bellColors[bell] = c;
+      }
+    }
+
+    const co = parsed.colorOnly;
+    if (co && typeof co === 'object') {
+      for (const k in co) {
+        if (!Object.prototype.hasOwnProperty.call(co, k)) continue;
+        const bell = parseInt(k, 10);
+        if (!isFinite(bell) || bell < 1 || bell > 12) continue;
+        if (co[k]) state.glyphStyle.colorOnly[bell] = true;
+      }
+    }
+  }
+
+  function saveGlyphStyle() {
+    ensureGlyphStyleState();
+    const out = { defaultColor: normalizeHexColor(state.glyphStyle.defaultColor), bellColors: {}, colorOnly: {} };
+
+    const bc = state.glyphStyle.bellColors || {};
+    for (const k in bc) {
+      if (!Object.prototype.hasOwnProperty.call(bc, k)) continue;
+      const bell = parseInt(k, 10);
+      if (!isFinite(bell) || bell < 1 || bell > 12) continue;
+      const c = normalizeHexColor(bc[k]);
+      if (c) out.bellColors[bell] = c;
+    }
+
+    const co = state.glyphStyle.colorOnly || {};
+    for (const k in co) {
+      if (!Object.prototype.hasOwnProperty.call(co, k)) continue;
+      const bell = parseInt(k, 10);
+      if (!isFinite(bell) || bell < 1 || bell > 12) continue;
+      if (co[k]) out.colorOnly[bell] = true;
+    }
+
+    safeSetLS(LS_GLYPHSTYLE, JSON.stringify(out));
+  }
+
+  function effectiveGlyphBgColor(bell) {
+    ensureGlyphStyleState();
+    const bc = state.glyphStyle.bellColors;
+    if (bc && Object.prototype.hasOwnProperty.call(bc, bell)) return normalizeHexColor(bc[bell]);
+    return normalizeHexColor(state.glyphStyle.defaultColor);
+  }
+
+  function setupTextColorForBg(hex) {
+    const m = /^#([0-9a-fA-F]{6})$/.exec(hex || '');
+    if (!m) return '';
+    const n = parseInt(m[1], 16);
+    const r = (n >> 16) & 255;
+    const g = (n >> 8) & 255;
+    const b = n & 255;
+    const y = (r * 299 + g * 587 + b * 114) / 1000;
+    return (y >= 150) ? '#10162c' : '';
+  }
+
+
+  // v013_p02b_apply_glyph_color_runtime_views: runtime glyph + color resolution helpers.
+  function getBellGlyphChar(bell) {
+    const b = parseInt(bell, 10);
+    if (!isFinite(b)) return '?';
+    const v = (state.glyphBindings && Object.prototype.hasOwnProperty.call(state.glyphBindings, b))
+      ? state.glyphBindings[b]
+      : null;
+    return (typeof v === 'string' && v.length === 1) ? v : bellToGlyph(b);
+  }
+
+  function getBellGlyphColor(bell) {
+    ensureGlyphStyleState();
+    const b = parseInt(bell, 10);
+    if (!isFinite(b)) return '';
+    const gs = state.glyphStyle || {};
+    const bc = gs.bellColors || {};
+    let c = '';
+    if (Object.prototype.hasOwnProperty.call(bc, b)) c = normalizeHexColor(bc[b]);
+    if (!c) c = normalizeHexColor(gs.defaultColor);
+    return c;
+  }
+
+  function isBellColorOnly(bell) {
+    ensureGlyphStyleState();
+    const b = parseInt(bell, 10);
+    if (!isFinite(b)) return false;
+    const co = (state.glyphStyle && state.glyphStyle.colorOnly) ? state.glyphStyle.colorOnly : null;
+    return !!(co && co[b]);
+  }
+
+  function drawGlyphBgCircle(ctx, cx, cy, r, hex, alpha) {
+    if (!hex) return;
+    ctx.save();
+    ctx.globalAlpha = (alpha == null) ? 0.22 : alpha;
+    ctx.fillStyle = hex;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawGlyphBgRoundRect(ctx, x, y, w, h, radius, hex, alpha) {
+    if (!hex) return;
+    if (!(w > 1 && h > 1)) return;
+    ctx.save();
+    ctx.globalAlpha = (alpha == null) ? 0.22 : alpha;
+    ctx.fillStyle = hex;
+    roundRect(ctx, x, y, w, h, radius);
+    ctx.fill();
+    ctx.restore();
+  }
+
+
+  function glyphForBell(bell) {
+    const v = (state.glyphBindings && Object.prototype.hasOwnProperty.call(state.glyphBindings, bell))
+      ? state.glyphBindings[bell]
+      : null;
+    return (typeof v === 'string' && v.length === 1) ? v : bellToGlyph(bell);
+  }
+
+  // v013_p01a_glyph_binding_allow_modifiers_and_paste:
+  // Hidden, focusable input used for glyph binding capture so modifiers (Shift/Alt) and paste (Ctrl/Cmd+V) work.
+  let glyphCaptureInputEl = null;
+
+  function ensureGlyphCaptureInput() {
+    if (glyphCaptureInputEl && glyphCaptureInputEl.isConnected) return glyphCaptureInputEl;
+    const el = document.createElement('input');
+    el.type = 'text';
+    el.className = 'glyph-capture-input';
+    el.autocomplete = 'off';
+    el.autocapitalize = 'none';
+    el.spellcheck = false;
+    el.setAttribute('aria-label', 'Glyph capture');
+    el.addEventListener('input', onGlyphCaptureInputEvent);
+    el.addEventListener('paste', onGlyphCapturePasteEvent);
+    el.addEventListener('keydown', onGlyphCaptureKeydownEvent);
+    document.body.appendChild(el);
+    glyphCaptureInputEl = el;
+    return el;
+  }
+
+  // Deterministic rule: the glyph is the FIRST character of the typed/pasted text.
+  function applyGlyphCaptureText(text) {
+    const g = (typeof text === 'string' && text.length) ? text[0] : '';
+    const bell = state.glyphCaptureBell;
+    if (bell != null && g && g.length === 1) {
+      if (!state.glyphBindings || typeof state.glyphBindings !== 'object') state.glyphBindings = {};
+      state.glyphBindings[bell] = g;
+      saveGlyphBindings();
+    }
+    state.glyphCaptureBell = null;
+    blurGlyphCaptureInput();
+    rebuildKeybindPanel();
+  }
+
+  function focusGlyphCaptureInput() {
+    const el = ensureGlyphCaptureInput();
+    el.value = '';
+    try { el.focus({ preventScroll: true }); } catch (err) { el.focus(); }
+  }
+
+  function blurGlyphCaptureInput() {
+    if (!glyphCaptureInputEl) return;
+    glyphCaptureInputEl.value = '';
+    if (document.activeElement === glyphCaptureInputEl) glyphCaptureInputEl.blur();
+  }
+
+  function onGlyphCaptureInputEvent(e) {
+    if (state.glyphCaptureBell == null) return;
+    const el = e && e.target;
+    const v = (el && typeof el.value === 'string') ? el.value : '';
+    if (v && v.length) applyGlyphCaptureText(v);
+  }
+
+  function onGlyphCapturePasteEvent(e) {
+    if (state.glyphCaptureBell == null) return;
+    if (!e || !e.clipboardData || typeof e.clipboardData.getData !== 'function') return; // allow default paste
+    const t = e.clipboardData.getData('text') || '';
+    e.preventDefault();
+    if (t && t.length) applyGlyphCaptureText(t);
+    else applyGlyphCaptureText('');
+  }
+
+  function onGlyphCaptureKeydownEvent(e) {
+    if (state.glyphCaptureBell == null) return;
+    if (e && (e.key === 'Escape' || e.key === 'Enter')) {
+      e.preventDefault();
+      applyGlyphCaptureText('');
+    }
+  }
+
 
   function normalizeBindKey(k) {
     if (k === ' ') return 'Space';
@@ -6254,30 +6509,363 @@ function rebuildBellFrequencies() {
     return conflicts;
   }
 
+
+  // v013_p01c_setup_glyph_color_bindings: curated glyph picker (Setup UI only).
+  const GLYPH_PICKER_CHARS = (() => {
+    // No emojis, no accented letters, omit digits and lowercase.
+    const s =
+      'ABCDEFGHIJKLMNOPQRSTUVWXYZ' +
+      '! ? @ # $ % & * + = ~ ^ ( ) [ ] { } < >' +
+      ' . , ; : _ - / \\ |' +
+      ' ± × ÷ ≠ ≈ ≤ ≥' +
+      ' · • ● ○ ◎ ◉' +
+      ' ■ □ ◆ ◇ ◈' +
+      ' ▲ △ ▼ ▽ ▶ ◀' +
+      ' ★ ☆ ✦ ✧ ✩ ✪' +
+      ' ← ↑ → ↓ ↖ ↗ ↘ ↙ ⇐ ⇑ ⇒ ⇓' +
+      ' ♩ ♪ ♫ ♬ ♭ ♯ ♮';
+    const out = [];
+    const seen = new Set();
+    for (const ch of s) {
+      if (!ch || /\s/.test(ch)) continue;
+      if (ch >= '0' && ch <= '9') continue;
+      if (ch >= 'a' && ch <= 'z') continue;
+      if (seen.has(ch)) continue;
+      seen.add(ch);
+      out.push(ch);
+    }
+    return out;
+  })();
+
+  let glyphPickerOverlayEl = null;
+  let glyphPickerTitleEl = null;
+  let glyphPickerGridEl = null;
+
+  function ensureGlyphPickerOverlay() {
+    if (glyphPickerOverlayEl && glyphPickerOverlayEl.isConnected) return glyphPickerOverlayEl;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'glyph-picker-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-label', 'Glyph picker');
+    overlay.tabIndex = -1;
+
+    const panel = document.createElement('div');
+    panel.className = 'glyph-picker';
+
+    const header = document.createElement('div');
+    header.className = 'glyph-picker-header';
+
+    const title = document.createElement('div');
+    title.className = 'glyph-picker-title';
+    title.textContent = 'Pick a glyph';
+    glyphPickerTitleEl = title;
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'pill glyph-picker-close';
+    closeBtn.textContent = 'Close';
+    closeBtn.addEventListener('click', () => closeGlyphPicker());
+
+    header.appendChild(title);
+    header.appendChild(closeBtn);
+
+    const grid = document.createElement('div');
+    grid.className = 'glyph-picker-grid';
+    glyphPickerGridEl = grid;
+
+    // Build buttons once; on click, apply to the currently selected bell.
+    for (const ch of GLYPH_PICKER_CHARS) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'glyph-picker-btn';
+      btn.textContent = ch;
+      btn.setAttribute('aria-label', `Pick glyph ${ch}`);
+      btn.addEventListener('click', () => {
+        if (state.phase !== 'idle') return;
+        const bell = state.glyphPickerBell;
+        if (bell == null) return;
+        markUserTouchedConfig();
+        if (!state.glyphBindings || typeof state.glyphBindings !== 'object') state.glyphBindings = {};
+        state.glyphBindings[bell] = ch;
+        saveGlyphBindings();
+        closeGlyphPicker();
+        rebuildKeybindPanel();
+      });
+      grid.appendChild(btn);
+    }
+
+    const foot = document.createElement('div');
+    foot.className = 'glyph-picker-foot';
+    foot.textContent = 'Tip: You can also type/paste any single character via “Bind Glyph”. (Esc closes)';
+
+    panel.appendChild(header);
+    panel.appendChild(grid);
+    panel.appendChild(foot);
+
+    overlay.appendChild(panel);
+
+    overlay.addEventListener('click', (e) => {
+      if (e && e.target === overlay) closeGlyphPicker();
+    });
+
+    document.body.appendChild(overlay);
+    glyphPickerOverlayEl = overlay;
+    return overlay;
+  }
+
+  function openGlyphPicker(bell) {
+    if (state.phase !== 'idle') return;
+    state.keybindCaptureBell = null;
+    state.glyphCaptureBell = null;
+    blurGlyphCaptureInput();
+
+    state.glyphPickerBell = bell;
+    const overlay = ensureGlyphPickerOverlay();
+    if (glyphPickerTitleEl) glyphPickerTitleEl.textContent = 'Pick a glyph for Bell ' + bellToGlyph(bell);
+    try { overlay.focus(); } catch (_) {}
+    rebuildKeybindPanel();
+  }
+
+  function closeGlyphPicker() {
+    state.glyphPickerBell = null;
+    if (glyphPickerOverlayEl && glyphPickerOverlayEl.isConnected) glyphPickerOverlayEl.remove();
+    glyphPickerOverlayEl = null;
+    glyphPickerTitleEl = null;
+    glyphPickerGridEl = null;
+  }
+
+
+
   function rebuildKeybindPanel() {
     if (!keybindPanel) return;
     ensureKeyBindings();
+    ensureGlyphStyleState();
+    if (!state.glyphBindings || typeof state.glyphBindings !== 'object') state.glyphBindings = {};
 
     const live = state.liveBells.slice().sort((a,b)=>a-b);
+    const stageN = clamp(parseInt(state.stage, 10) || 0, 1, 12);
     keybindPanel.innerHTML = '';
 
-    if (!live.length) {
-      keybindPanel.textContent = 'No scored bells selected.';
-      if (keybindNote) keybindNote.textContent = '';
-      return;
+    const makeCell = (extraClass) => {
+      const cell = document.createElement('div');
+      cell.className = extraClass ? ('keybind-cell ' + extraClass) : 'keybind-cell';
+      return cell;
+    };
+
+    // v013_p03_setup_bells_block_ui_polish: header row for geometric grid
+    const headerRow = document.createElement('div');
+    headerRow.className = 'keybind-row keybind-header';
+    for (const h of ['Bell','Glyph','Key','Color','Color-only','Clear']) {
+      const cell = makeCell('keybind-cell-header');
+      cell.textContent = h;
+      headerRow.appendChild(cell);
     }
+    keybindPanel.appendChild(headerRow);
+
+    // v013_p01c_setup_glyph_color_bindings: global default glyph color (Setup UI only)
+    const globalRow = document.createElement('div');
+    globalRow.className = 'keybind-row keybind-row-global';
+
+    const globalLabel = document.createElement('span');
+    globalLabel.className = 'keybind-bell keybind-global-label';
+    globalLabel.textContent = 'Default';
+
+    const globalDesc = document.createElement('span');
+    globalDesc.className = 'keybind-global-desc';
+    globalDesc.textContent = 'Default glyph color';
+
+    const globalColorInput = document.createElement('input');
+    globalColorInput.type = 'color';
+    globalColorInput.className = 'keybind-color-input keybind-color-default';
+    globalColorInput.value = normalizeHexColor(state.glyphStyle.defaultColor) || '#000000';
+    globalColorInput.disabled = state.phase !== 'idle';
+    globalColorInput.addEventListener('input', () => {
+      markUserTouchedConfig();
+      ensureGlyphStyleState();
+      state.glyphStyle.defaultColor = normalizeHexColor(globalColorInput.value);
+      saveGlyphStyle();
+      rebuildKeybindPanel();
+    });
+
+    const globalMeta = document.createElement('span');
+    globalMeta.className = 'keybind-color-meta';
+    globalMeta.textContent = state.glyphStyle.defaultColor ? state.glyphStyle.defaultColor.toUpperCase() : 'none';
+
+    const globalClearBtn = document.createElement('button');
+    globalClearBtn.type = 'button';
+    globalClearBtn.className = 'pill keybind-bind-btn keybind-color-clear';
+    globalClearBtn.textContent = 'Clear';
+    globalClearBtn.title = 'Clear default glyph color';
+    globalClearBtn.disabled = state.phase !== 'idle' || !state.glyphStyle.defaultColor;
+    globalClearBtn.addEventListener('click', () => {
+      if (state.phase !== 'idle') return;
+      markUserTouchedConfig();
+      ensureGlyphStyleState();
+      state.glyphStyle.defaultColor = '';
+      saveGlyphStyle();
+      rebuildKeybindPanel();
+    });
+
+    const gBellCell = makeCell('keybind-cell-bell');
+    gBellCell.appendChild(globalLabel);
+
+    const gGlyphCell = makeCell('keybind-cell-empty');
+    const gKeyCell = makeCell('keybind-cell-empty');
+
+    const gColorCell = makeCell('keybind-cell-color');
+    const gColorControls = document.createElement('div');
+    gColorControls.className = 'keybind-color-controls keybind-color-controls-global';
+    gColorControls.appendChild(globalDesc);
+    gColorControls.appendChild(globalColorInput);
+    gColorControls.appendChild(globalMeta);
+    gColorCell.appendChild(gColorControls);
+
+    const gCOCell = makeCell('keybind-cell-empty');
+    const gClearCell = makeCell('keybind-cell-clear');
+    gClearCell.appendChild(globalClearBtn);
+
+    globalRow.appendChild(gBellCell);
+    globalRow.appendChild(gGlyphCell);
+    globalRow.appendChild(gKeyCell);
+    globalRow.appendChild(gColorCell);
+    globalRow.appendChild(gCOCell);
+    globalRow.appendChild(gClearCell);
+    keybindPanel.appendChild(globalRow);
 
     const conflicts = getLiveKeyConflicts();
 
-    live.forEach(b => {
+    let alt = false;
+    for (let b = 1; b <= stageN; b++) {
       const row = document.createElement('div');
-      row.className = 'keybind-row';
+      row.className = 'keybind-row keybind-row-bell';
+      alt = !alt;
+      if (alt) row.classList.add('alt');
       if (conflicts.has(b)) row.classList.add('conflict');
       if (state.keybindCaptureBell === b) row.classList.add('capture');
+      if (state.glyphCaptureBell === b) row.classList.add('glyph-capture');
 
       const bellLabel = document.createElement('span');
       bellLabel.className = 'keybind-bell';
       bellLabel.textContent = 'Bell ' + bellToGlyph(b);
+      bellLabel.title = 'Bell ' + b;
+
+      const glyphLabel = document.createElement('span');
+      glyphLabel.className = 'keybind-glyph';
+
+      const isColorOnly = !!(state.glyphStyle && state.glyphStyle.colorOnly && state.glyphStyle.colorOnly[b]);
+      glyphLabel.textContent = (state.glyphCaptureBell === b) ? 'Type glyph…' : glyphForBell(b);
+      if (isColorOnly) glyphLabel.classList.add('keybind-glyph-muted');
+
+      // Apply Setup-only color preview (do not affect Display/Spotlight/Notation in this prompt).
+      if (state.glyphCaptureBell !== b) {
+        const bg = effectiveGlyphBgColor(b);
+        if (bg) {
+          glyphLabel.style.backgroundColor = bg;
+          glyphLabel.style.borderColor = 'rgba(0,0,0,0.18)';
+          const tc = setupTextColorForBg(bg);
+          glyphLabel.style.color = tc || '';
+        } else {
+          glyphLabel.style.backgroundColor = '';
+          glyphLabel.style.borderColor = '';
+          glyphLabel.style.color = '';
+        }
+      } else {
+        // Let capture highlight styles apply
+        glyphLabel.style.backgroundColor = '';
+        glyphLabel.style.borderColor = '';
+        glyphLabel.style.color = '';
+      }
+
+      const glyphBtn = document.createElement('button');
+      glyphBtn.type = 'button';
+      glyphBtn.className = 'pill keybind-bind-btn keybind-glyph-btn';
+      glyphBtn.textContent = (state.glyphCaptureBell === b) ? 'Cancel' : 'Bind Glyph';
+      glyphBtn.disabled = state.phase !== 'idle';
+      glyphBtn.addEventListener('click', () => {
+        if (state.phase !== 'idle') return;
+        closeGlyphPicker();
+        state.keybindCaptureBell = null;
+        state.glyphCaptureBell = (state.glyphCaptureBell === b) ? null : b;
+        rebuildKeybindPanel();
+      });
+
+      const pickBtn = document.createElement('button');
+      pickBtn.type = 'button';
+      pickBtn.className = 'pill keybind-bind-btn keybind-glyph-pick-btn';
+      pickBtn.textContent = 'Pick…';
+      pickBtn.disabled = state.phase !== 'idle';
+      pickBtn.addEventListener('click', () => openGlyphPicker(b));
+
+      const glyphControls = document.createElement('div');
+      glyphControls.className = 'keybind-glyph-controls';
+      glyphControls.appendChild(glyphBtn);
+      glyphControls.appendChild(pickBtn);
+
+      // Per-bell color override + clear
+      const bellOverride = (state.glyphStyle && state.glyphStyle.bellColors && Object.prototype.hasOwnProperty.call(state.glyphStyle.bellColors, b))
+        ? normalizeHexColor(state.glyphStyle.bellColors[b])
+        : '';
+
+      const globalNorm = normalizeHexColor(state.glyphStyle.defaultColor) || '';
+
+      const colorInput = document.createElement('input');
+      colorInput.type = 'color';
+      colorInput.className = 'keybind-color-input keybind-color-bell';
+      colorInput.value = bellOverride || globalNorm || '#000000';
+      colorInput.disabled = state.phase !== 'idle';
+      colorInput.title = bellOverride
+        ? ('Color override: ' + bellOverride)
+        : (globalNorm ? ('Using global: ' + globalNorm) : 'No color set');
+      colorInput.addEventListener('input', () => {
+        markUserTouchedConfig();
+        ensureGlyphStyleState();
+        if (!state.glyphStyle.bellColors || typeof state.glyphStyle.bellColors !== 'object') state.glyphStyle.bellColors = {};
+        const c = normalizeHexColor(colorInput.value);
+        if (c) state.glyphStyle.bellColors[b] = c;
+        saveGlyphStyle();
+        rebuildKeybindPanel();
+      });
+
+      const colorMeta = document.createElement('span');
+      colorMeta.className = 'keybind-color-meta';
+      colorMeta.textContent = bellOverride ? ('override ' + bellOverride.toUpperCase()) : (globalNorm ? ('global ' + globalNorm.toUpperCase()) : 'none');
+
+      const colorClearBtn = document.createElement('button');
+      colorClearBtn.type = 'button';
+      colorClearBtn.className = 'pill keybind-bind-btn keybind-color-clear';
+      colorClearBtn.textContent = 'Clear';
+      colorClearBtn.title = 'Clear color override';
+      colorClearBtn.disabled = state.phase !== 'idle' || !bellOverride;
+      colorClearBtn.addEventListener('click', () => {
+        if (state.phase !== 'idle') return;
+        markUserTouchedConfig();
+        ensureGlyphStyleState();
+        if (state.glyphStyle.bellColors && Object.prototype.hasOwnProperty.call(state.glyphStyle.bellColors, b)) {
+          delete state.glyphStyle.bellColors[b];
+        }
+        saveGlyphStyle();
+        rebuildKeybindPanel();
+      });
+
+      const coLabel = document.createElement('label');
+      coLabel.className = 'keybind-coloronly';
+      const co = document.createElement('input');
+      co.type = 'checkbox';
+      co.checked = isColorOnly;
+      co.disabled = state.phase !== 'idle';
+      co.addEventListener('change', () => {
+        if (state.phase !== 'idle') return;
+        markUserTouchedConfig();
+        ensureGlyphStyleState();
+        if (co.checked) state.glyphStyle.colorOnly[b] = true;
+        else if (state.glyphStyle.colorOnly && Object.prototype.hasOwnProperty.call(state.glyphStyle.colorOnly, b)) delete state.glyphStyle.colorOnly[b];
+        saveGlyphStyle();
+        rebuildKeybindPanel();
+      });
+      coLabel.appendChild(co);
+      coLabel.appendChild(document.createTextNode('Color-only'));
 
       const keyLabel = document.createElement('span');
       keyLabel.className = 'keybind-key';
@@ -6290,6 +6878,8 @@ function rebuildBellFrequencies() {
       btn.disabled = state.phase !== 'idle';
       btn.addEventListener('click', () => {
         if (state.phase !== 'idle') return;
+        closeGlyphPicker();
+        state.glyphCaptureBell = null;
         state.keybindCaptureBell = (state.keybindCaptureBell === b) ? null : b;
         rebuildKeybindPanel();
       });
@@ -6316,24 +6906,111 @@ function rebuildBellFrequencies() {
         syncMicToggleUI();
       });
 
-      row.appendChild(bellLabel);
-      row.appendChild(keyLabel);
-      row.appendChild(btn);
-      row.appendChild(micBtn);
+      // Per-bell Clear: glyph binding + color override + color-only flag
+      const rowClearBtn = document.createElement('button');
+      rowClearBtn.type = 'button';
+      rowClearBtn.className = 'pill keybind-bind-btn keybind-row-clear';
+      rowClearBtn.textContent = 'Clear';
+      rowClearBtn.title = 'Clear per-bell glyph/color settings';
+      const hasGlyphOverride = Object.prototype.hasOwnProperty.call(state.glyphBindings, b);
+      const canClearRow = hasGlyphOverride || !!bellOverride || isColorOnly;
+      rowClearBtn.disabled = state.phase !== 'idle' || !canClearRow;
+      rowClearBtn.addEventListener('click', () => {
+        if (state.phase !== 'idle') return;
+        markUserTouchedConfig();
+        closeGlyphPicker();
+        state.glyphCaptureBell = null;
+        state.keybindCaptureBell = null;
+
+        let touched = false;
+        if (state.glyphBindings && Object.prototype.hasOwnProperty.call(state.glyphBindings, b)) {
+          delete state.glyphBindings[b];
+          touched = true;
+        }
+        ensureGlyphStyleState();
+        if (state.glyphStyle.bellColors && Object.prototype.hasOwnProperty.call(state.glyphStyle.bellColors, b)) {
+          delete state.glyphStyle.bellColors[b];
+          touched = true;
+        }
+        if (state.glyphStyle.colorOnly && Object.prototype.hasOwnProperty.call(state.glyphStyle.colorOnly, b)) {
+          delete state.glyphStyle.colorOnly[b];
+          touched = true;
+        }
+        if (touched) {
+          saveGlyphBindings();
+          saveGlyphStyle();
+        }
+        rebuildKeybindPanel();
+      });
+
+      // Build geometric grid cells
+      const bellCell = makeCell('keybind-cell-bell');
+      bellCell.appendChild(bellLabel);
+
+      const glyphCell = makeCell('keybind-cell-glyph');
+      const glyphStack = document.createElement('div');
+      glyphStack.className = 'keybind-cell-stack';
+      glyphStack.appendChild(glyphLabel);
+      glyphStack.appendChild(glyphControls);
+      glyphCell.appendChild(glyphStack);
+
+      const keyCell = makeCell('keybind-cell-key');
+      const keyStack = document.createElement('div');
+      keyStack.className = 'keybind-cell-stack';
+      keyStack.appendChild(keyLabel);
+      const keyControls = document.createElement('div');
+      keyControls.className = 'keybind-controls keybind-key-controls';
+      keyControls.appendChild(btn);
+      keyControls.appendChild(micBtn);
+      keyStack.appendChild(keyControls);
+      keyCell.appendChild(keyStack);
+
+      const colorCell = makeCell('keybind-cell-color');
+      const colorControls = document.createElement('div');
+      colorControls.className = 'keybind-color-controls';
+      colorControls.appendChild(colorInput);
+      colorControls.appendChild(colorMeta);
+      colorControls.appendChild(colorClearBtn);
+      colorCell.appendChild(colorControls);
+
+      const colorOnlyCell = makeCell('keybind-cell-coloronly');
+      colorOnlyCell.appendChild(coLabel);
+
+      const clearCell = makeCell('keybind-cell-clear');
+      clearCell.appendChild(rowClearBtn);
+
+      row.appendChild(bellCell);
+      row.appendChild(glyphCell);
+      row.appendChild(keyCell);
+      row.appendChild(colorCell);
+      row.appendChild(colorOnlyCell);
+      row.appendChild(clearCell);
 
       keybindPanel.appendChild(row);
-    });
+    }
 
     if (keybindResetBtn) keybindResetBtn.disabled = state.phase !== 'idle';
 
     if (keybindNote) {
-      if (state.keybindCaptureBell != null) {
+      if (state.glyphCaptureBell != null) {
+        keybindNote.textContent = 'Type or paste a single character for the glyph (Ctrl/Cmd+V, Esc to cancel).';
+      } else if (state.keybindCaptureBell != null) {
         keybindNote.textContent = 'Press a letter/number key, Space, or Enter (Esc to cancel).';
+      } else if (!live.length) {
+        keybindNote.textContent = 'No scored bells selected.';
       } else if (live.length === 1) {
         keybindNote.textContent = 'Tip: Space and Enter also ring the only scored bell.';
       } else if (conflicts.size) {
         keybindNote.textContent = 'Fix conflicts: each key can be bound to only one scored bell.';
       } else keybindNote.textContent = '';
+    }
+
+    // v013_p01a_glyph_binding_allow_modifiers_and_paste: keep hidden glyph input focused so
+    // modifiers (Shift/Alt) and paste (Ctrl/Cmd+V) work during glyph binding.
+    if (state.glyphCaptureBell != null) {
+      focusGlyphCaptureInput();
+    } else {
+      blurGlyphCaptureInput();
     }
   }
 
@@ -7288,7 +7965,17 @@ function rebuildBellFrequencies() {
               sctx.fillStyle = '#10162c';
             } else sctx.fillStyle = isLive ? '#e8eeff' : '#9aa2bb';
 
-            sctx.fillText(bellToGlyph(bell), x, y);
+            const bgHex = getBellGlyphColor(bell);
+            const colorOnly = isBellColorOnly(bell);
+            if (bgHex) {
+              const a = ((!faded && i === highlightPos) || flashOn) ? 0.16 : (faded ? 0.14 : 0.22);
+              const mw = Math.max(12, Math.min(cellW - 10, cellW * 0.74));
+              const mh = Math.max(12, Math.min(rowBlockH - 14, rowBlockH * 0.56));
+              const mx = i * cellW + (cellW - mw) / 2;
+              const my = (rowBlockH - mh) / 2;
+              drawGlyphBgRoundRect(sctx, mx, my, mw, mh, Math.min(10, mh / 2), bgHex, a);
+            }
+            if (!colorOnly) sctx.fillText(getBellGlyphChar(bell), x, y);
             if (accuracyDotsEnabledForPane('spotlight')) {
               const darkOnLight = ((!faded && i === highlightPos) || flashOn);
               drawRowAccuracyOverlayUnderGlyph(sctx, x, y, cellW, rowBlockH, fontSize, rowIndex, i, darkOnLight);
@@ -7381,7 +8068,17 @@ function rebuildBellFrequencies() {
             sctx.fillStyle = '#10162c';
           } else sctx.fillStyle = isLive ? '#e8eeff' : '#9aa2bb';
 
-          sctx.fillText(bellToGlyph(bell), x, y);
+          const bgHex = getBellGlyphColor(bell);
+          const colorOnly = isBellColorOnly(bell);
+          if (bgHex) {
+            const a = ((!faded && i === highlightPos) || flashOn) ? 0.16 : (faded ? 0.14 : 0.22);
+            const mw = Math.max(12, Math.min(cellW - 10, cellW * 0.74));
+            const mh = Math.max(12, Math.min(rowBlockH - 14, rowBlockH * 0.56));
+            const mx = i * cellW + (cellW - mw) / 2;
+            const my = (rowBlockH - mh) / 2;
+            drawGlyphBgRoundRect(sctx, mx, my, mw, mh, Math.min(10, mh / 2), bgHex, a);
+          }
+          if (!colorOnly) sctx.fillText(getBellGlyphChar(bell), x, y);
           if (accuracyDotsEnabledForPane('spotlight')) {
             const darkOnLight = ((!faded && i === highlightPos) || flashOn);
             drawRowAccuracyOverlayUnderGlyph(sctx, x, y, cellW, rowBlockH, fontSize, absRowIdx, i, darkOnLight);
@@ -7725,7 +8422,14 @@ function rebuildBellFrequencies() {
       dctx.textAlign = 'center';
       dctx.textBaseline = 'middle';
       dctx.fillStyle = glow > 0.2 ? '#10162c' : '#e8eeff';
-      dctx.fillText(bellToGlyph(bell), cx, cy);
+      const bgHex = getBellGlyphColor(bell);
+      const colorOnly = isBellColorOnly(bell);
+      if (bgHex) {
+        const a = (glow > 0.2) ? 0.18 : 0.22;
+        const mr = Math.max(10, ringRadius * 0.62);
+        drawGlyphBgCircle(dctx, cx, cy, mr, bgHex, a);
+      }
+      if (!colorOnly) dctx.fillText(getBellGlyphChar(bell), cx, cy);
       if (accuracyDotsEnabledForPane('display')) drawDisplayJudgeOverlay(dctx, cx, cy, ringRadius, fontSize, bell);
       dctx.restore();
     }
@@ -7797,7 +8501,14 @@ function rebuildBellFrequencies() {
       dctx.textAlign = 'center';
       dctx.textBaseline = 'middle';
       dctx.fillStyle = glow > 0.2 ? '#10162c' : (isLive ? '#e8eeff' : '#9aa2bb');
-      dctx.fillText(bellToGlyph(bell), p.x, p.y);
+      const bgHex = getBellGlyphColor(bell);
+      const colorOnly = isBellColorOnly(bell);
+      if (bgHex) {
+        const a = (glow > 0.2) ? 0.18 : 0.22;
+        const mr = Math.max(10, ringRadius * 0.62);
+        drawGlyphBgCircle(dctx, p.x, p.y, mr, bgHex, a);
+      }
+      if (!colorOnly) dctx.fillText(getBellGlyphChar(bell), p.x, p.y);
       if (accuracyDotsEnabledForPane('display')) drawDisplayJudgeOverlay(dctx, p.x, p.y, ringRadius, fontSize, bell);
       dctx.restore();
     }
@@ -8176,7 +8887,18 @@ function rebuildBellFrequencies() {
           }
 
           nctx.fillStyle = isActive ? (isLive ? '#ffffff' : '#c6cbe0') : (isLive ? '#dde8ff' : '#9aa2bb');
-          nctx.fillText(bellToGlyph(bell), x, y);
+          const bgHex = getBellGlyphColor(bell);
+          const colorOnly = isBellColorOnly(bell);
+          if (bgHex) {
+            const tapOn = !!(tapFlash && tapFlash.rowIndex === rowIdx && tapFlash.bell === bell);
+            const a = (isActive || tapOn) ? 0.14 : 0.22;
+            const mw = Math.max(10, Math.min(colW - 10, colW * 0.74));
+            const mh = Math.max(10, Math.min(lineH - 8, lineH * 0.72));
+            const mx = left + p * colW + (colW - mw) / 2;
+            const my = y - mh / 2;
+            drawGlyphBgRoundRect(nctx, mx, my, mw, mh, Math.min(8, mh / 2), bgHex, a);
+          }
+          if (!colorOnly) nctx.fillText(getBellGlyphChar(bell), x, y);
           if (accuracyDotsEnabledForPane('notation')) {
             drawRowAccuracyOverlayUnderGlyph(nctx, x, y, colW, lineH, fs, rowIdx, p, false);
           }
@@ -8349,7 +9071,18 @@ function rebuildBellFrequencies() {
           }
 
           nctx.fillStyle = isActive ? (isLive ? '#ffffff' : '#c6cbe0') : (isLive ? '#dde8ff' : '#9aa2bb');
-          nctx.fillText(bellToGlyph(bell), x, y);
+          const bgHex = getBellGlyphColor(bell);
+          const colorOnly = isBellColorOnly(bell);
+          if (bgHex) {
+            const tapOn = !!(tapFlash && tapFlash.rowIndex === rowIdx && tapFlash.bell === bell);
+            const a = (isActive || tapOn) ? 0.14 : 0.22;
+            const mw = Math.max(10, Math.min(colW - 10, colW * 0.74));
+            const mh = Math.max(10, Math.min(lineH - 8, lineH * 0.72));
+            const mx = left + p * colW + (colW - mw) / 2;
+            const my = y - mh / 2;
+            drawGlyphBgRoundRect(nctx, mx, my, mw, mh, Math.min(8, mh / 2), bgHex, a);
+          }
+          if (!colorOnly) nctx.fillText(getBellGlyphChar(bell), x, y);
           if (accuracyDotsEnabledForPane('notation')) {
             drawRowAccuracyOverlayUnderGlyph(nctx, x, y, colW, lineH, fs, rowIdx, p, false);
           }
@@ -8431,6 +9164,16 @@ function rebuildBellFrequencies() {
             const bell = row[p];
             const isLive = state.liveBells.includes(bell);
             const x = left + p * colW + colW / 2;
+            const bgHex = getBellGlyphColor(bell);
+            const colorOnly = isBellColorOnly(bell);
+            if (bgHex) {
+              const a = isActive ? 0.14 : 0.18;
+              const mw = Math.max(10, Math.min(colW - 10, colW * 0.74));
+              const mh = Math.max(10, Math.min(lineH - 8, lineH * 0.72));
+              const mx = left + p * colW + (colW - mw) / 2;
+              const my = y - mh / 2;
+              drawGlyphBgRoundRect(nctx, mx, my, mw, mh, Math.min(8, mh / 2), bgHex, a);
+            }
             if (pathSet && pathSet.has(bell)) {
               const yMark = y + markerDY;
               nctx.beginPath();
@@ -8439,7 +9182,7 @@ function rebuildBellFrequencies() {
               nctx.stroke();
             }
             nctx.fillStyle = isActive ? (isLive ? '#ffffff' : '#c6cbe0') : (isLive ? '#dde8ff' : 'rgba(154,162,187,0.92)');
-            nctx.fillText(bellToGlyph(bell), x, y);
+            if (!colorOnly) nctx.fillText(getBellGlyphChar(bell), x, y);
             if (accuracyDotsEnabledForPane('notation')) {
               drawRowAccuracyOverlayUnderGlyph(nctx, x, y, colW, lineH, fs, rowIdx, p, false);
             }
@@ -9158,10 +9901,31 @@ function rebuildBellFrequencies() {
   }
 
   document.addEventListener('keydown', (e) => {
-    if (e.altKey || e.ctrlKey || e.metaKey) return;
-
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+
+    // v013_p01c_setup_glyph_color_bindings: glyph picker overlay intercepts keys.
+    if (state.glyphPickerBell != null) {
+      if (e && e.key === 'Escape') {
+        e.preventDefault();
+        closeGlyphPicker();
+      }
+      return;
+    }
+
+    // v013_p01a_glyph_binding_allow_modifiers_and_paste:
+    // Glyph binding capture uses a hidden text input (see ensureGlyphCaptureInput()) so Shift/Alt and paste work.
+    if (state.glyphCaptureBell != null) {
+      if (e && e.key === 'Escape') {
+        applyGlyphCaptureText('');
+        return;
+      }
+      focusGlyphCaptureInput();
+      return;
+    }
+
+
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
 
     const k = normalizeBindKey(e.key);
 
@@ -11084,8 +11848,11 @@ function rebuildBellFrequencies() {
     if (bpmSlider) bpmSlider.value = String(state.bpm);
 
     loadKeyBindings();
+    loadGlyphBindings();
 
-    // v10_p01_polish_defaults_privacy_home_buttons: pristine Play key defaults
+    
+    loadGlyphStyle();
+// v10_p01_polish_defaults_privacy_home_buttons: pristine Play key defaults
     // Space rings bell 1; Enter rings bell 2 (only when no saved keybinds exist).
     if (pristineLS && safeGetLS(LS_KEYBINDS) == null) {
       state.keyBindings[1] = 'Space';
