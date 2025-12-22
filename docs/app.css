@@ -1835,6 +1835,41 @@ select option { background-color: #0b1026; color: #e8eeff; }
   max-width:260px;
 }
 
+
+/* v014_p01_global_custom_chords_advanced: global chord custom + advanced */
+#screenSound #soundChordControls details.rg-chords-advanced{
+  width:100%;
+  margin-top:8px;
+  padding:8px 10px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,0.08);
+  background:rgba(255,255,255,0.02);
+}
+#screenSound #soundChordControls details.rg-chords-advanced > summary{
+  list-style:none;
+  cursor:pointer;
+  font-weight:900;
+  font-size:12px;
+  letter-spacing:0.6px;
+  color:rgba(232,238,255,0.78);
+}
+#screenSound #soundChordControls details.rg-chords-advanced > summary::-webkit-details-marker{ display:none; }
+#screenSound #soundChordControls details.rg-chords-advanced[open] > summary{
+  margin-bottom:8px;
+  padding-bottom:8px;
+  border-bottom:1px solid rgba(255,255,255,0.08);
+}
+#screenSound #soundChordControls .rg-chords-advanced-body{
+  display:flex;
+  gap:12px;
+  flex-wrap:wrap;
+  align-items:flex-start;
+}
+#screenSound #soundChordControls .rg-chords-advanced-body .control{
+  min-width:180px;
+}
+
+
 /* v10_p04_sound_quick_bell_row: Spotlight-style quick test row (Sound menu) */
 .rg-quick-bell-row{
   flex-basis:100%;
@@ -2083,3 +2118,71 @@ select option { background-color: #0b1026; color: #e8eeff; }
 }
 
 #screenPlay .rg-setup-block-body{ width:100%; }
+
+
+/* v014_p02_drone_variant_knobs: Drone Variants group */
+#droneVariantsControl{flex:1 1 100%;min-width:260px}
+#droneVariantsControl .rg-variants-controls{margin-top:4px}
+#droneVariantsControl .rg-variants-controls .control{min-width:140px}
+
+
+/* v014_p04_multi_drone_layers: Drone Layers UI (Sound → Drone) */
+#screenSound .rg-drone-layers-root{
+  width:100%;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+#screenSound .rg-drone-layers-global{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px 14px;
+  align-items:flex-end;
+  justify-content:flex-start;
+}
+#screenSound .rg-drone-layers-stack{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+#screenSound .rg-drone-layer-card{
+  border:1px solid rgba(255,255,255,0.10);
+  background:rgba(255,255,255,0.03);
+  border-radius:14px;
+  padding:10px;
+}
+#screenSound .rg-drone-layer-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-bottom:6px;
+}
+#screenSound .rg-drone-layer-title{
+  font-size:12px;
+  line-height:1.2;
+  letter-spacing:0.08em;
+  text-transform:uppercase;
+  color:rgba(232,238,255,0.80);
+  user-select:none;
+}
+#screenSound .rg-drone-layer-actions{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+#screenSound .rg-drone-layer-body{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px 14px;
+  align-items:flex-end;
+  justify-content:flex-start;
+}
+#screenSound .rg-drone-layer-add-row{
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+#screenSound .rg-drone-layer-card.rg-drone-layer-muted{
+  opacity:0.70;
+}

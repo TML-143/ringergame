@@ -233,7 +233,7 @@
             <!-- v011_p03_sound_layout_drone_first: DRONE block (moved above pitch + sound) -->
             <div id="soundDroneBlock" class="rg-sound-block" aria-label="Drone">
               <div class="rg-sound-block-head">
-                <div class="rg-sound-block-title">DRONE</div>
+                <div class="rg-sound-block-title">DRONE LAYERS</div>
               </div>
               <div id="soundDroneControls" class="rg-controls" aria-label="Drone controls"></div>
             </div>
@@ -257,6 +257,12 @@
                   <label for="globalChordPresetSelect">Chord preset</label>
                   <select id="globalChordPresetSelect"></select>
                 </div>
+                <div id="globalChordCustomIntervalsControl" class="control hidden">
+                  <label for="globalChordCustomIntervalsInput">Intervals</label>
+                  <input id="globalChordCustomIntervalsInput" type="text" placeholder="0, 4, 7, 12" />
+                  <div class="control-note rg-muted">Semitone offsets from the struck note.</div>
+                  <div id="globalChordCustomIntervalsWarn" class="rg-inline-warn hidden"></div>
+                </div>
                 <div class="control">
                   <label for="globalChordSplitSelect">Split-strike</label>
                   <select id="globalChordSplitSelect"></select>
@@ -276,7 +282,42 @@
                 <div id="globalChordSplitMaxControl" class="control hidden">
                   <label for="globalChordMaxMs">Max (ms)</label>
                   <input id="globalChordMaxMs" type="number" min="0" max="18" step="1" value="12" />
-                </div>
+                  <details id="globalChordAdvancedDetails" class="rg-chords-advanced">
+                  <summary>Advanced</summary>
+                  <div class="rg-chords-advanced-body">
+                    <div class="control">
+                      <label for="globalChordDetuneCents">Global Detune (cents): <span id="globalChordDetuneCentsValue">0</span></label>
+                      <input id="globalChordDetuneCents" type="range" min="-20" max="20" step="1" value="0" />
+                    </div>
+
+                    <div class="control">
+                      <label for="globalChordLevelModeSelect">Global Voice Levels</label>
+                      <select id="globalChordLevelModeSelect">
+                        <option value="equal">Equal</option>
+                        <option value="custom">Custom</option>
+                      </select>
+                    </div>
+                    <div id="globalChordLevelGainsControl" class="control hidden">
+                      <label for="globalChordLevelGainsInput">Voice level gains</label>
+                      <input id="globalChordLevelGainsInput" type="text" placeholder="1, 0.8, 0.7" />
+                      <div class="control-note rg-muted">Per-voice gain multipliers (≥ 0). Missing values default to 1.</div>
+                    </div>
+
+                    <div class="control">
+                      <label for="globalChordSplitOffsetModeSelect">Global Split Offsets (ms)</label>
+                      <select id="globalChordSplitOffsetModeSelect">
+                        <option value="auto">Auto</option>
+                        <option value="custom">Custom</option>
+                      </select>
+                    </div>
+                    <div id="globalChordSplitOffsetsControl" class="control hidden">
+                      <label for="globalChordSplitOffsetsInput">Split offsets (ms)</label>
+                      <input id="globalChordSplitOffsetsInput" type="text" placeholder="0, 25, 45" />
+                      <div class="control-note rg-muted">Per-voice strike delays (ms, ≥ 0). Only used in Bell-like split-strike.</div>
+                    </div>
+                  </div>
+                </details>
+              </div>
               </div>
 
               <div id="bellOverridesControl" class="control rg-bell-overrides-control" aria-label="Per-bell sound">
@@ -302,7 +343,41 @@
             </details>
 
             
-            <div class="rg-nav">
+            
+<div id="soundMasterFxBlock" class="rg-sound-block" aria-label="Master / Output">
+  <div class="rg-sound-block-head">
+    <div class="rg-sound-block-title">Master / Output</div>
+  </div>
+  <div id="soundMasterFxControls" class="rg-controls rg-sound-masterfx" aria-label="Master FX controls">
+    <div class="control">
+      <label>Limiter</label>
+      <button id="masterLimiterToggle" class="pill" type="button" aria-pressed="true">Limiter On</button>
+      <div class="control-note rg-muted">Protects against clipping when stacking chords + drone.</div>
+    </div>
+    <div class="control">
+      <label for="masterLimiterStrength">Strength</label>
+      <input id="masterLimiterStrength" type="range" min="0" max="1" step="0.01" value="0.25" />
+    </div>
+    <div class="control">
+      <label>Reverb</label>
+      <button id="masterReverbToggle" class="pill" type="button" aria-pressed="false">Reverb Off</button>
+      <div class="control-note rg-muted">Send-style ambience (dry stays clear).</div>
+    </div>
+    <div class="control">
+      <label for="masterReverbSize">Room size</label>
+      <input id="masterReverbSize" type="range" min="0" max="1" step="0.01" value="0.55" />
+    </div>
+    <div class="control">
+      <label for="masterReverbMix">Mix</label>
+      <input id="masterReverbMix" type="range" min="0" max="1" step="0.01" value="0.15" />
+    </div>
+    <div class="control">
+      <label for="masterReverbHighCut">High-cut (Hz)</label>
+      <input id="masterReverbHighCut" type="range" min="500" max="20000" step="100" value="6000" />
+    </div>
+  </div>
+</div>
+<div class="rg-nav">
               <button class="pill" type="button" data-go-screen="home">Home</button>
               <button class="pill" type="button" data-go-screen="play">Setup</button>
               <button class="pill" type="button" data-go-screen="view">View</button>
@@ -483,6 +558,54 @@
               <option value="noisetone">Noise + gentle tone</option>
             </select>
           </div>
+
+          <!-- v014_p02_drone_variant_knobs: Drone Variants -->
+          <div class="control" id="droneVariantsControl">
+            <label>Variants</label>
+            <div id="droneVariantsAnchor" class="hidden"></div>
+            <div class="rg-controls rg-variants-controls" aria-label="Drone variants">
+              <div class="control">
+                <label>Normalize loudness</label>
+                <button id="droneNormalizeBtn" class="pill active" type="button" aria-pressed="true">On</button>
+              </div>
+
+              <div class="control">
+                <label for="droneDensity">Density</label>
+                <input id="droneDensity" type="range" min="1" max="12" step="1" value="3" />
+              </div>
+
+              <div class="control">
+                <label for="droneDriftCents">Drift (cents)</label>
+                <input id="droneDriftCents" type="range" min="0" max="20" step="1" value="0" />
+              </div>
+
+              <div class="control hidden" id="droneVariantMotionControl">
+                <label for="droneMotionRate">Motion rate</label>
+                <input id="droneMotionRate" type="range" min="0" max="10" step="0.1" value="0" />
+              </div>
+
+              <div class="control hidden" id="droneVariantClusterControl">
+                <label for="droneClusterWidth">Cluster width</label>
+                <select id="droneClusterWidth">
+                  <option value="1">±1 semitone</option>
+                  <option value="2">±2 semitones</option>
+                  <option value="3" selected>±3 semitones</option>
+                  <option value="5">±5 semitones</option>
+                </select>
+              </div>
+
+              <div class="control hidden" id="droneVariantNoiseTiltControl">
+                <label for="droneNoiseTilt">Noise tilt</label>
+                <input id="droneNoiseTilt" type="range" min="-1" max="1" step="0.01" value="0" />
+              </div>
+
+              <div class="control hidden" id="droneVariantNoiseQControl">
+                <label for="droneNoiseQ">Resonance (Q)</label>
+                <input id="droneNoiseQ" type="range" min="0.5" max="10" step="0.1" value="1" />
+              </div>
+            </div>
+          </div>
+
 
           <div class="control">
             <label for="droneScaleSelect" title="Musical key used to tune the drone (or choose Custom (Hz)).">Drone key</label>
