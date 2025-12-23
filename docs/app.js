@@ -75,7 +75,7 @@
   // === Analytics (GA4) ===
   const GA_MEASUREMENT_ID = 'G-7TEG531231';
   const GA_ID = GA_MEASUREMENT_ID;
-  const SITE_VERSION = 'v014_p05b_bell_timbre_per_bell_overrides';
+  const SITE_VERSION = 'v014_p07_hamburger_divider_and_start_navigates';
 
   function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
   function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
@@ -576,9 +576,22 @@ const spatialDepthModeSelect = document.getElementById('spatialDepthModeSelect')
   function hamburgerIsOpen() {
     return !!(rgHamburgerDropdown && !rgHamburgerDropdown.classList.contains('hidden'));
   }
+  function syncHamburgerRunControlLabels() {
+    if (!rgHamburgerDropdown) return;
+    const pauseItem = rgHamburgerDropdown.querySelector('button[data-ham="pause"]');
+    if (!pauseItem) return;
+
+    let phase = '';
+    try { phase = (state && state.phase) ? state.phase : ''; } catch (_) { phase = ''; }
+
+    if (phase === 'paused') pauseItem.textContent = 'Resume';
+    else if (phase === 'running' || phase === 'countdown') pauseItem.textContent = 'Pause';
+    else pauseItem.textContent = 'Pause/Resume';
+  }
   function openHamburgerMenu() {
     if (!rgHamburgerDropdown) return;
     if (menuToggle && menuToggle.disabled) return;
+    try { syncHamburgerRunControlLabels(); } catch (_) {}
     try { rgHamburgerPositionDropdownPortal(); } catch (_) {}
     rgHamburgerDropdown.classList.remove('hidden');
     rgHamburgerDropdown.setAttribute('aria-hidden', 'false');
@@ -657,6 +670,16 @@ const spatialDepthModeSelect = document.getElementById('spatialDepthModeSelect')
     if (key === 'view') { setScreen('view'); return; }
     if (key === 'sound') { setScreen('sound'); return; }
     if (key === 'play') { setScreen('game'); return; }
+    if (key === 'start') {
+      try {
+        const cur = (ui && ui.screen) ? String(ui.screen).toLowerCase() : '';
+        if (cur !== 'game') setScreen('game');
+        startPressed('play');
+      } catch (_) {}
+      return;
+    }
+    if (key === 'pause') { try { togglePause(); } catch (_) {} return; }
+    if (key === 'stop') { try { stopPressed('stopped'); } catch (_) {} return; }
     if (key === 'demo') {
       if (state.phase !== 'idle') {
         showStopCurrentRunModal();

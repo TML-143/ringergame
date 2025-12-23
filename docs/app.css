@@ -530,6 +530,14 @@ select option { background-color: #0b1026; color: #e8eeff; }
   box-shadow:0 18px 60px rgba(0,0,0,0.55);
   backdrop-filter:blur(10px);
 }
+.rg-hamburger-divider{
+  height:1px;
+  width:calc(100% - 6px);
+  margin:0 3px;
+  background:rgba(255,255,255,0.10);
+  border-radius:1px;
+}
+
 .rg-hamburger-item{
   width:100%;
   text-align:left;
