@@ -1950,6 +1950,18 @@ select option { background-color: #0b1026; color: #e8eeff; }
 .rg-bell-override-group-controls input{ flex:1 1 120px; min-width:120px; }
 .rg-bell-override-group-controls select{ flex:1 1 140px; min-width:140px; }
 
+
+
+/* v014_p05b_bell_timbre_per_bell_overrides: per-bell timbre override UI */
+.rg-bell-override-group--timbre{ flex:2 1 360px; min-width:300px; }
+.rg-bell-timbre-controls{ display:flex; flex-direction:column; align-items:stretch; gap:8px; width:100%; }
+.rg-bell-timbre-controls select{ flex:0 0 auto; min-width:180px; }
+.rg-bell-timbre-body{ display:flex; flex-direction:column; gap:8px; width:100%; }
+.rg-bell-timbre-row{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; width:100%; }
+.rg-bell-timbre-row label{ flex:1 1 180px; min-width:160px; font-size:12px; color:rgba(232,238,255,0.88); }
+.rg-bell-timbre-row input[type="range"]{ flex:2 1 220px; min-width:200px; }
+.rg-bell-timbre-value{ font-variant-numeric:tabular-nums; }
+
 /* v10_p09_sound_per_bell_chords_overrides: per-bell chord override UI */
 .rg-bell-override-group--chord{ flex:2 1 360px; min-width:300px; }
 .rg-bell-chord-controls{ display:flex; flex-direction:column; gap:8px; width:100%; }
@@ -2185,4 +2197,25 @@ select option { background-color: #0b1026; color: #e8eeff; }
 }
 #screenSound .rg-drone-layer-card.rg-drone-layer-muted{
   opacity:0.70;
+}
+
+
+/* v014_p045a_spatial_pan_only */
+.rg-range-readout{
+  margin-left:8px;
+  font-variant-numeric:tabular-nums;
+  font-weight:700;
+  opacity:0.9;
+}
+/* v014_p05a_bell_timbre_global */
+#screenSound .rg-sound-subsection-title{
+  width:100%;
+  margin:10px 0 6px 0;
+  font-size:11px;
+  font-weight:900;
+  letter-spacing:1.1px;
+  color:rgba(232,238,255,0.78);
+}
+#screenSound .rg-sound-bell-timbre{
+  margin:0 0 8px 0;
 }

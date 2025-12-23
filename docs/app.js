@@ -75,7 +75,7 @@
   // === Analytics (GA4) ===
   const GA_MEASUREMENT_ID = 'G-7TEG531231';
   const GA_ID = GA_MEASUREMENT_ID;
-  const SITE_VERSION = 'v014_p04a_multi_drone_layers_restore_audio';
+  const SITE_VERSION = 'v014_p05b_bell_timbre_per_bell_overrides';
 
   function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
   function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
@@ -364,6 +364,13 @@ Contact: ringergame143@gmail.com`;
   const scaleSelect = document.getElementById('scaleSelect');
   const octaveSelect = document.getElementById('octaveSelect');
   const bellVolume = document.getElementById('bellVolume');
+  // v014_p05a_bell_timbre_global (Sound → Bells: global bell timbre)
+  const bellRingLength = document.getElementById('bellRingLength');
+  const bellRingLengthValue = document.getElementById('bellRingLengthValue');
+  const bellBrightness = document.getElementById('bellBrightness');
+  const bellBrightnessValue = document.getElementById('bellBrightnessValue');
+  const bellStrikeHardness = document.getElementById('bellStrikeHardness');
+  const bellStrikeHardnessValue = document.getElementById('bellStrikeHardnessValue');
 
   // v08_p05_sound_per_bell_overrides (Sound menu per-bell editor)
   const bellOverridesResetBtn = document.getElementById('bellOverridesResetBtn');
@@ -411,6 +418,7 @@ const masterReverbToggle = document.getElementById('masterReverbToggle');
 const masterReverbSize = document.getElementById('masterReverbSize');
 const masterReverbMix = document.getElementById('masterReverbMix');
 const masterReverbHighCut = document.getElementById('masterReverbHighCut');
+const spatialDepthModeSelect = document.getElementById('spatialDepthModeSelect');
 
 
   // v014_p02_drone_variant_knobs: Drone variant controls (Sound → Drone)
@@ -2692,15 +2700,58 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
   const LS_BELL_HZ_OVERRIDE = 'rg_bell_hz_override_v1';
   const LS_BELL_VOL_OVERRIDE = 'rg_bell_vol_override_v1';
 
-  // v09_p06_sound_per_bell_key_register localStorage keys
+  
+  // v014_p045a_spatial_pan_only
+  const LS_BELL_PAN = 'rg_bell_pan_v1';
+  // v014_p045b_spatial_depth_and_send
+  const LS_BELL_DEPTH = 'rg_bell_depth_v1';
+  const LS_SPATIAL_DEPTH_MODE = 'rg_spatial_depth_mode_v1';
+// v09_p06_sound_per_bell_key_register localStorage keys
   const LS_BELL_KEY_OVERRIDE = 'rg_bell_key_override_v1';
   const LS_BELL_OCT_OVERRIDE = 'rg_bell_oct_override_v1';
 
   // v10_p08_sound_global_chords_splitstrike localStorage key
   const LS_GLOBAL_CHORD = 'rg_global_chord_v1';
+  // v014_p05a_bell_timbre_global localStorage key
+  const LS_BELL_TIMBRE_GLOBAL = 'rg_bell_timbre_global_v1';
+
+
+  function saveBellDepthToLS() {
+    ensureBellOverridesArrays();
+    const out = {};
+    for (let b = 1; b <= 12; b++) {
+      const v0 = Number(state.bellDepth[b]);
+      if (!Number.isFinite(v0)) continue;
+      const v = clamp(v0, 0, 1);
+      if (v < 0.0005) continue;
+      out[b] = Number(v.toFixed(3));
+    }
+    if (!Object.keys(out).length) safeDelLS(LS_BELL_DEPTH);
+    else safeSetLS(LS_BELL_DEPTH, JSON.stringify(out));
+  }
+
+  // v014_p045b_spatial_depth_and_send
+  function loadSpatialDepthModeFromLS() {
+    const raw = safeGetLS(LS_SPATIAL_DEPTH_MODE);
+    if (raw == null) {
+      state.spatialDepthMode = sanitizeSpatialDepthMode(state.spatialDepthMode);
+      return false;
+    }
+    state.spatialDepthMode = sanitizeSpatialDepthMode(raw);
+    return true;
+  }
+
+  function saveSpatialDepthModeToLS() {
+    const m = sanitizeSpatialDepthMode(state.spatialDepthMode);
+    state.spatialDepthMode = m;
+    safeSetLS(LS_SPATIAL_DEPTH_MODE, m);
+  }
 
   // v10_p09_sound_per_bell_chords_overrides localStorage key
   const LS_BELL_CHORD_OVERRIDES = 'rg_bell_chord_overrides_v1';
+
+  // v014_p05b_bell_timbre_per_bell_overrides localStorage key
+  const LS_BELL_TIMBRE_OVERRIDES = 'rg_bell_timbre_overrides_v1';
 
   // v08_p07_drone_on_off_button localStorage key
   const LS_DRONE_ON = 'rg_drone_on_v1';
@@ -2800,6 +2851,12 @@ const LS_MASTER_FX = 'rg_master_fx_v1';
     bellPitchPartialsShape: 'ladder', // 'ladder' | 'folded'
     // audio settings
     bellVolume: 100, // 0..100 master bell volume
+    // v014_p05a_bell_timbre_global (global bell strike timbre; defaults preserve legacy sound)
+    bellRingLength: 0.5, // 0..1 (0.5 = legacy envelope)
+    bellBrightness: 0.5, // 0..1 (0.5 = neutral/no-op)
+    bellStrikeHardness: 0.0, // 0..1 (0 = off/no-op)
+    // v014_p05b_bell_timbre_per_bell_overrides (per-bell timbre override configs)
+    bellTimbreOverrides: new Array(13),
     // v08_p07_drone_on_off_button: drone on/off is now a separate boolean; droneType is pattern only.
     droneOn: false,
     droneType: 'single',
@@ -2846,6 +2903,13 @@ fxReverbHighCutHz: 6000, // Hz
     // v08_p05_sound_per_bell_overrides
     bellHzOverride: new Array(13).fill(null),
     bellVolOverride: new Array(13).fill(null),
+
+    // v014_p045a_spatial_pan_only
+    bellPan: new Array(13).fill(0),
+
+    // v014_p045b_spatial_depth_and_send
+    bellDepth: new Array(13).fill(0),
+    spatialDepthMode: 'normal',
 
     // v09_p06_sound_per_bell_key_register
     bellKeyOverride: new Array(13).fill(null),
@@ -2953,6 +3017,12 @@ fxReverbHighCutHz: 6000, // Hz
   let audioCtx = null;
   let bellMasterGain = null;
   let droneMasterGain = null;
+  // v014_p045a_spatial_pan_only: per-bell pan stages (one per bell; shared by chord voices)
+  let bellPanStages = null;
+
+  // v014_p045b_spatial_depth_and_send: per-bell depth stages (post-pan split)
+  let bellDepthStages = null;
+
 // v014_p03_master_fx_limiter_reverb: Master FX rack nodes
 let masterPreFX = null;
 let masterSumGain = null;
@@ -2961,6 +3031,7 @@ let masterLimiter = null;
 let masterLimiterPathGain = null;
 let masterBypassPathGain = null;
 let reverbSendGain = null;
+let masterReverbSend = null;
 let reverbConvolver = null;
 let reverbHighCut = null;
 let reverbReturnGain = null;
@@ -2982,6 +3053,233 @@ let reverbImpulseRebuildTimer = 0;
   if (!Number.isFinite(window.micThreshold)) window.micThreshold = DEFAULT_MIC_THRESHOLD;
 
   function clamp(v, min, max) { return v < min ? min : (v > max ? max : v); }
+
+  // v014_p045a_spatial_pan_only: pan helpers (UI formatting + audio smoothing)
+  const PAN_RAMP_SEC = 0.02;
+
+  // v014_p045b_spatial_depth_and_send
+  const DEPTH_RAMP_TC = 0.045; // 25–60ms smoothing (time constant)
+
+  function sanitizeSpatialDepthMode(mode) {
+    const m = String(mode || '').trim().toLowerCase();
+    if (m === 'subtle') return 'subtle';
+    if (m === 'strong') return 'strong';
+    return 'normal';
+  }
+
+  function spatialDepthMultiplier(mode) {
+    const m = sanitizeSpatialDepthMode(mode);
+    if (m === 'subtle') return 0.6;
+    if (m === 'strong') return 1.4;
+    return 1.0;
+  }
+
+  function computeDepthTargets(depth, mode) {
+    const d = clamp(Number(depth) || 0, 0, 1);
+    const d2 = d * d;
+    const mult = spatialDepthMultiplier(mode);
+    const dry = clamp(1.0 + ((0.55 - 1.0) * d2 * mult), 0.35, 1.0);
+    let hz = 18000 + ((2500 - 18000) * d2 * mult);
+    hz = clamp(hz, 1200, 20000);
+    try {
+      if (audioCtx && audioCtx.sampleRate) {
+        const ny = (audioCtx.sampleRate * 0.5) - 10;
+        if (Number.isFinite(ny) && ny > 0) hz = Math.min(hz, ny);
+      }
+    } catch (_) {}
+    const send = clamp(0.05 + ((0.45 - 0.05) * d2 * mult), 0, 0.7);
+    return { dry, hz, send };
+  }
+
+  function createDepthStage(ctx, destBusNode, sendBusNode, nodesOut) {
+    if (!ctx || !destBusNode) return null;
+    const stage = { input: null, output: null, lpf: null, dryGain: null, wetSendGain: null };
+    try {
+      const input = ctx.createGain();
+      try { input.gain.value = 1; } catch (_) {}
+
+      const lpf = ctx.createBiquadFilter();
+      lpf.type = 'lowpass';
+      try { lpf.Q.value = 0.707; } catch (_) {}
+
+      const dryGain = ctx.createGain();
+      try { dryGain.gain.value = 1; } catch (_) {}
+
+      const wetSendGain = ctx.createGain();
+      try { wetSendGain.gain.value = 0; } catch (_) {}
+
+      input.connect(lpf);
+      lpf.connect(dryGain);
+      dryGain.connect(destBusNode);
+
+      if (sendBusNode) {
+        input.connect(wetSendGain);
+        wetSendGain.connect(sendBusNode);
+      }
+
+      stage.input = input;
+      stage.output = input;
+      stage.lpf = lpf;
+      stage.dryGain = dryGain;
+      stage.wetSendGain = wetSendGain;
+
+      if (nodesOut && Array.isArray(nodesOut)) {
+        nodesOut.push(input, lpf, dryGain, wetSendGain);
+      }
+      return stage;
+    } catch (_) {
+      try { stage.input && stage.input.disconnect(); } catch (_) {}
+      try { stage.lpf && stage.lpf.disconnect(); } catch (_) {}
+      try { stage.dryGain && stage.dryGain.disconnect(); } catch (_) {}
+      try { stage.wetSendGain && stage.wetSendGain.disconnect(); } catch (_) {}
+      return null;
+    }
+  }
+
+  function applyDepthOnStage(stage, depth, mode, instant) {
+    if (!audioCtx || !stage) return;
+    const t = computeDepthTargets(depth, mode);
+    try { if (stage.dryGain && stage.dryGain.gain) fxSetParam(stage.dryGain.gain, t.dry, DEPTH_RAMP_TC, !!instant); } catch (_) {}
+    try { if (stage.lpf && stage.lpf.frequency) fxSetParam(stage.lpf.frequency, t.hz, DEPTH_RAMP_TC, !!instant); } catch (_) {}
+    try { if (stage.wetSendGain && stage.wetSendGain.gain) fxSetParam(stage.wetSendGain.gain, t.send, DEPTH_RAMP_TC, !!instant); } catch (_) {}
+  }
+
+
+  function fmtPan1(v) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return '0.0';
+    const x = (Math.abs(n) < 0.0005) ? 0 : clamp(n, -1, 1);
+    return x.toFixed(1);
+  }
+
+  // v014_p045b_spatial_depth_and_send
+  function fmtDepth2(v) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return '0.00';
+    const x = (Math.abs(n) < 0.0005) ? 0 : clamp(n, 0, 1);
+    return x.toFixed(2);
+  }
+
+  function panRampParam(param, target, now) {
+    if (!param) return;
+    const t = Number.isFinite(now) ? now : ((audioCtx && Number.isFinite(audioCtx.currentTime)) ? audioCtx.currentTime : 0);
+    const v = clamp(Number(target) || 0, -1, 1);
+    try {
+      param.cancelScheduledValues(t);
+      const cur = Number(param.value);
+      if (Number.isFinite(cur)) param.setValueAtTime(cur, t);
+      param.linearRampToValueAtTime(v, t + PAN_RAMP_SEC);
+    } catch (_) {
+      try { param.setValueAtTime(v, t); } catch (_) {}
+    }
+  }
+
+  function createPanStage(ctx, initialPan, destNode, nodesOut) {
+    if (!ctx || !destNode) return null;
+    const now = ctx.currentTime;
+    const p0 = clamp(Number(initialPan) || 0, -1, 1);
+
+    // Prefer StereoPannerNode if available.
+    try {
+      if (ctx.createStereoPanner) {
+        const p = ctx.createStereoPanner();
+        try { p.pan.setValueAtTime(p0, now); } catch (_) { try { p.pan.value = p0; } catch (_) {} }
+        let ok = false;
+        try { p.connect(destNode); ok = true; } catch (_) {}
+        if (!ok) { try { p.disconnect(); } catch (_) {} return null; }
+        if (nodesOut && Array.isArray(nodesOut)) nodesOut.push(p);
+        return { type: 'stereo', input: p, output: p, panner: p };
+      }
+    } catch (_) {}
+
+    // Fallback: mono -> L/R gains -> merger.
+    try {
+      const input = ctx.createGain();
+      try { input.channelCountMode = 'explicit'; input.channelCount = 1; input.channelInterpretation = 'speakers'; } catch (_) {}
+
+      const lg = ctx.createGain();
+      const rg = ctx.createGain();
+      const merger = ctx.createChannelMerger(2);
+
+      input.connect(lg);
+      input.connect(rg);
+      lg.connect(merger, 0, 0);
+      rg.connect(merger, 0, 1);
+
+      const l0 = clamp((p0 >= 0) ? (1 - p0) : 1, 0, 1);
+      const r0 = clamp((p0 <= 0) ? (1 + p0) : 1, 0, 1);
+      lg.gain.setValueAtTime(l0, now);
+      rg.gain.setValueAtTime(r0, now);
+
+      let ok = false;
+      try { merger.connect(destNode); ok = true; } catch (_) {}
+      if (!ok) {
+        try { merger.disconnect(); } catch (_) {}
+        try { input.disconnect(); } catch (_) {}
+        try { lg.disconnect(); } catch (_) {}
+        try { rg.disconnect(); } catch (_) {}
+        return null;
+      }
+      if (nodesOut && Array.isArray(nodesOut)) nodesOut.push(input, lg, rg, merger);
+      return { type: 'fallback', input, output: merger, leftGain: lg, rightGain: rg, merger };
+    } catch (_) {}
+
+    return null;
+  }
+
+  function setPanOnStage(stage, pan, now) {
+    if (!stage || !audioCtx) return;
+    const p = clamp(Number(pan) || 0, -1, 1);
+    const t = Number.isFinite(now) ? now : audioCtx.currentTime;
+
+    if (stage.type === 'stereo' && stage.panner && stage.panner.pan) {
+      panRampParam(stage.panner.pan, p, t);
+      return;
+    }
+    if (stage.type === 'fallback' && stage.leftGain && stage.rightGain) {
+      const l = clamp((p >= 0) ? (1 - p) : 1, 0, 1);
+      const r = clamp((p <= 0) ? (1 + p) : 1, 0, 1);
+      try {
+        stage.leftGain.gain.cancelScheduledValues(t);
+        stage.leftGain.gain.setValueAtTime(stage.leftGain.gain.value, t);
+        stage.leftGain.gain.linearRampToValueAtTime(l, t + PAN_RAMP_SEC);
+      } catch (_) { try { stage.leftGain.gain.setValueAtTime(l, t); } catch (_) {} }
+      try {
+        stage.rightGain.gain.cancelScheduledValues(t);
+        stage.rightGain.gain.setValueAtTime(stage.rightGain.gain.value, t);
+        stage.rightGain.gain.linearRampToValueAtTime(r, t + PAN_RAMP_SEC);
+      } catch (_) { try { stage.rightGain.gain.setValueAtTime(r, t); } catch (_) {} }
+    }
+  }
+
+  function getBellPanInput(bell) {
+    const b = clamp(parseInt(bell, 10) || 0, 1, 12);
+    if (!audioCtx || !bellMasterGain) return null;
+    ensureBellOverridesArrays();
+    if (!bellPanStages) bellPanStages = new Array(13).fill(null);
+    let st = bellPanStages[b];
+    if (st && st.input) return st.input;
+
+    const p0 = clamp(Number(state.bellPan[b]) || 0, -1, 1);
+    let depthSt = null;
+    try { depthSt = ensureBellDepthStage(b); } catch (_) { depthSt = null; }
+    const depthDest = (depthSt && depthSt.input) ? depthSt.input : bellMasterGain;
+
+    st = createPanStage(audioCtx, p0, depthDest, null);
+    if (!st) return null;
+    bellPanStages[b] = st;
+    return st.input;
+  }
+
+  function applyBellPanToAudio(bell) {
+    const b = clamp(parseInt(bell, 10) || 0, 1, 12);
+    if (!audioCtx || !bellPanStages) return;
+    const st = bellPanStages[b];
+    if (!st) return;
+    ensureBellOverridesArrays();
+    setPanOnStage(st, state.bellPan[b], audioCtx.currentTime);
+  }
+
   function perfNow() { return performance.now(); }
 
   function isMobileLikely() {
@@ -3044,71 +3342,139 @@ function ensureMasterFxGraph() {
   if (!audioCtx) return;
 
   if (!masterOut) {
-    masterPreFX = audioCtx.createGain();
-    try { masterPreFX.gain.value = 1; } catch (_) {}
+    // Core nodes (deterministic; must reach destination)
+    try { masterPreFX = audioCtx.createGain(); } catch (_) { masterPreFX = null; }
+    try { if (masterPreFX) masterPreFX.gain.value = 1; } catch (_) {}
 
-    masterSumGain = audioCtx.createGain();
-    try { masterSumGain.gain.value = 1; } catch (_) {}
+    try { masterSumGain = audioCtx.createGain(); } catch (_) { masterSumGain = null; }
+    try { if (masterSumGain) masterSumGain.gain.value = 1; } catch (_) {}
 
-    // Reverb send/return (runtime impulse; no external files)
-    reverbSendGain = audioCtx.createGain();
-    try { reverbSendGain.gain.value = 0; } catch (_) {}
+    // Ensure a connectable master reverb send exists even if reverb init fails.
+    try { masterReverbSend = audioCtx.createGain(); } catch (_) { masterReverbSend = null; }
+    reverbSendGain = masterReverbSend;
+    try { if (reverbSendGain) reverbSendGain.gain.value = 0; } catch (_) {}
 
-    reverbConvolver = audioCtx.createConvolver();
-    try { reverbConvolver.normalize = true; } catch (_) {}
+    // Output + bypass chain (fail-open)
+    try { masterLimiterPathGain = audioCtx.createGain(); } catch (_) { masterLimiterPathGain = null; }
+    try { masterBypassPathGain = audioCtx.createGain(); } catch (_) { masterBypassPathGain = null; }
+    try { masterOut = audioCtx.createGain(); } catch (_) { masterOut = null; }
+    try { if (masterOut) masterOut.gain.value = 1; } catch (_) {}
 
-    reverbHighCut = audioCtx.createBiquadFilter();
-    reverbHighCut.type = 'lowpass';
-    try { reverbHighCut.Q.value = 0.707; } catch (_) {}
-    try { reverbHighCut.frequency.value = clamp(Number(state.fxReverbHighCutHz) || 6000, 500, 20000); } catch (_) {}
+    // Dry path
+    try { if (masterPreFX && masterSumGain) masterPreFX.connect(masterSumGain); } catch (_) {}
 
-    reverbReturnGain = audioCtx.createGain();
-    try { reverbReturnGain.gain.value = 1; } catch (_) {}
-
-    // Dry path + send
-    masterPreFX.connect(masterSumGain);
-    masterPreFX.connect(reverbSendGain);
-    reverbSendGain.connect(reverbConvolver);
-    reverbConvolver.connect(reverbHighCut);
-    reverbHighCut.connect(reverbReturnGain);
-    reverbReturnGain.connect(masterSumGain);
-
-    // Limiter (compressor-as-limiter) + bypass crossfade (no reconnect storms)
-    masterLimiter = audioCtx.createDynamicsCompressor();
+    // Always wire a direct bypass to destination so audio never globally silences.
     try {
-      masterLimiter.knee.value = 0;
-      masterLimiter.ratio.value = 20;
-      masterLimiter.attack.value = 0.001;
-      masterLimiter.release.value = 0.12;
+      if (masterSumGain && masterBypassPathGain) masterSumGain.connect(masterBypassPathGain);
+      if (masterBypassPathGain && masterOut) masterBypassPathGain.connect(masterOut);
+      if (masterOut) masterOut.connect(audioCtx.destination);
     } catch (_) {}
 
-    masterLimiterPathGain = audioCtx.createGain();
-    masterBypassPathGain = audioCtx.createGain();
-    masterOut = audioCtx.createGain();
-    try { masterOut.gain.value = 1; } catch (_) {}
+    // Default fail-open gains; applyMasterFxAll will override if limiter exists & enabled.
+    try { if (masterBypassPathGain) masterBypassPathGain.gain.value = 1; } catch (_) {}
+    try { if (masterLimiterPathGain) masterLimiterPathGain.gain.value = 0; } catch (_) {}
 
-    masterSumGain.connect(masterLimiter);
-    masterLimiter.connect(masterLimiterPathGain);
-    masterLimiterPathGain.connect(masterOut);
+    // Optional reverb path (no-op if it fails)
+    try { if (masterPreFX && reverbSendGain) masterPreFX.connect(reverbSendGain); } catch (_) {}
+    try {
+      reverbConvolver = audioCtx.createConvolver();
+      try { reverbConvolver.normalize = true; } catch (_) {}
 
-    masterSumGain.connect(masterBypassPathGain);
-    masterBypassPathGain.connect(masterOut);
+      reverbHighCut = audioCtx.createBiquadFilter();
+      reverbHighCut.type = 'lowpass';
+      try { reverbHighCut.Q.value = 0.707; } catch (_) {}
+      try { reverbHighCut.frequency.value = clamp(Number(state.fxReverbHighCutHz) || 6000, 500, 20000); } catch (_) {}
 
-    masterOut.connect(audioCtx.destination);
+      reverbReturnGain = audioCtx.createGain();
+      try { reverbReturnGain.gain.value = 1; } catch (_) {}
 
-    // Apply initial (persisted) settings
-    applyMasterFxAll(true);
+      if (reverbSendGain && reverbConvolver) reverbSendGain.connect(reverbConvolver);
+      if (reverbConvolver && reverbHighCut) reverbConvolver.connect(reverbHighCut);
+      if (reverbHighCut && reverbReturnGain) reverbHighCut.connect(reverbReturnGain);
+      if (reverbReturnGain && masterSumGain) reverbReturnGain.connect(masterSumGain);
+    } catch (_) {
+      // Keep send node connectable; wet chain can remain absent.
+    }
+
+    // Optional limiter path (fail-open keeps bypass alive)
+    try {
+      masterLimiter = audioCtx.createDynamicsCompressor();
+      try {
+        masterLimiter.knee.value = 0;
+        masterLimiter.ratio.value = 20;
+        masterLimiter.attack.value = 0.001;
+        masterLimiter.release.value = 0.12;
+      } catch (_) {}
+
+      if (masterSumGain && masterLimiter) masterSumGain.connect(masterLimiter);
+      if (masterLimiter && masterLimiterPathGain) masterLimiter.connect(masterLimiterPathGain);
+      if (masterLimiterPathGain && masterOut) masterLimiterPathGain.connect(masterOut);
+    } catch (_) {
+      masterLimiter = null;
+    }
+
+    // Apply initial (persisted) settings (best effort; never block audio)
+    try { applyMasterFxAll(true); } catch (_) {
+      try { if (masterBypassPathGain) masterBypassPathGain.gain.value = 1; } catch (_) {}
+      try { if (masterLimiterPathGain) masterLimiterPathGain.gain.value = 0; } catch (_) {}
+      try { if (reverbSendGain) reverbSendGain.gain.value = 0; } catch (_) {}
+    }
+  } else {
+    // Back-compat: keep a stable master reverb send alias.
+    if (!masterReverbSend && reverbSendGain) masterReverbSend = reverbSendGain;
+    if (!reverbSendGain && masterReverbSend) reverbSendGain = masterReverbSend;
   }
 
-  // Route existing bell + drone masters into the shared masterPreFX bus once.
-  if (!masterFxRouted && masterPreFX && bellMasterGain && droneMasterGain) {
-    try { bellMasterGain.disconnect(); } catch (_) {}
-    try { droneMasterGain.disconnect(); } catch (_) {}
-    try { bellMasterGain.connect(masterPreFX); } catch (_) {}
-    try { droneMasterGain.connect(masterPreFX); } catch (_) {}
-    masterFxRouted = true;
+  // Route existing bell + drone masters into the shared masterPreFX bus (fail-open).
+  if (bellMasterGain && droneMasterGain) {
+    const fallback = audioCtx.destination;
+    const routeOne = (bus) => {
+      if (!bus) return false;
+      let ok = false;
+      try { bus.disconnect(); } catch (_) {}
+      try { if (masterPreFX) { bus.connect(masterPreFX); ok = true; } } catch (_) { ok = false; }
+      if (!ok) {
+        try { bus.connect(fallback); } catch (_) {}
+      }
+      return ok;
+    };
+
+    if (!masterFxRouted) {
+      const okB = routeOne(bellMasterGain);
+      const okD = routeOne(droneMasterGain);
+      masterFxRouted = !!(okB && okD);
+    }
   }
 }
+
+// v014_p045b_spatial_depth_and_send
+function ensureBellDepthStage(bell) {
+  const b = clamp(parseInt(String(bell), 10) || 0, 1, 12);
+  if (!audioCtx || !bellMasterGain) return null;
+  ensureBellOverridesArrays();
+  if (!bellDepthStages) bellDepthStages = new Array(13).fill(null);
+
+  let st = bellDepthStages[b];
+  if (st && st.input) return st;
+
+  const sendBus = masterReverbSend || reverbSendGain || null;
+  st = createDepthStage(audioCtx, bellMasterGain, sendBus, null);
+  if (!st) return null;
+  bellDepthStages[b] = st;
+  try { applyDepthOnStage(st, clamp(Number(state.bellDepth[b]) || 0, 0, 1), state.spatialDepthMode, true); } catch (_) {}
+  return st;
+}
+
+function applyBellDepthToAudio(bell, instant) {
+  const b = clamp(parseInt(String(bell), 10) || 0, 1, 12);
+  if (!audioCtx || !bellDepthStages) return;
+  const st = bellDepthStages[b];
+  if (!st) return;
+  ensureBellOverridesArrays();
+  const d = clamp(Number(state.bellDepth[b]) || 0, 0, 1);
+  applyDepthOnStage(st, d, state.spatialDepthMode, !!instant);
+}
+
 
 function ensureAudio() {
     if (!audioCtx) {
@@ -3124,7 +3490,13 @@ function ensureAudio() {
       droneMasterGain.gain.value = clamp((Number(state.droneVolume) || 50) / 100, 0, 1);
 
       // v014_p03_master_fx_limiter_reverb: wire bells+drones into a single master bus (FX + limiter)
-      ensureMasterFxGraph();
+      try { ensureMasterFxGraph(); } catch (_) {
+              // Fail-open: never leave master buses disconnected on init errors.
+              try { if (bellMasterGain) bellMasterGain.disconnect(); } catch (_) {}
+              try { if (droneMasterGain) droneMasterGain.disconnect(); } catch (_) {}
+              try { if (bellMasterGain) bellMasterGain.connect(audioCtx.destination); } catch (_) {}
+              try { if (droneMasterGain) droneMasterGain.connect(audioCtx.destination); } catch (_) {}
+            }
 
       noiseBuffer = null;
       noiseBufferSampleRate = 0;
@@ -3141,7 +3513,13 @@ function ensureAudio() {
         created = true;
       }
       if (created) masterFxRouted = false;
-      ensureMasterFxGraph();
+      try { ensureMasterFxGraph(); } catch (_) {
+              // Fail-open: never leave master buses disconnected on init errors.
+              try { if (bellMasterGain) bellMasterGain.disconnect(); } catch (_) {}
+              try { if (droneMasterGain) droneMasterGain.disconnect(); } catch (_) {}
+              try { if (bellMasterGain) bellMasterGain.connect(audioCtx.destination); } catch (_) {}
+              try { if (droneMasterGain) droneMasterGain.connect(audioCtx.destination); } catch (_) {}
+            }
     }
     if (audioCtx.state === 'suspended') audioCtx.resume();
   }
@@ -3162,6 +3540,8 @@ function closeAudio() {
       audioCtx = null;
       bellMasterGain = null;
       droneMasterGain = null;
+      bellPanStages = null;
+      bellDepthStages = null;
       droneCurrent = null;
       noiseBuffer = null;
       noiseBufferSampleRate = 0;
@@ -3173,6 +3553,7 @@ masterLimiter = null;
 masterLimiterPathGain = null;
 masterBypassPathGain = null;
 reverbSendGain = null;
+masterReverbSend = null;
 reverbConvolver = null;
 reverbHighCut = null;
 reverbReturnGain = null;
@@ -3402,7 +3783,73 @@ if (reverbImpulseRebuildTimer) {
   }
 
 
-  // v014_p01_global_custom_chords_advanced: global custom preset + advanced parsing helpers
+    // v014_p05a_bell_timbre_global (global bell strike timbre shaping; bells only)
+  const BELL_RING_LENGTH_DEFAULT = 0.5;
+  const BELL_BRIGHTNESS_DEFAULT = 0.5;
+  const BELL_STRIKE_HARDNESS_DEFAULT = 0.0;
+
+  function sanitizeBellTimbreConfig(raw) {
+    const out = {
+      bellRingLength: BELL_RING_LENGTH_DEFAULT,
+      bellBrightness: BELL_BRIGHTNESS_DEFAULT,
+      bellStrikeHardness: BELL_STRIKE_HARDNESS_DEFAULT,
+    };
+    if (raw && typeof raw === 'object') {
+      const rl = Number(raw.bellRingLength);
+      if (Number.isFinite(rl)) out.bellRingLength = clamp(rl, 0, 1);
+      const br = Number(raw.bellBrightness);
+      if (Number.isFinite(br)) out.bellBrightness = clamp(br, 0, 1);
+      const hd = Number(raw.bellStrikeHardness);
+      if (Number.isFinite(hd)) out.bellStrikeHardness = clamp(hd, 0, 1);
+    }
+    // snap near defaults to avoid drift
+    if (Math.abs(out.bellRingLength - BELL_RING_LENGTH_DEFAULT) < 1e-6) out.bellRingLength = BELL_RING_LENGTH_DEFAULT;
+    if (Math.abs(out.bellBrightness - BELL_BRIGHTNESS_DEFAULT) < 1e-6) out.bellBrightness = BELL_BRIGHTNESS_DEFAULT;
+    if (Math.abs(out.bellStrikeHardness - BELL_STRIKE_HARDNESS_DEFAULT) < 1e-6) out.bellStrikeHardness = BELL_STRIKE_HARDNESS_DEFAULT;
+    return out;
+  }
+
+  function loadBellTimbreFromLS() {
+    const raw = safeJsonParse(safeGetLS(LS_BELL_TIMBRE_GLOBAL) || '');
+    return sanitizeBellTimbreConfig(raw);
+  }
+
+  function saveBellTimbreToLS() {
+    const out = sanitizeBellTimbreConfig({
+      bellRingLength: state.bellRingLength,
+      bellBrightness: state.bellBrightness,
+      bellStrikeHardness: state.bellStrikeHardness,
+    });
+    safeSetLS(LS_BELL_TIMBRE_GLOBAL, JSON.stringify(out));
+  }
+
+  function syncBellTimbreUI() {
+    if (bellRingLength) bellRingLength.value = String(clamp(Number(state.bellRingLength) || BELL_RING_LENGTH_DEFAULT, 0, 1));
+    if (bellRingLengthValue) bellRingLengthValue.textContent = fmtDepth2(state.bellRingLength);
+    if (bellBrightness) bellBrightness.value = String(clamp(Number(state.bellBrightness) || BELL_BRIGHTNESS_DEFAULT, 0, 1));
+    if (bellBrightnessValue) bellBrightnessValue.textContent = fmtDepth2(state.bellBrightness);
+    if (bellStrikeHardness) bellStrikeHardness.value = String(clamp(Number(state.bellStrikeHardness) || BELL_STRIKE_HARDNESS_DEFAULT, 0, 1));
+    if (bellStrikeHardnessValue) bellStrikeHardnessValue.textContent = fmtDepth2(state.bellStrikeHardness);
+  }
+
+  function bellRingLengthMult01(v01) {
+    const x = clamp(Number(v01) || 0, 0, 1);
+    // 0.5 is legacy; range ~0.5x..2x
+    return Math.pow(4, x - BELL_RING_LENGTH_DEFAULT);
+  }
+
+  function bellBrightnessCutoffHz(v01, sampleRate) {
+    const sr = Math.max(8000, Number(sampleRate) || 48000);
+    const ny = 0.5 * sr;
+    const maxHz = ny * 0.95;
+    const minHz = 350;
+    const x = clamp(Number(v01) || BELL_BRIGHTNESS_DEFAULT, 0, 1);
+    if (x >= BELL_BRIGHTNESS_DEFAULT) return maxHz;
+    const u = clamp(x / BELL_BRIGHTNESS_DEFAULT, 0, 1);
+    return minHz * Math.pow(maxHz / minHz, u);
+  }
+
+// v014_p01_global_custom_chords_advanced: global custom preset + advanced parsing helpers
   let globalCustomChordLastGoodIntervals = [0, 4, 7];
 
   function parseCustomChordIntervalsText(raw, cap) {
@@ -3652,6 +4099,7 @@ if (reverbImpulseRebuildTimer) {
 
   function playBellVoiceAtHz(bell, hz, whenMs, gainScale, minGain) {
     ensureAudio();
+    const b = clamp(parseInt(bell, 10) || 0, 1, 12);
     const t = msToAudioTime(whenMs);
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
@@ -3661,7 +4109,7 @@ if (reverbImpulseRebuildTimer) {
     osc.frequency.setValueAtTime((Number.isFinite(f) && f > 0) ? f : 440, t);
 
     // v08_p05_sound_per_bell_overrides: per-bell volume scales on top of the global bell master volume
-    const bellVol = getBellGain(bell);
+    const bellVol = getBellGain(b);
     const MIN_G = Math.max(0.0000001, Number(minGain) || 0.000001);
     const s = Math.max(0.000001, Number(gainScale) || 1);
     let g0 = Math.max(MIN_G, 0.0001 * bellVol * s);
@@ -3669,16 +4117,84 @@ if (reverbImpulseRebuildTimer) {
     let g2 = Math.max(MIN_G, 0.001 * bellVol * s);
     if (g1 < g0) g1 = g0;
 
-    gain.gain.setValueAtTime(g0, t);
-    gain.gain.exponentialRampToValueAtTime(g1, t + 0.01);
-    gain.gain.exponentialRampToValueAtTime(g2, t + 0.28);
+    // v014_p05b_bell_timbre_per_bell_overrides: effective bell timbre (global first, then per-bell override)
+    const tim = resolveBellTimbreForStrike(b);
 
-    osc.connect(gain).connect(bellMasterGain || audioCtx.destination);
-    const tStop = t + 0.32;
+    // v014_p05a_bell_timbre_global: ring length scales the strike decay/release (defaults preserve legacy)
+    const rl01 = clamp(Number(tim.bellRingLength), 0, 1);
+    const rlNeutral = Math.abs(rl01 - BELL_RING_LENGTH_DEFAULT) < 1e-6;
+
+    // Legacy envelope times (exactly match baseline)
+    const t1 = t + 0.01;
+    let t2 = t + 0.28;
+    let tStop = t + 0.32;
+
+    // Non-neutral: scale decay + tail
+    if (!rlNeutral) {
+      const lenMult = bellRingLengthMult01(rl01);
+      t2 = t1 + 0.27 * lenMult;
+      tStop = t2 + 0.04 * lenMult;
+    }
+
+    gain.gain.setValueAtTime(g0, t);
+    gain.gain.exponentialRampToValueAtTime(g1, t1);
+    gain.gain.exponentialRampToValueAtTime(g2, t2);
+
+    let dest = bellMasterGain || audioCtx.destination;
+    try { dest = getBellPanInput(b) || dest; } catch (_) {}
+
+    // v014_p05a_bell_timbre_global: brightness lowpass (neutral default is exact no-op via bypass)
+    const br01 = clamp(Number(tim.bellBrightness), 0, 1);
+    const brNeutral = Math.abs(br01 - BELL_BRIGHTNESS_DEFAULT) < 1e-6;
+    let lpf = null;
+    if (!brNeutral) {
+      try {
+        lpf = audioCtx.createBiquadFilter();
+        lpf.type = 'lowpass';
+        const hz0 = bellBrightnessCutoffHz(br01, audioCtx.sampleRate);
+        lpf.frequency.setValueAtTime(hz0, t);
+        lpf.Q.setValueAtTime(0.707, t);
+      } catch (_) {
+        lpf = null;
+      }
+    }
+
+    const out = lpf || dest;
+    osc.connect(gain);
+    gain.connect(out);
+    if (lpf) lpf.connect(dest);
+
+    // v014_p05a_bell_timbre_global: strike hardness transient (off by default)
+    const hard01 = clamp(Number(tim.bellStrikeHardness), 0, 1);
+    let hardSrc = null;
+    let hardGain = null;
+    if (hard01 > 0.0005) {
+      try {
+        hardSrc = audioCtx.createBufferSource();
+        hardSrc.buffer = getNoiseBuffer();
+        hardGain = audioCtx.createGain();
+        const peak = Math.min(0.12, Math.max(0.000001, g1 * 0.75 * hard01));
+        const ta = 0.0012;
+        const td = 0.020;
+        hardGain.gain.setValueAtTime(0.000001, t);
+        hardGain.gain.linearRampToValueAtTime(peak, t + ta);
+        hardGain.gain.exponentialRampToValueAtTime(0.000001, t + ta + td);
+        hardSrc.connect(hardGain);
+        hardGain.connect(out);
+        hardSrc.start(t);
+        hardSrc.stop(Math.min(tStop, t + ta + td + 0.03));
+      } catch (_) {
+        try { if (hardSrc) hardSrc.disconnect(); } catch (_) {}
+        try { if (hardGain) hardGain.disconnect(); } catch (_) {}
+        hardSrc = null;
+        hardGain = null;
+      }
+    }
+
     osc.start(t);
     osc.stop(tStop);
 
-    scheduledBellNodes.push({ osc, gain, startAt: t, stopAt: tStop });
+    scheduledBellNodes.push({ bell: b, osc, gain, startAt: t, stopAt: tStop, lpf, hardSrc, hardGain });
   }
 
   function playBellStrikeAtHz(bell, baseHz, whenMs, minGain) {
@@ -3835,7 +4351,9 @@ if (reverbImpulseRebuildTimer) {
     gain.gain.setValueAtTime(HZ_PREVIEW_MIN_GAIN, now);
     try { gain.gain.exponentialRampToValueAtTime(level, now + 0.02); } catch (_) { gain.gain.setValueAtTime(level, now + 0.02); }
 
-    osc.connect(gain).connect(bellMasterGain || audioCtx.destination);
+    let dest = bellMasterGain || audioCtx.destination;
+    try { dest = getBellPanInput(bell) || dest; } catch (_) {}
+    osc.connect(gain).connect(dest);
     osc.start(now);
 
     hzPreviewOsc = osc;
@@ -3947,6 +4465,14 @@ if (reverbImpulseRebuildTimer) {
       } catch (_) {}
       try { n.osc.disconnect(); } catch (_) {}
       try { if (n.gain) n.gain.disconnect(); } catch (_) {}
+
+      // v014_p05a_bell_timbre_global: extra bell-strike nodes (brightness LPF, hardness transient)
+      try { if (n.lpf) n.lpf.disconnect(); } catch (_) {}
+      try {
+        if (n.hardSrc && typeof n.hardSrc.stop === 'function') n.hardSrc.stop(now + 0.001);
+      } catch (_) {}
+      try { if (n.hardSrc) n.hardSrc.disconnect(); } catch (_) {}
+      try { if (n.hardGain) n.hardGain.disconnect(); } catch (_) {}
     }
     scheduledBellNodes.length = 0;
   }
@@ -4063,6 +4589,37 @@ function syncMasterFxUI() {
   if (masterReverbHighCut) masterReverbHighCut.value = String(clamp(Number(state.fxReverbHighCutHz) || 6000, 500, 20000));
 }
 
+// v014_p045b_spatial_depth_and_send
+function syncSpatialDepthModeUI() {
+  if (!spatialDepthModeSelect) return;
+  const m = sanitizeSpatialDepthMode(state.spatialDepthMode);
+  state.spatialDepthMode = m;
+  try { spatialDepthModeSelect.value = m; } catch (_) {}
+}
+
+function applySpatialDepthModeToAudio() {
+  // Bells
+  if (audioCtx && bellDepthStages) {
+    for (let b = 1; b <= 12; b++) {
+      try { applyBellDepthToAudio(b, false); } catch (_) {}
+    }
+  }
+
+  // Drones
+  try {
+    if (audioCtx && droneLayerCurrents) {
+      const layers = state.droneLayers || [];
+      for (let i = 0; i < droneLayerCurrents.length; i++) {
+        const cur = droneLayerCurrents[i];
+        if (!cur || !cur.depthStage) continue;
+        const d = clamp(Number((layers[i] && layers[i].depth) || 0), 0, 1);
+        applyDepthOnStage(cur.depthStage, d, state.spatialDepthMode, false);
+      }
+    }
+  } catch (_) {}
+}
+
+
 function fxSetParam(param, value, timeConstant, instant) {
   if (!audioCtx || !param) return;
   const now = audioCtx.currentTime;
@@ -4092,11 +4649,12 @@ function applyMasterLimiterParams(instant) {
 
 function applyMasterLimiterEnabled(instant) {
   if (!audioCtx || !masterLimiterPathGain || !masterBypassPathGain) return;
-  const on = !!state.fxLimiterEnabled;
+  // Fail-open: never mute output if the limiter graph is unavailable.
+  const canLimit = !!masterLimiter;
+  const on = (!!state.fxLimiterEnabled) && canLimit;
   fxSetParam(masterLimiterPathGain.gain, on ? 1 : 0, 0.02, !!instant);
   fxSetParam(masterBypassPathGain.gain, on ? 0 : 1, 0.02, !!instant);
 }
-
 function quantizeReverbSize(size) {
   const s = clamp(Number(size) || 0, 0, 1);
   return Math.round(s * 50) / 50; // rebuild only on meaningful change
@@ -4127,6 +4685,7 @@ function generateReverbImpulseBuffer(seconds) {
 }
 
 function ensureMasterReverbImpulse(force, instant) {
+  try {
   if (!audioCtx || !reverbConvolver) return;
   const q = quantizeReverbSize(state.fxReverbSize);
   if (!force && reverbConvolver.buffer && reverbImpulseQuant === q) return;
@@ -4154,6 +4713,7 @@ function ensureMasterReverbImpulse(force, instant) {
   } else {
     try { reverbConvolver.buffer = buf; } catch (_) {}
   }
+  } catch (_) {}
 }
 
 function queueMasterReverbImpulseRebuild() {
@@ -4176,13 +4736,13 @@ function applyMasterReverbHighCut(instant) {
 }
 
 function applyMasterReverbSend(instant) {
-  if (!audioCtx || !reverbSendGain) return;
+  const send = masterReverbSend || reverbSendGain;
+  if (!audioCtx || !send) return;
   const on = !!state.fxReverbEnabled;
   const mix = clamp(Number(state.fxReverbMix) || 0, 0, 1);
-  if (on) ensureMasterReverbImpulse(false, true);
-  fxSetParam(reverbSendGain.gain, on ? mix : 0, 0.03, !!instant);
+  if (on) { try { ensureMasterReverbImpulse(false, true); } catch (_) {} }
+  fxSetParam(send.gain, on ? mix : 0, 0.03, !!instant);
 }
-
 function applyMasterFxAll(instant) {
   applyMasterLimiterParams(instant);
   applyMasterLimiterEnabled(instant);
@@ -4474,6 +5034,7 @@ function buildLayer1FromLegacyDroneState() {
     customHz: coerceCustomHz(state.droneCustomHz, 440),
     volume: 1,  // keep legacy sound (master volume controls overall level)
     pan: 0,
+    depth: 0,
     variants: {
       normalize: !!state.droneNormalize,
       density: clampDroneDensityForType(type, state.droneDensity),
@@ -4514,8 +5075,9 @@ function coerceDroneLayer(raw, fallback) {
     register: clamp(Number(v.register) || base.register || 3, 1, 6),
     customHzEnabled: !!v.customHzEnabled,
     customHz: coerceCustomHz(v.customHz, base.customHz || 440),
-    volume: clamp(Number(v.volume) || base.volume || 1, 0, 1),
+    volume: clamp(Number.isFinite(Number(v.volume)) ? Number(v.volume) : (Number.isFinite(Number(base.volume)) ? Number(base.volume) : 1), 0, 1),
     pan: clamp(Number(v.pan) || base.pan || 0, -1, 1),
+    depth: clamp(Number(v.depth) || base.depth || 0, 0, 1),
     variants: coerceDroneLayerVariants(v.variants, type)
   };
 
@@ -4590,24 +5152,42 @@ function syncLegacyDroneStateFromLayer1() {
 }
 
 function syncLayer1FromLegacyDroneState() {
+  // NOTE: ensureDroneLayersState() mirrors Layer 1 -> legacy, so capture desired legacy values first.
+  const desiredType = state.droneType;
+  const desiredKey = state.droneScaleKey;
+  const desiredRegister = clamp(Number(state.droneOctaveC) || 3, 1, 6);
+  const desiredCustomHz = coerceCustomHz(state.droneCustomHz, 440);
+  const desiredVariants = {
+    normalize: !!state.droneNormalize,
+    density: clampDroneDensityForType(desiredType, state.droneDensity),
+    driftCents: clamp(Number(state.droneDriftCents) || 0, 0, 20),
+    motionRate: clamp(Number(state.droneMotionRate) || 0, 0, 10),
+    clusterWidth: coerceDroneClusterWidth(state.droneClusterWidth),
+    noiseTilt: clamp(Number(state.droneNoiseTilt) || 0, -1, 1),
+    noiseQ: clamp(Number(state.droneNoiseQ) || 1, 0.5, 10)
+  };
+
   ensureDroneLayersState();
   const l1 = state.droneLayers[0];
   if (!l1) return;
 
-  l1.type = state.droneType;
-  l1.key = state.droneScaleKey;
-  l1.register = clamp(Number(state.droneOctaveC) || 3, 1, 6);
-  l1.customHz = coerceCustomHz(state.droneCustomHz, 440);
+  l1.type = desiredType;
+  l1.key = desiredKey;
+  l1.register = desiredRegister;
+  l1.customHz = desiredCustomHz;
   l1.customHzEnabled = (l1.key === 'custom_hz');
 
   if (!l1.variants || typeof l1.variants !== 'object') l1.variants = defaultDroneLayerVariantsForType(l1.type);
-  l1.variants.normalize = !!state.droneNormalize;
-  l1.variants.density = clampDroneDensityForType(l1.type, state.droneDensity);
-  l1.variants.driftCents = clamp(Number(state.droneDriftCents) || 0, 0, 20);
-  l1.variants.motionRate = clamp(Number(state.droneMotionRate) || 0, 0, 10);
-  l1.variants.clusterWidth = coerceDroneClusterWidth(state.droneClusterWidth);
-  l1.variants.noiseTilt = clamp(Number(state.droneNoiseTilt) || 0, -1, 1);
-  l1.variants.noiseQ = clamp(Number(state.droneNoiseQ) || 1, 0.5, 10);
+  l1.variants.normalize = desiredVariants.normalize;
+  l1.variants.density = desiredVariants.density;
+  l1.variants.driftCents = desiredVariants.driftCents;
+  l1.variants.motionRate = desiredVariants.motionRate;
+  l1.variants.clusterWidth = desiredVariants.clusterWidth;
+  l1.variants.noiseTilt = desiredVariants.noiseTilt;
+  l1.variants.noiseQ = desiredVariants.noiseQ;
+
+  // Keep legacy controls aligned after pushing changes into Layer 1.
+  syncLegacyDroneStateFromLayer1();
 }
 
 function loadDroneLayersFromLS() {
@@ -4664,6 +5244,7 @@ function makeNewDroneLayerTemplate() {
     customHz: 440,
     volume: 0.5, // moderate by default
     pan: 0,
+    depth: 0,
     variants: defaultDroneLayerVariantsForType(type)
   };
 }
@@ -4888,23 +5469,35 @@ function startDroneLayer(layerIndex, effCfg) {
   layerGain.gain.setValueAtTime(clamp(Number(layer.volume) || 0, 0, 1), now);
   nodes.push(layerGain);
 
-  const panNode = (audioCtx.createStereoPanner) ? audioCtx.createStereoPanner() : null;
-  if (panNode) {
-    panNode.pan.setValueAtTime(clamp(Number(layer.pan) || 0, -1, 1), now);
-    nodes.push(panNode);
+    let depthStage = null;
+
+    let panStage = null;
+  let panNode = null;
+  try {
+    const sendBus = masterReverbSend || reverbSendGain || null;
+    depthStage = createDepthStage(audioCtx, droneMasterGain, sendBus, nodes);
+    if (depthStage) {
+      try { applyDepthOnStage(depthStage, clamp(Number(layer.depth) || 0, 0, 1), state.spatialDepthMode, true); } catch (_) {}
+    }
+
+    const panDest = (depthStage && depthStage.input) ? depthStage.input : droneMasterGain;
+    panStage = createPanStage(audioCtx, clamp(Number(layer.pan) || 0, -1, 1), panDest, nodes);
+    if (panStage && panStage.output) panNode = (panStage.type === 'stereo' && panStage.panner) ? panStage.panner : panStage.output;
+  } catch (_) {
+    panStage = null;
+    panNode = null;
   }
 
   // Connect: voices/noise -> groupGain -> variantGain -> layerGain -> pan -> droneMasterGain
   groupGain.connect(variantGain);
   variantGain.connect(layerGain);
-  if (panNode) {
-    layerGain.connect(panNode);
-    panNode.connect(droneMasterGain);
+  if (panStage && panStage.input) {
+    try { layerGain.connect(panStage.input); } catch (_) { try { layerGain.connect(droneMasterGain); } catch (_) {} }
   } else {
-    layerGain.connect(droneMasterGain);
+    try { layerGain.connect(droneMasterGain); } catch (_) {}
   }
 
-  // Tonal voices
+// Tonal voices
   for (const v of (spec.voices || [])) {
     const osc = audioCtx.createOscillator();
     osc.type = v.wave || 'sine';
@@ -4981,6 +5574,8 @@ function startDroneLayer(layerIndex, effCfg) {
     variantGain,
     layerGain,
     panNode,
+    panStage,
+    depthStage,
     nodes,
     voices,
     noise,
@@ -5049,11 +5644,14 @@ function refreshDroneLayer(layerIndex, effCfg) {
     cur.layerGain.gain.cancelScheduledValues(now);
     cur.layerGain.gain.setTargetAtTime(clamp(Number(layer.volume) || 0, 0, 1), now, 0.04);
   } catch (_) {}
-  if (cur.panNode) {
-    try {
-      cur.panNode.pan.cancelScheduledValues(now);
-      cur.panNode.pan.setTargetAtTime(clamp(Number(layer.pan) || 0, -1, 1), now, 0.05);
-    } catch (_) {}
+  if (cur.panStage) {
+    try { setPanOnStage(cur.panStage, layer.pan, now); } catch (_) {}
+  } else if (cur.panNode && cur.panNode.pan) {
+    try { panRampParam(cur.panNode.pan, Number(layer.pan) || 0, now); } catch (_) {}
+  }
+
+  if (cur.depthStage) {
+    try { applyDepthOnStage(cur.depthStage, clamp(Number(layer.depth) || 0, 0, 1), state.spatialDepthMode, false); } catch (_) {}
   }
 
   // Store effective motion rate (for mod tick).
@@ -5367,19 +5965,46 @@ function rebuildDroneLayersUI() {
     const panCtl = document.createElement('div');
     panCtl.className = 'control';
     const panLab = document.createElement('label');
-    panLab.textContent = 'Pan';
+    panLab.textContent = 'Pan ';
+    const panVal = document.createElement('span');
+    panVal.className = 'rg-range-readout';
+    panVal.id = 'droneLayerPanVal_L1';
+    panVal.textContent = '0.0';
+    panLab.appendChild(panVal);
     const panIn = document.createElement('input');
     panIn.type = 'range';
-    panIn.min = '-100';
-    panIn.max = '100';
-    panIn.step = '1';
+    panIn.min = '-1';
+    panIn.max = '1';
+    panIn.step = '0.1';
     panIn.id = 'droneLayerPan_L1';
     panCtl.appendChild(panLab);
     panCtl.appendChild(panIn);
 
+
+
+    const depthCtl = document.createElement('div');
+    depthCtl.className = 'control';
+    const depthLab = document.createElement('label');
+    depthLab.textContent = 'Depth ';
+    const depthVal = document.createElement('span');
+    depthVal.className = 'rg-range-readout';
+    depthVal.id = 'droneLayerDepthVal_L1';
+    depthVal.textContent = '0.00';
+    depthLab.appendChild(depthVal);
+    const depthIn = document.createElement('input');
+    depthIn.type = 'range';
+    depthIn.min = '0';
+    depthIn.max = '1';
+    depthIn.step = '0.01';
+    depthIn.id = 'droneLayerDepth_L1';
+    depthCtl.appendChild(depthLab);
+    depthCtl.appendChild(depthIn);
+
+
     layer1Body.appendChild(followCtl);
     layer1Body.appendChild(volCtl);
     layer1Body.appendChild(panCtl);
+    layer1Body.appendChild(depthCtl);
 
     followBtn.addEventListener('click', () => {
       ensureDroneLayersState();
@@ -5401,7 +6026,19 @@ function rebuildDroneLayersUI() {
     panIn.addEventListener('input', () => {
       ensureDroneLayersState();
       const l1 = state.droneLayers[0];
-      l1.pan = clamp(Number(panIn.value) / 100, -1, 1);
+      l1.pan = clamp(Number(panIn.value), -1, 1);
+      const panValEl = document.getElementById('droneLayerPanVal_L1');
+      if (panValEl) panValEl.textContent = fmtPan1(l1.pan);
+      saveDroneLayersToLS();
+      if (state.droneOn) refreshAllDroneLayers();
+    });
+
+    depthIn.addEventListener('input', () => {
+      ensureDroneLayersState();
+      const l1 = state.droneLayers[0];
+      l1.depth = clamp(Number(depthIn.value), 0, 1);
+      const depthValEl = document.getElementById('droneLayerDepthVal_L1');
+      if (depthValEl) depthValEl.textContent = fmtDepth2(l1.depth);
       saveDroneLayersToLS();
       if (state.droneOn) refreshAllDroneLayers();
     });
@@ -5450,6 +6087,7 @@ function rebuildDroneLayersUI() {
       const followBtn = document.getElementById('droneFollowBellKeyBtn_L1');
       const volIn = document.getElementById('droneLayerVolume_L1');
       const panIn = document.getElementById('droneLayerPan_L1');
+      const depthIn = document.getElementById('droneLayerDepth_L1');
       if (followBtn) {
         if (layer.followBellKey) {
           followBtn.classList.add('active');
@@ -5462,7 +6100,12 @@ function rebuildDroneLayersUI() {
         }
       }
       if (volIn) volIn.value = String(Math.round(clamp(Number(layer.volume) || 0, 0, 1) * 100));
-      if (panIn) panIn.value = String(Math.round(clamp(Number(layer.pan) || 0, -1, 1) * 100));
+      if (panIn) panIn.value = fmtPan1(layer.pan);
+      const panValEl = document.getElementById('droneLayerPanVal_L1');
+      if (panValEl) panValEl.textContent = fmtPan1(layer.pan);
+      if (depthIn) depthIn.value = fmtDepth2(layer.depth);
+      const depthValEl = document.getElementById('droneLayerDepthVal_L1');
+      if (depthValEl) depthValEl.textContent = fmtDepth2(layer.depth);
 
       // Hide/show legacy key controls depending on followBellKey.
       const keyCtl = (typeof droneScaleSelect !== 'undefined' && droneScaleSelect) ? droneScaleSelect.closest('.control') : null;
@@ -5534,16 +6177,39 @@ function rebuildDroneLayersUI() {
       const panCtl = document.createElement('div');
       panCtl.className = 'control';
       const panLab = document.createElement('label');
-      panLab.textContent = 'Pan';
+      panLab.textContent = 'Pan ';
+      const panVal2 = document.createElement('span');
+      panVal2.className = 'rg-range-readout';
+      panVal2.textContent = fmtPan1(layer.pan);
+      panLab.appendChild(panVal2);
       const panIn2 = document.createElement('input');
       panIn2.type = 'range';
-      panIn2.min = '-100';
-      panIn2.max = '100';
-      panIn2.step = '1';
-      panIn2.value = String(Math.round(clamp(Number(layer.pan) || 0, -1, 1) * 100));
+      panIn2.min = '-1';
+      panIn2.max = '1';
+      panIn2.step = '0.1';
+      panIn2.value = fmtPan1(layer.pan);
       panCtl.appendChild(panLab);
       panCtl.appendChild(panIn2);
       shell.body.appendChild(panCtl);
+
+      // Depth
+      const depthCtl = document.createElement('div');
+      depthCtl.className = 'control';
+      const depthLab = document.createElement('label');
+      depthLab.textContent = 'Depth ';
+      const depthVal2 = document.createElement('span');
+      depthVal2.className = 'rg-range-readout';
+      depthVal2.textContent = fmtDepth2(layer.depth);
+      depthLab.appendChild(depthVal2);
+      const depthIn2 = document.createElement('input');
+      depthIn2.type = 'range';
+      depthIn2.min = '0';
+      depthIn2.max = '1';
+      depthIn2.step = '0.01';
+      depthIn2.value = fmtDepth2(layer.depth);
+      depthCtl.appendChild(depthLab);
+      depthCtl.appendChild(depthIn2);
+      shell.body.appendChild(depthCtl);
 
       // Variants (clone)
       const varCtl = cloneControlByChildId('droneVariantsAnchor', `_L${i + 1}`);
@@ -5608,7 +6274,16 @@ function rebuildDroneLayersUI() {
       });
       panIn2.addEventListener('input', () => {
         ensureDroneLayersState();
-        layer.pan = clamp(Number(panIn2.value) / 100, -1, 1);
+        layer.pan = clamp(Number(panIn2.value), -1, 1);
+        try { panVal2.textContent = fmtPan1(layer.pan); } catch (_) {}
+        saveDroneLayersToLS();
+        if (state.droneOn) refreshAllDroneLayers();
+      });
+
+      depthIn2.addEventListener('input', () => {
+        ensureDroneLayersState();
+        layer.depth = clamp(Number(depthIn2.value), 0, 1);
+        try { depthVal2.textContent = fmtDepth2(layer.depth); } catch (_) {}
         saveDroneLayersToLS();
         if (state.droneOn) refreshAllDroneLayers();
       });
@@ -7331,6 +8006,8 @@ function rebuildBellFrequencies() {
     if (!Array.isArray(state.bellVolOverride) || state.bellVolOverride.length < 13) state.bellVolOverride = new Array(13).fill(null);
     if (!Array.isArray(state.bellKeyOverride) || state.bellKeyOverride.length < 13) state.bellKeyOverride = new Array(13).fill(null);
     if (!Array.isArray(state.bellOctaveOverride) || state.bellOctaveOverride.length < 13) state.bellOctaveOverride = new Array(13).fill(null);
+    if (!Array.isArray(state.bellPan) || state.bellPan.length < 13) state.bellPan = new Array(13).fill(0);
+    if (!Array.isArray(state.bellDepth) || state.bellDepth.length < 13) state.bellDepth = new Array(13).fill(0);
   }
 
   function loadBellOverridesFromLS() {
@@ -7385,7 +8062,51 @@ function rebuildBellFrequencies() {
         state.bellOctaveOverride[b] = clamp(v, 1, 6);
       }
     }
-  }
+  
+
+    // v014_p045a_spatial_pan_only
+    const panObj = safeJsonParse(safeGetLS(LS_BELL_PAN) || '') || null;
+    if (panObj && typeof panObj === 'object') {
+      if (Array.isArray(panObj)) {
+        for (let b = 1; b <= 12; b++) {
+          const v = Number(panObj[b]);
+          if (!Number.isFinite(v)) continue;
+          state.bellPan[b] = clamp(v, -1, 1);
+        }
+      } else {
+        for (const k in panObj) {
+          if (!Object.prototype.hasOwnProperty.call(panObj, k)) continue;
+          const b = parseInt(k, 10);
+          if (!Number.isFinite(b) || b < 1 || b > 12) continue;
+          const v = Number(panObj[k]);
+          if (!Number.isFinite(v)) continue;
+          state.bellPan[b] = clamp(v, -1, 1);
+        }
+      }
+    }
+
+
+    // v014_p045b_spatial_depth_and_send
+    const depthObj = safeJsonParse(safeGetLS(LS_BELL_DEPTH) || '') || null;
+    if (depthObj && typeof depthObj === 'object') {
+      if (Array.isArray(depthObj)) {
+        for (let b = 1; b <= 12; b++) {
+          const v = Number(depthObj[b]);
+          if (!Number.isFinite(v)) continue;
+          state.bellDepth[b] = clamp(v, 0, 1);
+        }
+      } else {
+        for (const k in depthObj) {
+          if (!Object.prototype.hasOwnProperty.call(depthObj, k)) continue;
+          const b = parseInt(String(k), 10) || 0;
+          if (b < 1 || b > 12) continue;
+          const v = Number(depthObj[k]);
+          if (!Number.isFinite(v)) continue;
+          state.bellDepth[b] = clamp(v, 0, 1);
+        }
+      }
+    }
+}
 
   function saveBellKeyOverridesToLS() {
     ensureBellOverridesArrays();
@@ -7439,7 +8160,150 @@ function rebuildBellFrequencies() {
     else safeSetLS(LS_BELL_VOL_OVERRIDE, JSON.stringify(out));
   }
 
+  function saveBellPanToLS() {
+    ensureBellOverridesArrays();
+    const out = {};
+    for (let b = 1; b <= 12; b++) {
+      const v0 = Number(state.bellPan[b]);
+      if (!Number.isFinite(v0)) continue;
+      const v = clamp(v0, -1, 1);
+      if (Math.abs(v) < 0.0005) continue;
+      out[b] = v;
+    }
+    if (!Object.keys(out).length) safeDelLS(LS_BELL_PAN);
+    else safeSetLS(LS_BELL_PAN, JSON.stringify(out));
+  }
+
+
   // v10_p09_sound_per_bell_chords_overrides: per-bell chord + split-strike overrides (UI + persistence)
+
+  // v014_p05b_bell_timbre_per_bell_overrides (per-bell bell strike timbre overrides)
+  function bellTimbreOverrideDefaults() {
+    return {
+      mode: 'inherit', // 'inherit' | 'override'
+      bellRingLength: BELL_RING_LENGTH_DEFAULT,
+      bellBrightness: BELL_BRIGHTNESS_DEFAULT,
+      bellStrikeHardness: BELL_STRIKE_HARDNESS_DEFAULT,
+      // Internal (not persisted)
+      _fromLS: false,
+    };
+  }
+
+  function sanitizeBellTimbreOverride(raw) {
+    const out = bellTimbreOverrideDefaults();
+    if (raw && typeof raw === 'object') {
+      const m = String(raw.mode || 'inherit');
+      out.mode = (m === 'override') ? 'override' : 'inherit';
+
+      const rl = Number(raw.bellRingLength);
+      if (Number.isFinite(rl)) out.bellRingLength = clamp(rl, 0, 1);
+
+      const br = Number(raw.bellBrightness);
+      if (Number.isFinite(br)) out.bellBrightness = clamp(br, 0, 1);
+
+      const hd = Number(raw.bellStrikeHardness);
+      if (Number.isFinite(hd)) out.bellStrikeHardness = clamp(hd, 0, 1);
+
+      // preserve internal flags when present
+      out._fromLS = !!raw._fromLS;
+    }
+    // snap near defaults to avoid drift
+    if (Math.abs(out.bellRingLength - BELL_RING_LENGTH_DEFAULT) < 1e-6) out.bellRingLength = BELL_RING_LENGTH_DEFAULT;
+    if (Math.abs(out.bellBrightness - BELL_BRIGHTNESS_DEFAULT) < 1e-6) out.bellBrightness = BELL_BRIGHTNESS_DEFAULT;
+    if (Math.abs(out.bellStrikeHardness - BELL_STRIKE_HARDNESS_DEFAULT) < 1e-6) out.bellStrikeHardness = BELL_STRIKE_HARDNESS_DEFAULT;
+    return out;
+  }
+
+  function ensureBellTimbreOverridesArray() {
+    if (!Array.isArray(state.bellTimbreOverrides) || state.bellTimbreOverrides.length < 13) {
+      state.bellTimbreOverrides = new Array(13);
+      for (let b = 0; b < 13; b++) state.bellTimbreOverrides[b] = bellTimbreOverrideDefaults();
+      return;
+    }
+    for (let b = 0; b < 13; b++) {
+      state.bellTimbreOverrides[b] = sanitizeBellTimbreOverride(state.bellTimbreOverrides[b]);
+    }
+  }
+
+  function loadBellTimbreOverridesFromLS() {
+    ensureBellTimbreOverridesArray();
+    const raw = safeJsonParse(safeGetLS(LS_BELL_TIMBRE_OVERRIDES) || '') || null;
+    if (!raw || typeof raw !== 'object') return;
+    for (const k in raw) {
+      if (!Object.prototype.hasOwnProperty.call(raw, k)) continue;
+      const b = parseInt(k, 10);
+      if (!Number.isFinite(b) || b < 1 || b > 12) continue;
+      const cfg = sanitizeBellTimbreOverride(raw[k]);
+      cfg.mode = 'override';
+      cfg._fromLS = true;
+      state.bellTimbreOverrides[b] = cfg;
+    }
+  }
+
+  function saveBellTimbreOverridesToLS() {
+    ensureBellTimbreOverridesArray();
+    const out = {};
+    for (let b = 1; b <= 12; b++) {
+      const cfg = sanitizeBellTimbreOverride(state.bellTimbreOverrides[b]);
+      state.bellTimbreOverrides[b] = cfg;
+      if (cfg.mode !== 'override') continue;
+      out[b] = {
+        mode: 'override',
+        bellRingLength: cfg.bellRingLength,
+        bellBrightness: cfg.bellBrightness,
+        bellStrikeHardness: cfg.bellStrikeHardness,
+      };
+    }
+    if (!Object.keys(out).length) safeDelLS(LS_BELL_TIMBRE_OVERRIDES);
+    else safeSetLS(LS_BELL_TIMBRE_OVERRIDES, JSON.stringify(out));
+  }
+
+  // Resolve effective bell timbre (global first, then optional per-bell override)
+  function resolveBellTimbreForStrike(bell) {
+    const b = clamp(parseInt(bell, 10) || 0, 1, 12);
+    let rl01 = clamp(Number(state.bellRingLength), 0, 1);
+    let br01 = clamp(Number(state.bellBrightness), 0, 1);
+    let hd01 = clamp(Number(state.bellStrikeHardness), 0, 1);
+
+    ensureBellTimbreOverridesArray();
+    const cfg = sanitizeBellTimbreOverride(state.bellTimbreOverrides[b] || bellTimbreOverrideDefaults());
+    state.bellTimbreOverrides[b] = cfg;
+
+    if (cfg.mode === 'override') {
+      rl01 = clamp(Number(cfg.bellRingLength), 0, 1);
+      br01 = clamp(Number(cfg.bellBrightness), 0, 1);
+      hd01 = clamp(Number(cfg.bellStrikeHardness), 0, 1);
+    }
+    return { bellRingLength: rl01, bellBrightness: br01, bellStrikeHardness: hd01 };
+  }
+
+  // Smoothing: ramp live bell filter frequency to avoid clicks when brightness changes.
+  function rampActiveBellTimbreBrightness(bell) {
+    try {
+      if (!audioCtx || !scheduledBellNodes || !scheduledBellNodes.length) return;
+      const b = clamp(parseInt(bell, 10) || 0, 1, 12);
+      const now = audioCtx.currentTime || 0;
+      const tim = resolveBellTimbreForStrike(b);
+      const br01 = clamp(Number(tim.bellBrightness), 0, 1);
+      const brNeutral = Math.abs(br01 - BELL_BRIGHTNESS_DEFAULT) < 1e-6;
+      const ny = 0.5 * Math.max(8000, Number(audioCtx.sampleRate) || 48000);
+      const maxHz = ny * 0.95;
+      const hzTarget = brNeutral ? maxHz : bellBrightnessCutoffHz(br01, audioCtx.sampleRate);
+      const tau = 0.015;
+
+      for (let i = 0; i < scheduledBellNodes.length; i++) {
+        const n = scheduledBellNodes[i];
+        if (!n || n.bell !== b || !n.lpf || !n.lpf.frequency) continue;
+        if (n.stopAt != null && Number.isFinite(Number(n.stopAt)) && n.stopAt <= now) continue;
+        try {
+          n.lpf.frequency.cancelScheduledValues(now);
+          n.lpf.frequency.setTargetAtTime(hzTarget, now, tau);
+        } catch (_) {}
+      }
+    } catch (_) {}
+  }
+
+
   function bellChordOverrideDefaults() {
     return {
       mode: 'inherit',              // 'inherit' | 'override'
@@ -7741,6 +8605,7 @@ function rebuildBellFrequencies() {
   function syncBellOverridesEffectiveUI() {
     if (!bellOverridesList) return;
     ensureBellOverridesArrays();
+    ensureBellTimbreOverridesArray();
     ensureBellChordOverridesArray();
     const base = clamp(Number(state.bellVolume) || 0, 0, 100);
 
@@ -7783,6 +8648,11 @@ function rebuildBellFrequencies() {
         const chordEl = document.getElementById('bellChordEffective_' + b);
         if (chordEl) chordEl.textContent = bellChordEffectiveLabel(b);
         syncBellChordOverrideRowUI(b);
+
+        // v014_p05b_bell_timbre_per_bell_overrides: per-bell timbre effective label + control visibility
+        const timbreEl = document.getElementById('bellTimbreEffective_' + b);
+        if (timbreEl) timbreEl.textContent = bellTimbreEffectiveLabel(b);
+        syncBellTimbreOverrideRowUI(b);
       } catch (_) {}
     }
   }
@@ -8006,6 +8876,17 @@ function rebuildBellFrequencies() {
       const hzV = (state.bellHzOverride[b] != null && Number.isFinite(Number(state.bellHzOverride[b]))) ? String(state.bellHzOverride[b]) : '';
       const hzSliderV = String(clamp(getBellHz(b), PER_BELL_HZ_SLIDER_MIN, PER_BELL_HZ_SLIDER_MAX));
       const volV = (state.bellVolOverride[b] != null && Number.isFinite(Number(state.bellVolOverride[b]))) ? String(state.bellVolOverride[b]) : '';
+      const panV = fmtPan1(state.bellPan[b]);
+      const depthV = fmtDepth2(state.bellDepth[b]);
+
+
+      // v014_p05b_bell_timbre_per_bell_overrides: per-bell timbre override editor state
+      const tCfg = sanitizeBellTimbreOverride(state.bellTimbreOverrides[b] || bellTimbreOverrideDefaults());
+      state.bellTimbreOverrides[b] = tCfg;
+      const tMode = (String(tCfg.mode || 'inherit') === 'override') ? 'override' : 'inherit';
+      const tRl = fmtDepth2(tCfg.bellRingLength);
+      const tBr = fmtDepth2(tCfg.bellBrightness);
+      const tHd = fmtDepth2(tCfg.bellStrikeHardness);
 
       // v10_p09_sound_per_bell_chords_overrides: per-bell chord editor state
       const cCfg = sanitizeBellChordOverride(state.bellChordOverrides[b] || bellChordOverrideDefaults());
@@ -8077,6 +8958,52 @@ function rebuildBellFrequencies() {
               '<button type="button" class="pill rg-mini" data-act="clearVol" data-bell="' + b + '">Clear</button>' +
             '</div>' +
           '</div>' +
+          '<div class="rg-bell-override-group">' +
+            '<div class="rg-bell-override-group-head">' +
+              '<div class="rg-bell-override-group-title">Pan</div>' +
+              '<div id="bellPanReadout_' + b + '" class="rg-bell-override-effective">' + escAttr(panV) + '</div>' +
+            '</div>' +
+            '<div class="rg-bell-override-group-controls">' +
+              '<input id="bellPan_' + b + '" type="range" min="-1" max="1" step="0.1" value="' + escAttr(panV) + '" />' +
+            '</div>' +
+          '</div>' +
+          '<div class="rg-bell-override-group">' +
+            '<div class="rg-bell-override-group-head">' +
+              '<div class="rg-bell-override-group-title">Depth</div>' +
+              '<div id="bellDepthReadout_' + b + '" class="rg-bell-override-effective">' + escAttr(depthV) + '</div>' +
+            '</div>' +
+            '<div class="rg-bell-override-group-controls">' +
+              '<input id="bellDepth_' + b + '" type="range" min="0" max="1" step="0.01" value="' + escAttr(depthV) + '" />' +
+            '</div>' +
+          '</div>' +
+
+          '<div class="rg-bell-override-group rg-bell-override-group--timbre">' +
+            '<div class="rg-bell-override-group-head">' +
+              '<div class="rg-bell-override-group-title">Timbre override</div>' +
+              '<div id="bellTimbreEffective_' + b + '" class="rg-bell-override-effective"></div>' +
+            '</div>' +
+            '<div class="rg-bell-override-group-controls rg-bell-timbre-controls">' +
+              '<select id="bellTimbreMode_' + b + '" aria-label="Timbre override mode for bell ' + g + '">' +
+                '<option value="inherit"' + (tMode === 'inherit' ? ' selected' : '') + '>Inherit (global)</option>' +
+                '<option value="override"' + (tMode === 'override' ? ' selected' : '') + '>Override</option>' +
+              '</select>' +
+              '<div id="bellTimbreOverrideBody_' + b + '" class="rg-bell-timbre-body' + (tMode === 'override' ? '' : ' hidden') + '">' +
+                '<div class="rg-bell-timbre-row">' +
+                  '<label for="bellTimbreRingLength_' + b + '">Ring Length <span id="bellTimbreRingLengthValue_' + b + '" class="rg-bell-timbre-value">' + escAttr(tRl) + '</span></label>' +
+                  '<input id="bellTimbreRingLength_' + b + '" type="range" min="0" max="1" step="0.01" value="' + escAttr(tRl) + '" />' +
+                '</div>' +
+                '<div class="rg-bell-timbre-row">' +
+                  '<label for="bellTimbreBrightness_' + b + '">Brightness <span id="bellTimbreBrightnessValue_' + b + '" class="rg-bell-timbre-value">' + escAttr(tBr) + '</span></label>' +
+                  '<input id="bellTimbreBrightness_' + b + '" type="range" min="0" max="1" step="0.01" value="' + escAttr(tBr) + '" />' +
+                '</div>' +
+                '<div class="rg-bell-timbre-row">' +
+                  '<label for="bellTimbreHardness_' + b + '">Hardness <span id="bellTimbreHardnessValue_' + b + '" class="rg-bell-timbre-value">' + escAttr(tHd) + '</span></label>' +
+                  '<input id="bellTimbreHardness_' + b + '" type="range" min="0" max="1" step="0.01" value="' + escAttr(tHd) + '" />' +
+                '</div>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+
           '<div class="rg-bell-override-group rg-bell-override-group--chord">' +
             '<div class="rg-bell-override-group-head">' +
               '<div class="rg-bell-override-group-title">Chord</div>' +
@@ -8152,6 +9079,56 @@ function rebuildBellFrequencies() {
   }
 
   // v10_p09_sound_per_bell_chords_overrides: per-bell chord UI helpers
+  // v014_p05b_bell_timbre_per_bell_overrides: per-bell timbre override UI helpers
+  function bellTimbreEffectiveLabel(bell) {
+    const b = clamp(parseInt(bell, 10) || 0, 1, 12);
+    ensureBellTimbreOverridesArray();
+    const cfg = sanitizeBellTimbreOverride(state.bellTimbreOverrides[b] || bellTimbreOverrideDefaults());
+    state.bellTimbreOverrides[b] = cfg;
+    return (cfg.mode === 'override') ? 'Override' : 'Inherit';
+  }
+
+  function syncBellTimbreOverrideRowUI(bell) {
+    const b = clamp(parseInt(bell, 10) || 0, 1, 12);
+    if (!bellOverridesList) return;
+    ensureBellTimbreOverridesArray();
+    const cfg = sanitizeBellTimbreOverride(state.bellTimbreOverrides[b] || bellTimbreOverrideDefaults());
+    state.bellTimbreOverrides[b] = cfg;
+
+    const eff = document.getElementById('bellTimbreEffective_' + b);
+    if (eff) eff.textContent = (cfg.mode === 'override') ? 'Override' : 'Inherit';
+
+    const body = document.getElementById('bellTimbreOverrideBody_' + b);
+    if (body) body.classList.toggle('hidden', cfg.mode !== 'override');
+
+    const sel = document.getElementById('bellTimbreMode_' + b);
+    if (sel) {
+      try { sel.value = (cfg.mode === 'override') ? 'override' : 'inherit'; } catch (_) {}
+    }
+
+    const rl = document.getElementById('bellTimbreRingLength_' + b);
+    if (rl) {
+      try { rl.value = String(clamp(Number(cfg.bellRingLength), 0, 1)); } catch (_) {}
+    }
+    const rlV = document.getElementById('bellTimbreRingLengthValue_' + b);
+    if (rlV) rlV.textContent = fmtDepth2(cfg.bellRingLength);
+
+    const br = document.getElementById('bellTimbreBrightness_' + b);
+    if (br) {
+      try { br.value = String(clamp(Number(cfg.bellBrightness), 0, 1)); } catch (_) {}
+    }
+    const brV = document.getElementById('bellTimbreBrightnessValue_' + b);
+    if (brV) brV.textContent = fmtDepth2(cfg.bellBrightness);
+
+    const hd = document.getElementById('bellTimbreHardness_' + b);
+    if (hd) {
+      try { hd.value = String(clamp(Number(cfg.bellStrikeHardness), 0, 1)); } catch (_) {}
+    }
+    const hdV = document.getElementById('bellTimbreHardnessValue_' + b);
+    if (hdV) hdV.textContent = fmtDepth2(cfg.bellStrikeHardness);
+  }
+
+
   function bellChordToneCountHint(cfg) {
     const c = cfg || bellChordOverrideDefaults();
     if (c && c._intervals && Array.isArray(c._intervals) && c._intervals.length) return clamp(c._intervals.length, 1, 6);
@@ -8265,12 +9242,15 @@ function rebuildBellFrequencies() {
     state.bellVolOverride = new Array(13).fill(null);
     state.bellKeyOverride = new Array(13).fill(null);
     state.bellOctaveOverride = new Array(13).fill(null);
+    state.bellTimbreOverrides = new Array(13);
+    for (let b = 0; b < 13; b++) state.bellTimbreOverrides[b] = bellTimbreOverrideDefaults();
     state.bellChordOverrides = new Array(13);
     for (let b = 0; b < 13; b++) state.bellChordOverrides[b] = bellChordOverrideDefaults();
     safeDelLS(LS_BELL_HZ_OVERRIDE);
     safeDelLS(LS_BELL_VOL_OVERRIDE);
     safeDelLS(LS_BELL_KEY_OVERRIDE);
     safeDelLS(LS_BELL_OCT_OVERRIDE);
+    safeDelLS(LS_BELL_TIMBRE_OVERRIDES);
     safeDelLS(LS_BELL_CHORD_OVERRIDES);
     rebuildBellOverridesUI();
   }
@@ -12922,6 +13902,62 @@ function rebuildBellFrequencies() {
           state.bellVolOverride[b] = Number.isFinite(v) ? clamp(v, 0, 100) : null;
         }
         syncBellOverridesEffectiveUI();
+      } else if (el.id.startsWith('bellPan_')) {
+        const b = parseInt(el.id.slice('bellPan_'.length), 10) || 0;
+        if (b < 1 || b > 12) return;
+        const v = parseFloat(String(el.value || '').trim());
+        state.bellPan[b] = Number.isFinite(v) ? clamp(v, -1, 1) : 0;
+        const ro = document.getElementById('bellPanReadout_' + b);
+        if (ro) ro.textContent = fmtPan1(state.bellPan[b]);
+        try { applyBellPanToAudio(b); } catch (_) {}
+      } else if (el.id.startsWith('bellDepth_')) {
+        const b = parseInt(el.id.slice('bellDepth_'.length), 10) || 0;
+        if (b < 1 || b > 12) return;
+        const v = parseFloat(String(el.value || '').trim());
+        state.bellDepth[b] = Number.isFinite(v) ? clamp(v, 0, 1) : 0;
+        const ro = document.getElementById('bellDepthReadout_' + b);
+        if (ro) ro.textContent = fmtDepth2(state.bellDepth[b]);
+        try { applyBellDepthToAudio(b); } catch (_) {}
+      } else if (el.id.startsWith('bellTimbreRingLength_')) {
+        const b = parseInt(el.id.slice('bellTimbreRingLength_'.length), 10) || 0;
+        if (b < 1 || b > 12) return;
+        ensureBellTimbreOverridesArray();
+        const cfg = sanitizeBellTimbreOverride(state.bellTimbreOverrides[b] || bellTimbreOverrideDefaults());
+        cfg.mode = 'override';
+        cfg._fromLS = true;
+        const v = parseFloat(String(el.value || '').trim());
+        cfg.bellRingLength = Number.isFinite(v) ? clamp(v, 0, 1) : cfg.bellRingLength;
+        state.bellTimbreOverrides[b] = sanitizeBellTimbreOverride(cfg);
+        const ro = document.getElementById('bellTimbreRingLengthValue_' + b);
+        if (ro) ro.textContent = fmtDepth2(state.bellTimbreOverrides[b].bellRingLength);
+        try { syncBellTimbreOverrideRowUI(b); } catch (_) {}
+      } else if (el.id.startsWith('bellTimbreBrightness_')) {
+        const b = parseInt(el.id.slice('bellTimbreBrightness_'.length), 10) || 0;
+        if (b < 1 || b > 12) return;
+        ensureBellTimbreOverridesArray();
+        const cfg = sanitizeBellTimbreOverride(state.bellTimbreOverrides[b] || bellTimbreOverrideDefaults());
+        cfg.mode = 'override';
+        cfg._fromLS = true;
+        const v = parseFloat(String(el.value || '').trim());
+        cfg.bellBrightness = Number.isFinite(v) ? clamp(v, 0, 1) : cfg.bellBrightness;
+        state.bellTimbreOverrides[b] = sanitizeBellTimbreOverride(cfg);
+        const ro = document.getElementById('bellTimbreBrightnessValue_' + b);
+        if (ro) ro.textContent = fmtDepth2(state.bellTimbreOverrides[b].bellBrightness);
+        try { rampActiveBellTimbreBrightness(b); } catch (_) {}
+        try { syncBellTimbreOverrideRowUI(b); } catch (_) {}
+      } else if (el.id.startsWith('bellTimbreHardness_')) {
+        const b = parseInt(el.id.slice('bellTimbreHardness_'.length), 10) || 0;
+        if (b < 1 || b > 12) return;
+        ensureBellTimbreOverridesArray();
+        const cfg = sanitizeBellTimbreOverride(state.bellTimbreOverrides[b] || bellTimbreOverrideDefaults());
+        cfg.mode = 'override';
+        cfg._fromLS = true;
+        const v = parseFloat(String(el.value || '').trim());
+        cfg.bellStrikeHardness = Number.isFinite(v) ? clamp(v, 0, 1) : cfg.bellStrikeHardness;
+        state.bellTimbreOverrides[b] = sanitizeBellTimbreOverride(cfg);
+        const ro = document.getElementById('bellTimbreHardnessValue_' + b);
+        if (ro) ro.textContent = fmtDepth2(state.bellTimbreOverrides[b].bellStrikeHardness);
+        try { syncBellTimbreOverrideRowUI(b); } catch (_) {}
       } else if (el.id.startsWith('bellChordStepMs_')) {
         const b = parseInt(el.id.slice('bellChordStepMs_'.length), 10) || 0;
         if (b < 1 || b > 12) return;
@@ -12990,6 +14026,83 @@ function rebuildBellFrequencies() {
         did = true;
         markUserTouchedConfig();
         saveBellVolOverridesToLS();
+      } else if (el.id.startsWith('bellPan_')) {
+        did = true;
+        markUserTouchedConfig();
+        saveBellPanToLS();
+      } else if (el.id.startsWith('bellDepth_')) {
+        did = true;
+        markUserTouchedConfig();
+        saveBellDepthToLS();
+      } else if (el.id.startsWith('bellTimbreMode_')) {
+        did = true;
+        markUserTouchedConfig();
+        ensureBellTimbreOverridesArray();
+        const b = parseInt(el.id.slice('bellTimbreMode_'.length), 10) || 0;
+        if (b < 1 || b > 12) return;
+        const newMode = (String(el.value || 'inherit') === 'override') ? 'override' : 'inherit';
+        const cfg = sanitizeBellTimbreOverride(state.bellTimbreOverrides[b] || bellTimbreOverrideDefaults());
+
+        if (newMode === 'override') {
+          // Seed from current global timbre so enabling override does not change sound.
+          if (!cfg._fromLS && cfg.mode !== 'override') {
+            cfg.bellRingLength = clamp(Number(state.bellRingLength), 0, 1);
+            cfg.bellBrightness = clamp(Number(state.bellBrightness), 0, 1);
+            cfg.bellStrikeHardness = clamp(Number(state.bellStrikeHardness), 0, 1);
+          }
+          cfg.mode = 'override';
+          cfg._fromLS = true;
+        } else {
+          cfg.mode = 'inherit';
+        }
+
+        state.bellTimbreOverrides[b] = sanitizeBellTimbreOverride(cfg);
+        saveBellTimbreOverridesToLS();
+        try { syncBellTimbreOverrideRowUI(b); } catch (_) {}
+        try { rampActiveBellTimbreBrightness(b); } catch (_) {}
+      } else if (el.id.startsWith('bellTimbreRingLength_')) {
+        did = true;
+        markUserTouchedConfig();
+        ensureBellTimbreOverridesArray();
+        const b = parseInt(el.id.slice('bellTimbreRingLength_'.length), 10) || 0;
+        if (b < 1 || b > 12) return;
+        const cfg = sanitizeBellTimbreOverride(state.bellTimbreOverrides[b] || bellTimbreOverrideDefaults());
+        cfg.mode = 'override';
+        cfg._fromLS = true;
+        const v = parseFloat(String(el.value || '').trim());
+        if (Number.isFinite(v)) cfg.bellRingLength = clamp(v, 0, 1);
+        state.bellTimbreOverrides[b] = sanitizeBellTimbreOverride(cfg);
+        saveBellTimbreOverridesToLS();
+        try { syncBellTimbreOverrideRowUI(b); } catch (_) {}
+      } else if (el.id.startsWith('bellTimbreBrightness_')) {
+        did = true;
+        markUserTouchedConfig();
+        ensureBellTimbreOverridesArray();
+        const b = parseInt(el.id.slice('bellTimbreBrightness_'.length), 10) || 0;
+        if (b < 1 || b > 12) return;
+        const cfg = sanitizeBellTimbreOverride(state.bellTimbreOverrides[b] || bellTimbreOverrideDefaults());
+        cfg.mode = 'override';
+        cfg._fromLS = true;
+        const v = parseFloat(String(el.value || '').trim());
+        if (Number.isFinite(v)) cfg.bellBrightness = clamp(v, 0, 1);
+        state.bellTimbreOverrides[b] = sanitizeBellTimbreOverride(cfg);
+        saveBellTimbreOverridesToLS();
+        try { rampActiveBellTimbreBrightness(b); } catch (_) {}
+        try { syncBellTimbreOverrideRowUI(b); } catch (_) {}
+      } else if (el.id.startsWith('bellTimbreHardness_')) {
+        did = true;
+        markUserTouchedConfig();
+        ensureBellTimbreOverridesArray();
+        const b = parseInt(el.id.slice('bellTimbreHardness_'.length), 10) || 0;
+        if (b < 1 || b > 12) return;
+        const cfg = sanitizeBellTimbreOverride(state.bellTimbreOverrides[b] || bellTimbreOverrideDefaults());
+        cfg.mode = 'override';
+        cfg._fromLS = true;
+        const v = parseFloat(String(el.value || '').trim());
+        if (Number.isFinite(v)) cfg.bellStrikeHardness = clamp(v, 0, 1);
+        state.bellTimbreOverrides[b] = sanitizeBellTimbreOverride(cfg);
+        saveBellTimbreOverridesToLS();
+        try { syncBellTimbreOverrideRowUI(b); } catch (_) {}
       } else if (el.id.startsWith('bellKeyOverride_')) {
         did = true;
         markUserTouchedConfig();
@@ -13695,6 +14808,35 @@ function rebuildBellFrequencies() {
     try { syncBellOverridesEffectiveUI(); } catch (_) {}
   });
 
+  // v014_p05a_bell_timbre_global (Sound → Bells: global bell timbre)
+  if (bellRingLength) {
+    bellRingLength.addEventListener('input', () => {
+      markUserTouchedConfig();
+      state.bellRingLength = clamp(Number(bellRingLength.value) || 0, 0, 1);
+      if (bellRingLengthValue) bellRingLengthValue.textContent = fmtDepth2(state.bellRingLength);
+      saveBellTimbreToLS();
+    });
+  }
+
+  if (bellBrightness) {
+    bellBrightness.addEventListener('input', () => {
+      markUserTouchedConfig();
+      state.bellBrightness = clamp(Number(bellBrightness.value) || 0, 0, 1);
+      if (bellBrightnessValue) bellBrightnessValue.textContent = fmtDepth2(state.bellBrightness);
+      saveBellTimbreToLS();
+      try { for (let bb = 1; bb <= state.stage; bb++) rampActiveBellTimbreBrightness(bb); } catch (_) {}
+    });
+  }
+
+  if (bellStrikeHardness) {
+    bellStrikeHardness.addEventListener('input', () => {
+      markUserTouchedConfig();
+      state.bellStrikeHardness = clamp(Number(bellStrikeHardness.value) || 0, 0, 1);
+      if (bellStrikeHardnessValue) bellStrikeHardnessValue.textContent = fmtDepth2(state.bellStrikeHardness);
+      saveBellTimbreToLS();
+    });
+  }
+
 
 // v014_p03_master_fx_limiter_reverb: Master / Output controls (FX routing is handled in ensureMasterFxGraph)
 if (masterLimiterToggle) {
@@ -13757,6 +14899,18 @@ if (masterReverbHighCut) {
     saveMasterFxToLS();
   });
 }
+
+// v014_p045b_spatial_depth_and_send
+if (spatialDepthModeSelect) {
+  spatialDepthModeSelect.addEventListener('change', () => {
+    markUserTouchedConfig();
+    state.spatialDepthMode = sanitizeSpatialDepthMode(spatialDepthModeSelect.value);
+    saveSpatialDepthModeToLS();
+    syncSpatialDepthModeUI();
+    try { applySpatialDepthModeToAudio(); } catch (_) {}
+  });
+}
+
 
   // v10_p08_sound_global_chords_splitstrike: global chord controls
   if (globalChordOnOffBtn) {
@@ -13922,10 +15076,9 @@ if (masterReverbHighCut) {
     markUserTouchedConfig();
     state.droneType = droneTypeSelect.value;
     syncDroneVariantsForType(state.droneType);
-    syncDroneVariantsUI();
-
     // v014_p04_multi_drone_layers: keep Layer 1 + layers persistence in sync.
     syncLayer1FromLegacyDroneState();
+    syncDroneVariantsUI();
     saveDroneLayersToLS();
     rebuildDroneLayersUI();
 
@@ -14361,6 +15514,16 @@ if (masterReverbHighCut) {
 
     loadBellOverridesFromLS();
     loadBellChordOverridesFromLS();
+    loadBellTimbreOverridesFromLS();
+    loadSpatialDepthModeFromLS();
+    // v014_p05a_bell_timbre_global
+    {
+      const bt = loadBellTimbreFromLS();
+      state.bellRingLength = bt.bellRingLength;
+      state.bellBrightness = bt.bellBrightness;
+      state.bellStrikeHardness = bt.bellStrikeHardness;
+      try { syncBellTimbreUI(); } catch (_) {}
+    }
 
     // v10_p08_sound_global_chords_splitstrike
     state.globalChord = loadGlobalChordFromLS();
@@ -14503,6 +15666,7 @@ if (masterReverbHighCut) {
     syncDroneVariantsUI();
     loadMasterFxFromLS();
     syncMasterFxUI();
+    try { syncSpatialDepthModeUI(); } catch (_) {}
 
 
     // Sliders/defaults

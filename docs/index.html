@@ -320,6 +320,23 @@
               </div>
               </div>
 
+              <!-- v014_p05a_bell_timbre_global: global Bell Timbre controls (bells only) -->
+              <div class="rg-sound-subsection-title">BELL TIMBRE</div>
+              <div id="soundBellTimbreControls" class="rg-controls rg-sound-bell-timbre" aria-label="Bell timbre">
+                <div class="control">
+                  <label for="bellRingLength">Ring Length: <span id="bellRingLengthValue">0.50</span></label>
+                  <input id="bellRingLength" type="range" min="0" max="1" step="0.01" value="0.50" />
+                </div>
+                <div class="control">
+                  <label for="bellBrightness">Brightness: <span id="bellBrightnessValue">0.50</span></label>
+                  <input id="bellBrightness" type="range" min="0" max="1" step="0.01" value="0.50" />
+                </div>
+                <div class="control">
+                  <label for="bellStrikeHardness">Strike Hardness: <span id="bellStrikeHardnessValue">0.00</span></label>
+                  <input id="bellStrikeHardness" type="range" min="0" max="1" step="0.01" value="0" />
+                </div>
+              </div>
+
               <div id="bellOverridesControl" class="control rg-bell-overrides-control" aria-label="Per-bell sound">
                 <label>Per-bell sound</label>
                 <div class="rg-bell-overrides-actions">
@@ -370,6 +387,15 @@
     <div class="control">
       <label for="masterReverbMix">Mix</label>
       <input id="masterReverbMix" type="range" min="0" max="1" step="0.01" value="0.15" />
+    </div>
+    <div class="control">
+      <label for="spatialDepthModeSelect">Depth curve</label>
+      <select id="spatialDepthModeSelect">
+        <option value="subtle">Subtle</option>
+        <option value="normal" selected>Normal</option>
+        <option value="strong">Strong</option>
+      </select>
+      <div class="control-note rg-muted">Scales Depth strength (dry, filter, reverb send).</div>
     </div>
     <div class="control">
       <label for="masterReverbHighCut">High-cut (Hz)</label>
