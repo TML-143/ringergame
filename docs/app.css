@@ -113,7 +113,7 @@ h1{
   align-items:center;
   justify-content:center;
   padding:18px;
-  background:rgba(0,0,0,0.55);
+  background:rgba(0,0,0,0.78);
   z-index:120; /* higher than countdown overlay */
 }
 #rgMenuPanel{
@@ -195,6 +195,141 @@ h1{
 #rgStopRunModalClose:active{ transform:translateY(1px); }
 
 
+/* v015_p02_export_settings_json_generate_copy_save: Export settings metadata modal */
+#rgExportSettingsModal{
+  position:fixed;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:18px;
+  background:rgba(0,0,0,0.55);
+  z-index:10060;
+}
+
+#rgExportSettingsModal .rg-export-panel{
+  width:min(520px, 94vw);
+  max-height:min(80vh, 640px);
+  overflow:auto;
+  position:relative;
+}
+
+#rgExportSettingsModal .rg-export-body{
+  padding:16px 16px 14px;
+}
+
+#rgExportSettingsModal .rg-export-head{
+  padding-right:44px; /* keep text clear of the X */
+}
+
+#rgExportSettingsModal .rg-export-title{
+  font-size:16px;
+  font-weight:700;
+  color:var(--text);
+}
+
+#rgExportSettingsModal .rg-export-sub{
+  margin-top:6px;
+  font-size:12px;
+  line-height:1.35;
+}
+
+#rgExportSettingsModal .rg-export-actions{
+  display:flex;
+  justify-content:flex-end;
+  gap:10px;
+  margin-top:14px;
+}
+
+#rgExportSettingsModalClose{
+  position:absolute;
+  top:10px;
+  right:10px;
+  width:34px;
+  height:34px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,0.12);
+  background:rgba(255,255,255,0.05);
+  color:var(--text);
+  cursor:pointer;
+  display:grid;
+  place-items:center;
+  font-size:18px;
+  line-height:1;
+}
+
+#rgExportSettingsModalClose:hover{ background:rgba(255,255,255,0.08); }
+#rgExportSettingsModalClose:active{ transform:translateY(1px); }
+
+
+/* v015_p03_import_settings_json_load_text_file: Import settings result modal */
+#rgImportSettingsModal{
+  position:fixed;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:18px;
+  background:rgba(0,0,0,0.55);
+  z-index:10060;
+}
+
+#rgImportSettingsModal .rg-import-panel{
+  width:min(520px, 94vw);
+  max-height:min(80vh, 560px);
+  overflow:auto;
+  position:relative;
+  background:rgba(8,12,28,0.96);
+}
+
+#rgImportSettingsModal .rg-import-body{
+  padding:16px 16px 14px;
+}
+
+#rgImportSettingsModal .rg-import-title{
+  font-size:16px;
+  font-weight:700;
+  margin:0 0 10px;
+  padding-right:44px; /* keep text clear of the X */
+}
+
+#rgImportSettingsModal .rg-import-lines{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  margin:0 0 12px;
+}
+
+#rgImportSettingsModal .rg-import-line{
+  font-size:13px;
+  line-height:1.35;
+}
+
+#rgImportSettingsModal .rg-import-actions{
+  display:flex;
+  justify-content:flex-end;
+  gap:10px;
+  margin-top:6px;
+}
+
+#rgImportSettingsModalClose{
+  position:absolute;
+  top:8px;
+  right:10px;
+  border:none;
+  background:transparent;
+  cursor:pointer;
+  font-size:22px;
+  line-height:1;
+  padding:4px 8px;
+  opacity:0.85;
+}
+
+#rgImportSettingsModalClose:hover{ opacity:1.0; }
+#rgImportSettingsModalClose:active{ transform:translateY(1px); }
+
+
+
 #controls{
   display:flex;
   flex-wrap:wrap;
@@ -214,7 +349,7 @@ h1{
 
 .control{display:flex;flex-direction:column;gap:6px;min-width:120px}
 .control > label{font-size:12px;color:rgba(232,238,255,0.75)}
-.control input, .control select{
+.control input, .control select, .control textarea{
   appearance:none;
   background:rgba(255,255,255,0.05);
   border:1px solid rgba(255,255,255,0.12);
@@ -224,14 +359,43 @@ h1{
   outline:none;
 }
 
+.control textarea{
+  resize:vertical;
+  min-height:180px;
+  line-height:1.35;
+}
+
 
 /* Darker native dropdown menus (Chrome/Windows) */
 select { color-scheme: dark; }
 select option { background-color: #0b1026; color: #e8eeff; }
 
-.control input:focus,.control select:focus{border-color:rgba(249,199,79,0.40);box-shadow:0 0 0 3px rgba(249,199,79,0.14)}
+.control input:focus,.control select:focus,.control textarea:focus{border-color:rgba(249,199,79,0.40);box-shadow:0 0 0 3px rgba(249,199,79,0.14)}
 
-.control input:disabled,.control select:disabled{opacity:0.45;cursor:not-allowed}
+.control input:disabled,.control select:disabled,.control textarea:disabled{opacity:0.45;cursor:not-allowed}
+
+/* v015_p01_load_screen_nav_shell */
+.rg-mono{
+  font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size:12px;
+}
+
+.rg-load-shell{display:flex;flex-direction:column;gap:12px;}
+.rg-load-actions{display:flex;flex-wrap:wrap;gap:10px 14px;}
+.rg-load-textarea{
+  width:100%;
+  min-height:320px;
+  appearance:none;
+  background:rgba(255,255,255,0.05);
+  border:1px solid rgba(255,255,255,0.12);
+  border-radius:12px;
+  padding:10px 12px;
+  color:var(--text);
+  outline:none;
+  resize:vertical;
+  line-height:1.35;
+}
+.rg-load-textarea:focus{border-color:rgba(249,199,79,0.40);box-shadow:0 0 0 3px rgba(249,199,79,0.14)}
 
 .control-buttons{flex-direction:row;gap:10px;min-width:auto;flex-wrap:wrap}
 .control-buttons button{
@@ -1275,7 +1439,7 @@ select option { background-color: #0b1026; color: #e8eeff; }
   flex-direction:column;
   gap:10px;
   padding:12px 14px;
-  background:var(--panel2);
+  background:rgba(5,8,20,0.96);
   border:1px solid var(--stroke2);
   border-radius:18px;
   box-shadow:0 12px 26px rgba(0,0,0,0.35);
@@ -2226,4 +2390,146 @@ select option { background-color: #0b1026; color: #e8eeff; }
 }
 #screenSound .rg-sound-bell-timbre{
   margin:0 0 8px 0;
+}
+/* v015_p02a_load_ui_polish: Load + Export UI polish */
+/* A) Keep Load JSON textarea clear of the fixed hamburger/menu button on narrower widths */
+#screenLoad{ --rg-load-menu-reserve: 0px; }
+@media (max-width: 960px){
+  #screenLoad{ --rg-load-menu-reserve: calc(54px + env(safe-area-inset-right)); }
+}
+#screenLoad .rg-load-textarea{
+  max-width: calc(100% - var(--rg-load-menu-reserve));
+}
+
+/* v015_p03a_load_hotfix_glyphs_typing_ui: prevent Load textarea from clipping into bottom nav */
+#screenLoad .rg-nav{margin-top:14px;padding-top:10px;}
+
+
+/* B) Export settings modal readability (less transparency / higher contrast) */
+#rgExportSettingsModal{
+  background:rgba(0,0,0,0.68);
+}
+#rgExportSettingsModal .rg-export-panel{
+  background:rgba(8,12,28,0.96);
+  border-color:rgba(255,255,255,0.16);
+  box-shadow:0 14px 30px rgba(0,0,0,0.52);
+}
+#rgExportSettingsModal .control > label{
+  color:rgba(232,238,255,0.86);
+}
+#rgExportSettingsModal .rg-export-sub{
+  color:rgba(232,238,255,0.70);
+}
+#rgExportSettingsModal .control input{
+  background:rgba(255,255,255,0.08);
+  border-color:rgba(255,255,255,0.18);
+}
+
+
+/* v015_p04_stats_export_import_and_compare: Export stats toggle + preview */
+#rgExportSettingsModal .rg-export-stats{
+  margin-top:12px;
+  padding:10px 12px;
+  border-radius:12px;
+  background:rgba(255,255,255,0.03);
+  border:1px solid rgba(255,255,255,0.08);
+}
+
+#rgExportSettingsModal .rg-export-stats-toggle{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  font-weight:700;
+  cursor:pointer;
+  user-select:none;
+}
+
+#rgExportSettingsModal .rg-export-stats-toggle input{
+  width:18px;
+  height:18px;
+}
+
+#rgExportSettingsModal .rg-export-stats-preview{
+  margin-top:8px;
+  font-size:0.95em;
+  line-height:1.35;
+  opacity:0.92;
+}
+
+#rgExportSettingsModal .rg-export-stats-preview .muted{
+  opacity:0.75;
+}
+
+#rgExportSettingsModal .rg-export-stats-preview table{
+  width:100%;
+  border-collapse:separate;
+  border-spacing:0;
+  margin-top:8px;
+}
+
+#rgExportSettingsModal .rg-export-stats-preview th,
+#rgExportSettingsModal .rg-export-stats-preview td{
+  padding:6px 8px;
+  text-align:right;
+  font-variant-numeric:tabular-nums;
+}
+
+#rgExportSettingsModal .rg-export-stats-preview th:first-child,
+#rgExportSettingsModal .rg-export-stats-preview td:first-child{
+  text-align:left;
+}
+
+/* v015_p04_stats_export_import_and_compare: Historic stats section */
+#stats .stats-historic{
+  margin-top:14px;
+  padding-top:12px;
+  border-top:1px solid rgba(255,255,255,0.08);
+}
+
+#stats .stats-historic-title{
+  font-weight:800;
+  margin-bottom:8px;
+}
+
+#stats .stats-historic-item{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px 10px;
+  align-items:baseline;
+  padding:6px 0;
+  border-bottom:1px solid rgba(255,255,255,0.06);
+}
+
+#stats .stats-historic-item:last-child{
+  border-bottom:0;
+}
+
+#stats .stats-historic-score{
+  font-weight:900;
+  letter-spacing:0.2px;
+}
+
+#stats .stats-historic-when{
+  opacity:0.78;
+  font-variant-numeric:tabular-nums;
+}
+
+#stats .stats-historic-mae{
+  opacity:0.86;
+  font-variant-numeric:tabular-nums;
+}
+
+
+#stats .stats-historic-label{
+  opacity:0.92;
+}
+
+#stats .stats-historic-details{
+  opacity:0.78;
+}
+
+#stats .stats-historic-note{
+  margin-top:8px;
+  opacity:0.78;
+  font-size:0.95em;
 }

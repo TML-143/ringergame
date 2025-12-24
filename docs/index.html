@@ -23,7 +23,7 @@
     <!-- PWA -->
     <link rel="manifest" href="./manifest.webmanifest" />
 
-    <link rel="stylesheet" href="./app.css" />
+    <link rel="stylesheet" href="./app.css">
   </head>
   <body>
     <div id="app">
@@ -35,6 +35,7 @@
         <button class="rg-hamburger-item" type="button" data-ham="setup" role="menuitem">Setup</button>
         <button class="rg-hamburger-item" type="button" data-ham="view" role="menuitem">View</button>
         <button class="rg-hamburger-item" type="button" data-ham="sound" role="menuitem">Sound</button>
+        <button class="rg-hamburger-item" type="button" data-ham="load" role="menuitem">Load</button>
         <button class="rg-hamburger-item" type="button" data-ham="demo" role="menuitem">Demo</button>
         <button class="rg-hamburger-item" type="button" data-ham="play" role="menuitem">Play</button>
         <div class="rg-hamburger-divider" role="separator" aria-orientation="horizontal"></div>
@@ -55,7 +56,57 @@
           </div>
         </div>
       </div>
-      <div id="screenHome" class="rg-screen rg-active" aria-hidden="false">
+
+      <!-- v015_p02_export_settings_json_generate_copy_save: Export settings metadata modal -->
+      <div id="rgExportSettingsModal" class="rg-export-modal hidden" aria-hidden="true">
+        <div class="rg-export-panel pane" role="dialog" aria-modal="true" aria-label="Export settings">
+          <button id="rgExportSettingsModalClose" class="rg-export-close" type="button" aria-label="Close">×</button>
+          <div class="rg-export-body">
+            <div class="rg-export-head">
+              <div class="rg-export-title">Export settings</div>
+              <div class="rg-export-sub rg-muted">Optional: add a title and your name/nickname. These are embedded in the JSON.</div>
+            </div>
+
+            <div class="control">
+              <label for="exportSettingsTitleInput">Title (optional)</label>
+              <input id="exportSettingsTitleInput" type="text" maxlength="90" placeholder="e.g., Surprise Major practice" autocomplete="off" />
+            </div>
+
+            <div class="control">
+              <label for="exportSettingsNameInput">Name / nickname (optional)</label>
+              <input id="exportSettingsNameInput" type="text" maxlength="60" placeholder="e.g., Sam" autocomplete="off" />
+            </div>
+
+            <div class="rg-export-stats">
+              <label class="rg-export-stats-toggle">
+                <input id="exportSettingsIncludeStats" type="checkbox" />
+                Include stats from most recent run
+              </label>
+              <div id="exportSettingsStatsPreview" class="rg-export-stats-preview"></div>
+            </div>
+
+            <div class="rg-export-actions">
+              <button id="exportSettingsCancelBtn" class="pill" type="button">Cancel</button>
+              <button id="exportSettingsConfirmBtn" class="pill" type="button">Generate</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- v015_p03_import_settings_json_load_text_file: Import settings result modal -->
+      <div id="rgImportSettingsModal" class="rg-import-modal hidden" aria-hidden="true">
+        <div class="rg-import-panel pane" role="dialog" aria-modal="true" aria-label="Import settings">
+          <button id="rgImportSettingsModalClose" class="rg-import-close" type="button" aria-label="Close">×</button>
+          <div class="rg-import-body">
+            <div id="rgImportSettingsModalTitle" class="rg-import-title">Loaded</div>
+            <div id="rgImportSettingsModalLines" class="rg-import-lines"></div>
+            <div class="rg-import-actions">
+              <button id="rgImportSettingsModalOk" class="pill" type="button">OK</button>
+            </div>
+          </div>
+        </div>
+      </div>
+<div id="screenHome" class="rg-screen rg-active" aria-hidden="false">
         <section class="pane rg-splash">
           <div class="rg-screen-body">
             <div class="rg-home" aria-label="Home">
@@ -67,6 +118,7 @@
                 <button id="homeBtnPlay" class="pill" type="button">Setup</button>
                 <button id="homeBtnView" class="pill" type="button">View</button>
                 <button id="homeBtnSound" class="pill" type="button">Sound</button>
+                <button id="homeBtnLoad" class="pill" type="button">Load</button>
               </div>
               <div class="rg-home-bottom" aria-label="Quick start">
                 <button id="homeBtnDemo" class="pill" type="button">Demo</button>
@@ -183,43 +235,35 @@
                 <div class="toggles toggles--mini" role="group" aria-label="Privacy toggles">
                   <label class="toggle"><input id="privacyAudienceCheckbox" type="checkbox" /> Audience measurement</label>
                 </div>
-                <div class="control-note rg-muted">Optional. Counts site visits and page/screen views only.<br />No user profiles, no cross-visit tracking, no gameplay data.</div>
+                <div class="control-note rg-muted hidden">Optional. Counts site visits and page/screen views only.<br />No user profiles, no cross-visit tracking, no gameplay data.</div>
                 <div id="privacyRefreshNotice" class="rg-privacy-refresh-note hidden" aria-hidden="true">Audience measurement disabled. To ensure analytics is not loaded at all, please refresh the page.</div>
               </div>
             </div>
 
             <div id="privacyPolicyPre" class="rg-privacy-policy" aria-label="Privacy policy">
-              <h2>Privacy &amp; Analytics</h2>
-              <p><strong>Ringer Game is a client-only web app.</strong></p>
+              <p>Ringer Game is a client-only web app. It runs entirely in your browser. There are no accounts and no backend server.</p>
 
-              <h3>What Ringer Game does not do</h3>
-              <ul>
-                <li>It does not create user profiles.</li>
-                <li>It does not assign persistent user IDs.</li>
-                <li>It does not track you across visits.</li>
-                <li>It does not record or transmit gameplay actions, scores, or timing data.</li>
-              </ul>
+              <h3>Your data</h3>
+              <p>Gameplay settings, preferences, and statistics may be stored locally in your browser.</p>
+              <p>This data stays on your device.</p>
+
+              <h3>Load codes</h3>
+              <p>You can export and import your setup using human-readable Load codes.</p>
+              <p>Load codes may include configuration, sound and input settings, and scoring data you choose to generate or append.</p>
+              <p>Load codes are created, processed, saved, and shared entirely by you, in your browser.</p>
 
               <h3>Audience measurement (optional)</h3>
-              <p>If you enable Audience measurement, Ringer Game uses Google Analytics 4 to measure overall site usage, such as page or screen views, approximate location at the country or region level, and coarse device or browser information.</p>
-              <p>This information is used only to understand audience size and general usage trends.</p>
-              <p>Ringer Game does not send gameplay events, scores, timing metrics, bell-by-bell data, or other run details to Google Analytics.</p>
+              <p>Audience measurement is off by default.</p>
+              <p>If enabled, Ringer Game uses Google Analytics 4 to measure general site usage (such as page views and approximate region).</p>
+              <p>No gameplay actions, scores, or timing data are sent to analytics.</p>
+              <p>You can turn this on or off at any time from the Privacy page.</p>
 
-              <h3>Local gameplay data</h3>
-              <p>Gameplay statistics and preferences may be stored in your browser (for example, via localStorage) so the game can remember settings and show your performance stats. This data stays on your device.</p>
+              <h3>Optional third-party content</h3>
+              <p>You may choose to download method data from CCCBR.</p>
+              <p>If you do, your browser requests data directly from CCCBR-hosted resources, governed by their own terms.<br>https://www.cccbr.org.uk/</p>
 
-              <h3>Your choice</h3>
-              <p>Audience measurement is off by default. You can enable or disable it at any time from the Privacy page.</p>
-              <p>When Audience measurement is turned off, analytics is stopped immediately. A page refresh ensures it is not loaded at all.</p>
-
-              <h3>CCCBR method library (optional)</h3>
-              <p>From Setup, you can optionally choose to download a method library from CCCBR. If you choose it, your browser will request data from CCCBR-hosted resources.</p>
-              <p>CCCBR is a third party; their handling of data is governed by their terms. Ringer Game does not claim ownership of CCCBR content. See: <a href="https://www.cccbr.org.uk/" target="_blank" rel="noopener">https://www.cccbr.org.uk/</a></p>
-
-              <h3>Third party</h3>
-              <p>Google Analytics is provided by Google. Their processing of data is governed by Google’s own privacy terms.</p>
-
-              <p>Contact: <a href="mailto:ringergame143@gmail.com">ringergame143@gmail.com</a></p>
+              <h3>Contact</h3>
+              <p>ringergame143@gmail.com</p>
             </div>
             <div class="rg-nav">
               <button class="pill" type="button" data-go-screen="home">Home</button>
@@ -414,6 +458,34 @@
               <button class="pill" type="button" data-go-screen="sound">Sound</button>
               <button id="soundBtnEnterGame" class="pill" type="button">Play</button>
               <button id="soundBtnDemo" class="pill" type="button">Demo</button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div id="screenLoad" class="rg-screen" aria-hidden="true">
+        <section class="pane rg-splash">
+          <div class="pane-title"><span>Load</span></div>
+          <div class="rg-screen-body">
+            <div class="rg-load-shell" aria-label="Load">
+              <div class="rg-load-actions" aria-label="Load actions">
+                <button id="loadBtnLoad" class="pill" type="button">Load from text</button>
+                <button id="loadBtnLoadFile" class="pill" type="button">Load from file</button>
+                <button id="loadBtnGenerate" class="pill" type="button">Generate</button>
+                <button id="loadBtnCopy" class="pill" type="button">Copy code</button>
+                <button id="loadBtnSaveFile" class="pill" type="button">Save file</button>
+                <button id="loadBtnAppendRun" class="pill" type="button" disabled>Append run to loaded code</button>
+              </div>
+              <textarea id="loadCodeTextarea" class="rg-load-textarea rg-mono" rows="14" spellcheck="false" aria-label="Load code"></textarea>
+            </div>
+
+            <div class="rg-nav">
+              <button class="pill" type="button" data-go-screen="home">Home</button>
+              <button class="pill" type="button" data-go-screen="play">Setup</button>
+              <button class="pill" type="button" data-go-screen="view">View</button>
+              <button class="pill" type="button" data-go-screen="sound">Sound</button>
+              <button id="loadBtnEnterGame" class="pill" type="button">Play</button>
+              <button id="loadBtnDemo" class="pill" type="button">Demo</button>
             </div>
           </div>
         </section>

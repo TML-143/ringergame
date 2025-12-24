@@ -75,7 +75,7 @@
   // === Analytics (GA4) ===
   const GA_MEASUREMENT_ID = 'G-7TEG531231';
   const GA_ID = GA_MEASUREMENT_ID;
-  const SITE_VERSION = 'v014_p07_hamburger_divider_and_start_navigates';
+  const SITE_VERSION = 'v015_p05b_load_no_leak_between_imports';
 
   function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
   function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
@@ -262,7 +262,7 @@ Contact: ringergame143@gmail.com`;
     const s = String(screenKey || '').toLowerCase();
     if (s === 'play') return 'setup';
     if (s === 'sound_intro') return 'sound';
-    if (s === 'home' || s === 'view' || s === 'sound' || s === 'sound_intro' || s === 'library' || s === 'game' || s === 'privacy') return s;
+    if (s === 'home' || s === 'view' || s === 'sound' || s === 'sound_intro' || s === 'load' || s === 'library' || s === 'game' || s === 'privacy') return s;
     return 'home';
   }
 
@@ -501,7 +501,7 @@ const spatialDepthModeSelect = document.getElementById('spatialDepthModeSelect')
 
   function rgHamburgerIsHeaderAnchoredScreen(screenName) {
     const s = String(screenName || '').toLowerCase();
-    return (s === 'play' || s === 'view' || s === 'sound' || s === 'sound_intro' || s === 'library' || s === 'privacy');
+    return (s === 'play' || s === 'view' || s === 'sound' || s === 'sound_intro' || s === 'load' || s === 'library' || s === 'privacy');
   }
 
   function rgHamburgerResetDropdownInlinePosition() {
@@ -669,6 +669,7 @@ const spatialDepthModeSelect = document.getElementById('spatialDepthModeSelect')
     if (key === 'setup') { setScreen('play'); return; }
     if (key === 'view') { setScreen('view'); return; }
     if (key === 'sound') { setScreen('sound'); return; }
+    if (key === 'load') { setScreen('load'); return; }
     if (key === 'play') { setScreen('game'); return; }
     if (key === 'start') {
       try {
@@ -733,6 +734,7 @@ const spatialDepthModeSelect = document.getElementById('spatialDepthModeSelect')
   const screenView = document.getElementById('screenView');
   const screenSound = document.getElementById('screenSound');
   const screenSoundIntro = document.getElementById('screenSoundIntro');
+  const screenLoad = document.getElementById('screenLoad');
   const screenLibrary = document.getElementById('screenLibrary');
   const screenGame = document.getElementById('screenGame');
   const screenPrivacy = document.getElementById('screenPrivacy');
@@ -759,6 +761,7 @@ const spatialDepthModeSelect = document.getElementById('spatialDepthModeSelect')
                        (n === 'view') ? screenView :
                        (n === 'sound') ? screenSound :
                        (n === 'sound_intro') ? screenSound :
+                       (n === 'load') ? screenLoad :
                        (n === 'library') ? screenLibrary :
                        (n === 'privacy') ? screenPrivacy : null;
       const titleEl = screenEl ? screenEl.querySelector('.pane-title') : null;
@@ -820,6 +823,15 @@ const spatialDepthModeSelect = document.getElementById('spatialDepthModeSelect')
     // v08_p04_demo_profile_defaults: session-only flags (not persisted)
     userTouchedConfig: false,
     hasRunStartedThisSession: false,
+    // v015_p04_stats_export_import_and_compare: imported historic stats (UI-only)
+    loadedStatsHistory: [],
+    // v015_p04_stats_export_import_and_compare: most recent completed run stats snapshot for export preview
+    lastRunStatsSnapshot: null,
+    // v015_p04_stats_export_import_and_compare: last-loaded settings JSON (session-only, for append-only history)
+    loadedCodeRoot: null,
+    loadedCodePayload: null,
+    loadedCodeFileName: '',
+    loadedCodeScoringSignature: null,
     isBooting: true
   };
 
@@ -834,7 +846,7 @@ const spatialDepthModeSelect = document.getElementById('spatialDepthModeSelect')
     try { closeHamburgerMenu(); } catch (_) {}
     const n = String(name || '').toLowerCase();
 const nn = (n === 'sound_intro') ? 'sound' : n;
-const next = (nn === 'home' || nn === 'play' || nn === 'view' || nn === 'sound' || nn === 'library' || nn === 'game' || nn === 'privacy') ? nn : 'home';
+const next = (nn === 'home' || nn === 'play' || nn === 'view' || nn === 'sound' || nn === 'load' || nn === 'library' || nn === 'game' || nn === 'privacy') ? nn : 'home';
 
     // v10_p05_sound_per_bell_hz_slider_preview: safety stop for any ongoing continuous Hz preview when leaving Sound.
     try {
@@ -844,7 +856,7 @@ const next = (nn === 'home' || nn === 'play' || nn === 'view' || nn === 'sound' 
       }
     } catch (_) {}
 
-    const screens = { home: screenHome, play: screenPlay, view: screenView, sound: screenSound, sound_intro: screenSoundIntro, library: screenLibrary, game: screenGame, privacy: screenPrivacy };
+    const screens = { home: screenHome, play: screenPlay, view: screenView, sound: screenSound, sound_intro: screenSoundIntro, load: screenLoad, library: screenLibrary, game: screenGame, privacy: screenPrivacy };
     for (const k in screens) {
       const el = screens[k];
       if (!el) continue;
@@ -2366,6 +2378,7 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
   const homeBtnPlay = document.getElementById('homeBtnPlay');
   const homeBtnView = document.getElementById('homeBtnView');
   const homeBtnSound = document.getElementById('homeBtnSound');
+  const homeBtnLoad = document.getElementById('homeBtnLoad');
   const homeBtnDemo = document.getElementById('homeBtnDemo');
   const homeBtnBegin = document.getElementById('homeBtnBegin');
 
@@ -2379,6 +2392,37 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
 
   const soundBtnEnterGame = document.getElementById('soundBtnEnterGame');
   const soundBtnDemo = document.getElementById('soundBtnDemo');
+
+  // v015_p01_load_screen_nav_shell: Load screen bottom nav
+  const loadBtnEnterGame = document.getElementById('loadBtnEnterGame');
+  const loadBtnDemo = document.getElementById('loadBtnDemo');
+
+  // v015_p02_export_settings_json_generate_copy_save: Load screen export controls
+  const loadBtnLoad = document.getElementById('loadBtnLoad');
+  const loadBtnLoadFile = document.getElementById('loadBtnLoadFile');
+  const loadBtnGenerate = document.getElementById('loadBtnGenerate');
+  const loadBtnCopy = document.getElementById('loadBtnCopy');
+  const loadBtnSaveFile = document.getElementById('loadBtnSaveFile');
+  const loadBtnAppendRun = document.getElementById('loadBtnAppendRun');
+  const loadCodeTextarea = document.getElementById('loadCodeTextarea');
+
+  // v015_p02_export_settings_json_generate_copy_save: Export settings metadata modal
+  const rgExportSettingsModal = document.getElementById('rgExportSettingsModal');
+  const rgExportSettingsModalClose = document.getElementById('rgExportSettingsModalClose');
+  const exportSettingsTitleInput = document.getElementById('exportSettingsTitleInput');
+  const exportSettingsNameInput = document.getElementById('exportSettingsNameInput');
+  const exportSettingsCancelBtn = document.getElementById('exportSettingsCancelBtn');
+  const exportSettingsConfirmBtn = document.getElementById('exportSettingsConfirmBtn');
+  const exportSettingsIncludeStats = document.getElementById('exportSettingsIncludeStats');
+  const exportSettingsStatsPreview = document.getElementById('exportSettingsStatsPreview');
+
+  // v015_p03_import_settings_json_load_text_file: Import result modal
+  const rgImportSettingsModal = document.getElementById('rgImportSettingsModal');
+  const rgImportSettingsModalClose = document.getElementById('rgImportSettingsModalClose');
+  const rgImportSettingsModalOk = document.getElementById('rgImportSettingsModalOk');
+  const rgImportSettingsModalTitle = document.getElementById('rgImportSettingsModalTitle');
+  const rgImportSettingsModalLines = document.getElementById('rgImportSettingsModalLines');
+
 
   // v011_p01_sound_intro_page: Sound Menu Introduction entry link (Sound screen)
   const soundIntroLink = document.getElementById('soundIntroLink');
@@ -2490,6 +2534,7 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
     if (playBtnEnterGame) playBtnEnterGame.addEventListener('click', () => setScreen('game'));
     if (viewBtnEnterGame) viewBtnEnterGame.addEventListener('click', () => setScreen('game'));
     if (soundBtnEnterGame) soundBtnEnterGame.addEventListener('click', () => setScreen('game'));
+    if (loadBtnEnterGame) loadBtnEnterGame.addEventListener('click', () => setScreen('game'));
     if (libraryBtnEnterGame) libraryBtnEnterGame.addEventListener('click', () => setScreen('game'));
 
     // Demo buttons (idle only).
@@ -2507,6 +2552,7 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
     wireDemo(playBtnDemo);
     wireDemo(viewBtnDemo);
     wireDemo(soundBtnDemo);
+    wireDemo(loadBtnDemo);
     wireDemo(libraryBtnDemo);
     wireDemo(privacyBtnDemo);
   }
@@ -2514,6 +2560,2058 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
   if (homeBtnPlay) homeBtnPlay.addEventListener('click', () => setScreen('play'));
   if (homeBtnView) homeBtnView.addEventListener('click', () => setScreen('view'));
   if (homeBtnSound) homeBtnSound.addEventListener('click', () => setScreen('sound'));
+  if (homeBtnLoad) homeBtnLoad.addEventListener('click', () => setScreen('load'));
+
+  // v015_p02_export_settings_json_generate_copy_save: Export settings JSON (Load screen)
+  const SETTINGS_SCHEMA_VERSION = 'rg_settings_v1';
+
+  function deepCloneJsonable(v) {
+    // For settings export, we expect plain JSON-able values only.
+    try { return JSON.parse(JSON.stringify(v)); } catch (_) { return null; }
+  }
+
+  function clampInt(v, min, max, def) {
+    const n = parseInt(v, 10);
+    if (!Number.isFinite(n)) return def;
+    return clamp(n, min, max);
+  }
+
+  function bellNumberMapFromArray(arr, opts) {
+    const out = {};
+    const o = opts || {};
+    const min = Number.isFinite(o.min) ? o.min : null;
+    const max = Number.isFinite(o.max) ? o.max : null;
+    const skipNearZero = !!o.skipNearZero;
+    const toFixed = Number.isFinite(o.toFixed) ? o.toFixed : null;
+    if (!Array.isArray(arr)) return out;
+    for (let b = 1; b <= 12; b++) {
+      const raw = arr[b];
+      if (raw == null) continue;
+      let n = Number(raw);
+      if (!Number.isFinite(n)) continue;
+      if (min != null) n = Math.max(min, n);
+      if (max != null) n = Math.min(max, n);
+      if (skipNearZero && Math.abs(n) < 0.0005) continue;
+      if (toFixed != null) {
+        try { n = Number(n.toFixed(toFixed)); } catch (_) {}
+      }
+      out[b] = n;
+    }
+    return out;
+  }
+
+  function bellStringMapFromArray(arr) {
+    const out = {};
+    if (!Array.isArray(arr)) return out;
+    for (let b = 1; b <= 12; b++) {
+      const raw = arr[b];
+      if (raw == null) continue;
+      const s = String(raw);
+      if (!s) continue;
+      out[b] = s;
+    }
+    return out;
+  }
+
+  function bellObjectMapFromArray(arr, mapFn) {
+    const out = {};
+    if (!Array.isArray(arr)) return out;
+    for (let b = 1; b <= 12; b++) {
+      const raw = arr[b];
+      if (raw == null) continue;
+      const mapped = mapFn ? mapFn(raw, b) : raw;
+      if (mapped == null) continue;
+      out[b] = mapped;
+    }
+    return out;
+  }
+
+  function sanitizeExportText(s, maxLen) {
+    const t = String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+    const m = Math.max(1, parseInt(maxLen, 10) || 80);
+    if (!t) return '';
+    return (t.length <= m) ? t : t.slice(0, m);
+  }
+
+  function fileSlug(s, fallback) {
+    const raw = sanitizeExportText(s, 120);
+    if (!raw) return (fallback || 'ringer_game');
+    const slug = raw
+      .toLowerCase()
+      .replace(/[^a-z0-9\-\_\s]+/g, '')
+      .trim()
+      .replace(/\s+/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 64);
+    return slug || (fallback || 'ringer_game');
+  }
+
+  function readLayoutPresetNow() {
+    try {
+      if (layoutPresetSelect && layoutPresetSelect.value) return String(layoutPresetSelect.value);
+    } catch (_) {}
+    try {
+      const v = safeGetLS(LS_LAYOUT_PRESET);
+      if (v) return String(v);
+    } catch (_) {}
+    return 'auto';
+  }
+
+  function readNotationLayoutNow() {
+    try {
+      if (ui && ui.notationLayout) return String(ui.notationLayout);
+    } catch (_) {}
+    try {
+      const v = safeGetLS(LS_NOTATION_LAYOUT);
+      if (v) return String(v);
+    } catch (_) {}
+    return 'two_page';
+  }
+
+  function buildSettingsExportPayload(meta) {
+    const createdAtISO = new Date().toISOString();
+
+    const title = meta && meta.title ? sanitizeExportText(meta.title, 90) : '';
+    const name = meta && meta.name ? sanitizeExportText(meta.name, 60) : '';
+
+    // Method + attribution
+    const method = {
+      key: String(state.method || ''),
+      source: String(state.methodSource || ''),
+      stage: clampInt(state.stage, 1, 12, 6),
+      meta: state.methodMeta ? deepCloneJsonable(state.methodMeta) : null,
+      customRows: (state.method === 'custom' && state.customRows) ? deepCloneJsonable(state.customRows) : null,
+    };
+
+    // Run configuration
+    const run = {
+      bpm: clampInt(state.bpm, 1, 240, 120),
+      liveCount: clampInt(state.liveCount, 0, 12, 1),
+      liveBells: Array.isArray(state.liveBells) ? state.liveBells.slice() : [],
+      pathBells: Array.isArray(state.pathBells) ? state.pathBells.slice() : [],
+      globalChord: state.globalChord ? deepCloneJsonable(state.globalChord) : null,
+    };
+
+    // View configuration
+    const view = {
+      panes: {
+        display: !!(viewDisplay && viewDisplay.checked),
+        spotlight: !!(viewSpotlight && viewSpotlight.checked),
+        notation: !!(viewNotation && viewNotation.checked),
+        stats: !!(viewStats && viewStats.checked),
+        mic: !!(viewMic && viewMic.checked),
+      },
+      layoutPreset: readLayoutPresetNow(),
+      notationLayout: readNotationLayoutNow(),
+      displayLiveBellsOnly: !!state.displayLiveBellsOnly,
+      spotlight: {
+        swapsView: !!state.spotlightSwapsView,
+        showN: !!state.spotlightShowN,
+        showN1: !!state.spotlightShowN1,
+        showN2: !!state.spotlightShowN2,
+      },
+      notation: {
+        swapsOverlay: !!state.notationSwapsOverlay,
+      },
+      accuracyDots: {
+        enabled: !!state.accuracyDotsEnabled,
+        display: !!state.accuracyDotsDisplay,
+        notation: !!state.accuracyDotsNotation,
+        spotlight: !!state.accuracyDotsSpotlight,
+      }
+    };
+
+    // Input / glyphs / bindings
+    const input = {
+      keyBindings: (state.keyBindings && typeof state.keyBindings === 'object') ? deepCloneJsonable(state.keyBindings) : {},
+      glyphBindings: (state.glyphBindings && typeof state.glyphBindings === 'object') ? deepCloneJsonable(state.glyphBindings) : {},
+      glyphStyle: (state.glyphStyle && typeof state.glyphStyle === 'object') ? deepCloneJsonable(state.glyphStyle) : { defaultColor: '', bellColors: {}, colorOnly: {} },
+    };
+
+    // Sound settings (bells + drones + master FX)
+    // Note: per-bell overrides are stored as sparse bell-number maps for readability.
+    const sound = {
+      pitch: {
+        scaleKey: String(state.scaleKey || ''),
+        octaveC: clampInt(state.octaveC, 1, 6, 4),
+        customHz: Number.isFinite(Number(state.bellCustomHz)) ? Number(state.bellCustomHz) : 440,
+        bellPitchFamily: String(state.bellPitchFamily || 'diatonic'),
+        bellPitchSpan: String(state.bellPitchSpan || 'compact'),
+        bellPitchSpanUser: !!state.bellPitchSpanUser,
+        bellPitchPentVariant: String(state.bellPitchPentVariant || 'major_pent'),
+        bellPitchChromaticDirection: String(state.bellPitchChromaticDirection || 'descending'),
+        bellPitchFifthsType: String(state.bellPitchFifthsType || 'fifths'),
+        bellPitchFifthsShape: String(state.bellPitchFifthsShape || 'folded'),
+        bellPitchPartialsShape: String(state.bellPitchPartialsShape || 'ladder'),
+      },
+      bells: {
+        masterVolume: clampInt(state.bellVolume, 0, 100, 100),
+        timbre: {
+          ringLength01: clamp(Number(state.bellRingLength) || 0, 0, 1),
+          brightness01: clamp(Number(state.bellBrightness) || 0, 0, 1),
+          strikeHardness01: clamp(Number(state.bellStrikeHardness) || 0, 0, 1),
+        },
+        perBellOverrides: {
+          hz: bellNumberMapFromArray(state.bellHzOverride, { min: 20, max: 20000, toFixed: 3 }),
+          volume: bellNumberMapFromArray(state.bellVolOverride, { min: 0, max: 100, toFixed: 3 }),
+          key: bellStringMapFromArray(state.bellKeyOverride),
+          octave: bellNumberMapFromArray(state.bellOctaveOverride, { min: 1, max: 6 }),
+          pan: bellNumberMapFromArray(state.bellPan, { min: -1, max: 1, skipNearZero: true, toFixed: 3 }),
+          depth: bellNumberMapFromArray(state.bellDepth, { min: 0, max: 1, skipNearZero: true, toFixed: 3 }),
+          spatialDepthMode: String(state.spatialDepthMode || 'normal'),
+          timbre: bellObjectMapFromArray(state.bellTimbreOverrides, (raw) => {
+            if (!raw || typeof raw !== 'object') return null;
+            const mode = String(raw.mode || 'inherit');
+            if (mode !== 'override') return null;
+            const out = {
+              mode: 'override',
+              bellRingLength: clamp(Number(raw.bellRingLength) || 0, 0, 1),
+              bellBrightness: clamp(Number(raw.bellBrightness) || 0, 0, 1),
+              bellStrikeHardness: clamp(Number(raw.bellStrikeHardness) || 0, 0, 1),
+            };
+            return out;
+          }),
+          chords: (() => {
+            try { ensureBellChordOverridesArray(); } catch (_) {}
+            return bellObjectMapFromArray(state.bellChordOverrides, (raw) => {
+              const cfg = sanitizeBellChordOverride(raw || null);
+              if (!cfg || cfg.mode !== 'override') return null;
+              return {
+                mode: 'override',
+                enabled: !!cfg.enabled,
+                preset: String(cfg.preset || 'unison'),
+                inversion: String(cfg.inversion || 'root'),
+                spread: String(cfg.spread || 'close'),
+                splitStrikeMode: String(cfg.splitStrikeMode || 'inherit'),
+                splitStepMs: clamp(parseInt(String(cfg.splitStepMs), 10) || 0, 0, 15),
+                splitMaxMs: clamp(parseInt(String(cfg.splitMaxMs), 10) || 0, 0, 18),
+                customIntervals: String(cfg.customIntervals || ''),
+                customSplitOffsetsMs: String(cfg.customSplitOffsetsMs || ''),
+                customDetuneCents: String(cfg.customDetuneCents || ''),
+                customLevelGains: String(cfg.customLevelGains || ''),
+              };
+            });
+          })(),
+        },
+      },
+      drones: {
+        legacy: {
+          on: !!state.droneOn,
+          paused: !!state.dronePaused,
+          type: String(state.droneType || ''),
+          scaleKey: String(state.droneScaleKey || ''),
+          octaveC: clampInt(state.droneOctaveC, 1, 6, 3),
+          customHz: Number.isFinite(Number(state.droneCustomHz)) ? Number(state.droneCustomHz) : 440,
+          volume: clampInt(state.droneVolume, 0, 100, 50),
+          variants: {
+            normalize: !!state.droneNormalize,
+            density: clampInt(state.droneDensity, 0, 16, 3),
+            densityByType: (state.droneDensityByType && typeof state.droneDensityByType === 'object') ? deepCloneJsonable(state.droneDensityByType) : {},
+            driftCents: clamp(Number(state.droneDriftCents) || 0, 0, 20),
+            motionRate: clamp(Number(state.droneMotionRate) || 0, 0, 10),
+            clusterWidth: clampInt(state.droneClusterWidth, 1, 10, 3),
+            noiseTilt: clamp(Number(state.droneNoiseTilt) || 0, -1, 1),
+            noiseQ: clamp(Number(state.droneNoiseQ) || 1, 0.5, 10)
+          }
+        },
+        layers: {
+          enabled: !!state.dronesEnabled,
+          paused: !!state.dronesPaused,
+          masterVolume: clampInt(state.dronesMasterVolume, 0, 100, 50),
+          droneLayers: Array.isArray(state.droneLayers) ? deepCloneJsonable(state.droneLayers.slice(0, 4)) : null,
+        },
+        owner: String(state.droneOwner || 'run'),
+      },
+      masterFx: {
+        limiter: {
+          enabled: !!state.fxLimiterEnabled,
+          amount01: clamp(Number(state.fxLimiterAmount) || 0, 0, 1),
+        },
+        reverb: {
+          enabled: !!state.fxReverbEnabled,
+          size01: clamp(Number(state.fxReverbSize) || 0, 0, 1),
+          mix01: clamp(Number(state.fxReverbMix) || 0, 0, 1),
+          highCutHz: clamp(Number(state.fxReverbHighCutHz) || 0, 20, 20000),
+        }
+      }
+    };
+
+    const mic = {
+      enabled: !!state.micEnabled,
+      cooldownMs: clampInt(state.micCooldownMs, 100, 400, 200),
+      bells: Array.isArray(state.micBells) ? state.micBells.slice() : [],
+      thresholdRms: Number.isFinite(Number(window.micThreshold)) ? Number(window.micThreshold) : null,
+    };
+
+    const library = {
+      loaded: !!state.libraryLoaded,
+      fileName: (state.libraryFileName != null) ? String(state.libraryFileName) : '',
+    };
+
+    const privacy = {
+      audienceMeasurementConsent: getAudienceConsent(),
+    };
+
+    const payload = {
+      metadata: {
+        schemaVersion: SETTINGS_SCHEMA_VERSION,
+        appVersion: SITE_VERSION,
+        createdAtISO,
+      },
+      config: {
+        method,
+        run,
+        view,
+        input,
+        sound,
+        mic,
+        library,
+        privacy,
+      }
+    };
+
+    if (title) payload.metadata.title = title;
+    if (name) payload.metadata.name = name;
+
+    // v015_p04_stats_export_import_and_compare: optional statsHistory export (safe default OFF)
+    const includeStats = !!(meta && meta.includeStats);
+    if (includeStats) {
+      const snap = ui.lastRunStatsSnapshot;
+
+      // If a settings JSON was loaded + retained and matches the current scoring signature,
+      // carry forward its full stats history (append-only).
+      const currentSig = buildScoringSignatureFromState();
+      let runs = [];
+      try {
+        const canCarry = ui.loadedCodePayload && ui.loadedCodeScoringSignature && scoringSignatureEquals(ui.loadedCodeScoringSignature, currentSig);
+        if (canCarry && ui.loadedCodePayload.statsHistory != null) {
+          runs = normalizeStatsHistoryArray(ui.loadedCodePayload.statsHistory);
+        }
+      } catch (_) { runs = []; }
+
+      if (snap) {
+        const rec = buildStatsRecordFromSnapshot(snap, { title, name }, createdAtISO);
+        const rs = rec && rec.runStartedAtISO ? String(rec.runStartedAtISO) : '';
+        const dup = rs ? runs.some(r => r && String(r.runStartedAtISO || '') === rs) : false;
+        if (!dup) runs.push(rec);
+      }
+
+      payload.statsHistory = { runs: runs };
+    }
+
+    return payload;
+  }
+
+  function stringifySettingsExport(payload) {
+    try { return JSON.stringify(payload, null, 2); } catch (_) { return ''; }
+  }
+
+  // v015_p04_stats_export_import_and_compare: Stats export/import + matching helpers
+
+  function escapeHtml(s) {
+    const str = (s == null) ? '' : String(s);
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function fnv1a32Hex(str) {
+    let h = 0x811c9dc5;
+    const s = (str == null) ? '' : String(str);
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 0x01000193);
+    }
+    const hex = (h >>> 0).toString(16);
+    return ('00000000' + hex).slice(-8);
+  }
+
+  function stableStringifyForHash(v) {
+    try { return JSON.stringify(v); } catch (_) { return String(v); }
+  }
+
+  function hashMethodRows(rows) {
+    const raw = stableStringifyForHash(rows);
+    return 'fnv1a32:' + fnv1a32Hex(raw);
+  }
+
+  function buildScoringSignatureFromState() {
+    const stage = clampInt(state.stage, 1, 12, 6);
+    const bpm = clampInt(state.bpm, 1, 240, 120);
+    const bells = (state.liveBells || []).slice().sort((a, b) => a - b);
+
+    const method = {
+      key: String(state.method || ''),
+      source: String(state.methodSource || ''),
+      stage: stage,
+    };
+
+    // Best-effort identity for non-built-in methods
+    if (state.methodMeta && state.methodMeta.title) method.title = String(state.methodMeta.title);
+    if (state.methodMeta && state.methodMeta.fileName) method.fileName = String(state.methodMeta.fileName);
+    if (state.method === 'custom' && Array.isArray(state.customRows)) method.rowsHash = hashMethodRows(state.customRows);
+
+    return {
+      method: method,
+      tempoBpm: bpm,
+      stage: stage,
+      scored: { liveCount: bells.length, bells: bells }
+    };
+  }
+
+  function scoringSignatureEquals(a, b) {
+    if (!a || !b) return false;
+    const am = a.method || {};
+    const bm = b.method || {};
+    if (String(am.key || '') !== String(bm.key || '')) return false;
+    if (String(am.source || '') !== String(bm.source || '')) return false;
+    if (Number(a.stage) !== Number(b.stage)) return false;
+    if (Number(am.stage) !== Number(bm.stage)) return false;
+    if (Number(a.tempoBpm) !== Number(b.tempoBpm)) return false;
+
+    const as = a.scored || {};
+    const bs = b.scored || {};
+    const ab = Array.isArray(as.bells) ? as.bells : [];
+    const bb = Array.isArray(bs.bells) ? bs.bells : [];
+    if (ab.length !== bb.length) return false;
+    for (let i = 0; i < ab.length; i++) {
+      if (Number(ab[i]) !== Number(bb[i])) return false;
+    }
+    if (Number(as.liveCount) !== Number(bs.liveCount)) return false;
+
+    // If either side includes extra method identity fields, require a match.
+    const at = (am.title != null) ? String(am.title) : '';
+    const bt = (bm.title != null) ? String(bm.title) : '';
+    if ((at || bt) && at !== bt) return false;
+
+    const afn = (am.fileName != null) ? String(am.fileName) : '';
+    const bfn = (bm.fileName != null) ? String(bm.fileName) : '';
+    if ((afn || bfn) && afn !== bfn) return false;
+
+    const arh = (am.rowsHash != null) ? String(am.rowsHash) : '';
+    const brh = (bm.rowsHash != null) ? String(bm.rowsHash) : '';
+    if ((arh || brh) && arh !== brh) return false;
+
+    return true;
+  }
+
+  function snapshotPanesEnabled() {
+    return {
+      display: !!(viewDisplay && viewDisplay.checked),
+      spotlight: !!(viewSpotlight && viewSpotlight.checked),
+      notation: !!(viewNotation && viewNotation.checked),
+      stats: !!(viewStats && viewStats.checked),
+      mic: !!(viewMic && viewMic.checked),
+    };
+  }
+
+  function markRunInputUsed(kind) {
+    const p = state.currentPlay;
+    if (!p || p.mode !== 'play') return;
+    if (!p.inputUsed || typeof p.inputUsed !== 'object') {
+      p.inputUsed = { keyboard: false, tap: false, mic: false };
+    }
+    if (kind === 'keyboard') p.inputUsed.keyboard = true;
+    else if (kind === 'tap') p.inputUsed.tap = true;
+    else if (kind === 'mic') p.inputUsed.mic = true;
+  }
+
+  function safeParseIso(iso) {
+    if (!iso) return null;
+    const d = new Date(String(iso));
+    if (!Number.isFinite(d.getTime())) return null;
+    return d;
+  }
+
+  function fmtIsoForUi(iso) {
+    const d = safeParseIso(iso);
+    if (!d) return (iso == null) ? '' : String(iso);
+    try { return d.toLocaleString(); } catch (_) { return d.toISOString(); }
+  }
+
+  function captureLastRunStatsSnapshot() {
+    const p = state.currentPlay;
+    if (!p || p.mode !== 'play') return null;
+
+    const live = (state.liveBells || []).slice().sort((a, b) => a - b);
+    const perBell = {};
+    let totalHits = 0, totalMisses = 0, sumAbs = 0, scoreTotal = 0;
+
+    for (const b of live) {
+      const s = state.statsByBell[b] || {};
+      const hits = Number(s.hits) || 0;
+      const misses = Number(s.misses) || 0;
+      const targets = hits + misses;
+      const accPct = targets > 0 ? (hits / targets) * 100 : null;
+      const maeMs = hits > 0 ? Math.round((Number(s.sumAbsDelta) || 0) / hits) : null;
+      const score = Number(s.score) || 0;
+
+      totalHits += hits;
+      totalMisses += misses;
+      sumAbs += (Number(s.sumAbsDelta) || 0);
+      scoreTotal += score;
+
+      perBell[String(b)] = {
+        targets: targets,
+        hits: hits,
+        misses: misses,
+        accPct: accPct,
+        maeMs: maeMs,
+        score: Math.round(score),
+        comboBest: Number(s.comboBest) || 0,
+      };
+    }
+
+    const totalTargets = totalHits + totalMisses;
+    const accOverall = totalTargets > 0 ? (totalHits / totalTargets) * 100 : null;
+    const maeOverall = totalHits > 0 ? Math.round(sumAbs / totalHits) : null;
+
+    const anyBells = Array.isArray(p.anyBells) ? p.anyBells.slice().sort((a, b) => a - b) : [];
+    const panesEnabled = isPlainObject(p.panesEnabled) ? deepCloneJsonable(p.panesEnabled) : snapshotPanesEnabled();
+    const inputUsed = (p.inputUsed && typeof p.inputUsed === 'object') ? {
+      keyboard: !!p.inputUsed.keyboard,
+      tap: !!p.inputUsed.tap,
+      mic: !!p.inputUsed.mic,
+    } : { keyboard: false, tap: false, mic: false };
+
+    return {
+      runStartedAtISO: (p.startedAtISO != null) ? String(p.startedAtISO) : ((p.createdAtISO != null) ? String(p.createdAtISO) : null),
+      runEndedAtISO: (p.endedAtISO != null) ? String(p.endedAtISO) : null,
+      scoreGlobal: Math.round(scoreTotal),
+      totals: {
+        hits: totalHits,
+        misses: totalMisses,
+        targets: totalTargets,
+        accPct: accOverall,
+        maeMs: maeOverall,
+      },
+      perBell: perBell,
+      scoringSignature: buildScoringSignatureFromState(),
+      inputUsed: inputUsed,
+      anyBells: anyBells,
+      panesEnabled: panesEnabled,
+    };
+  }
+
+  function buildStatsRecordFromSnapshot(snapshot, meta, savedAtISO) {
+    const snap = snapshot || null;
+    const savedAt = savedAtISO || new Date().toISOString();
+
+    const rec = {
+      id: rid('sh_'),
+      savedAtISO: savedAt,
+      scoreGlobal: snap ? (Number(snap.scoreGlobal) || 0) : 0,
+      MAEms: snap && snap.totals && Number.isFinite(Number(snap.totals.maeMs)) ? Math.round(Number(snap.totals.maeMs)) : null,
+      perBell: snap && snap.perBell ? deepCloneJsonable(snap.perBell) : {},
+      scoringSignature: snap && snap.scoringSignature ? deepCloneJsonable(snap.scoringSignature) : buildScoringSignatureFromState(),
+      inputMethodsUsed: {
+        keyboard: !!(snap && snap.inputUsed && snap.inputUsed.keyboard),
+        tap: !!(snap && snap.inputUsed && snap.inputUsed.tap),
+        mic: !!(snap && snap.inputUsed && snap.inputUsed.mic && (!snap.panesEnabled || (snap.panesEnabled && snap.panesEnabled.mic))),
+        anyKeybinding: !!(snap && Array.isArray(snap.anyBells) && snap.anyBells.length),
+      },
+      anyBells: (snap && Array.isArray(snap.anyBells)) ? snap.anyBells.slice() : [],
+      panesEnabled: snap && snap.panesEnabled ? deepCloneJsonable(snap.panesEnabled) : snapshotPanesEnabled(),
+    };
+
+    if (snap) {
+      if (snap.runStartedAtISO) rec.runStartedAtISO = String(snap.runStartedAtISO);
+      if (snap.runEndedAtISO) rec.runEndedAtISO = String(snap.runEndedAtISO);
+    }
+
+    const t = meta && meta.title ? sanitizeExportText(meta.title, 90) : '';
+    const n = meta && meta.name ? sanitizeExportText(meta.name, 60) : '';
+    if (t || n) {
+      rec.meta = {};
+      if (t) rec.meta.title = t;
+      if (n) rec.meta.name = n;
+    }
+
+    return rec;
+  }
+
+  function normalizeStatsHistoryArray(raw) {
+    let arr = [];
+    if (Array.isArray(raw)) arr = raw;
+    else if (isPlainObject(raw) && Array.isArray(raw.runs)) arr = raw.runs;
+    else arr = [];
+    const out = [];
+    for (const item of arr) {
+      if (!isPlainObject(item)) continue;
+      const cloned = deepCloneJsonable(item);
+      if (!isPlainObject(cloned)) continue;
+      out.push(cloned);
+    }
+    return out;
+  }
+
+  function extractHighestGlobalScoreFromStatsHistory(history) {
+    if (!Array.isArray(history) || !history.length) return null;
+    let best = null;
+    for (const r of history) {
+      if (!r) continue;
+      const n = Number(r.scoreGlobal);
+      if (!Number.isFinite(n)) continue;
+      best = (best === null) ? n : Math.max(best, n);
+    }
+    return (best === null) ? null : best;
+  }
+
+  function formatInputMethodsSummary(rec) {
+    const m = rec && rec.inputMethodsUsed ? rec.inputMethodsUsed : {};
+    const parts = [];
+    if (m.keyboard) parts.push('keyboard');
+    if (m.tap) parts.push('tap');
+    if (m.mic) parts.push('mic');
+    const base = parts.length ? parts.join(' + ') : '—';
+
+    const anyBells = Array.isArray(rec && rec.anyBells) ? rec.anyBells : [];
+    const anyUsed = !!(m.anyKeybinding || (anyBells && anyBells.length));
+    if (anyUsed) {
+      return base + (anyBells.length ? (' (ANY: ' + anyBells.join(',') + ')') : ' (ANY)');
+    }
+    return base;
+  }
+
+
+  function formatPanesSummary(panes) {
+    const p = panes && typeof panes === 'object' ? panes : {};
+    const order = ['display', 'spotlight', 'notation', 'stats', 'mic'];
+    const names = {
+      display: 'Display',
+      spotlight: 'Spotlight',
+      notation: 'Notation',
+      stats: 'Stats',
+      mic: 'Mic'
+    };
+    const on = [];
+    for (const k of order) {
+      if (p[k]) on.push(names[k] || k);
+    }
+    return on.length ? on.join('+') : '—';
+  }
+
+  function renderExportStatsPreview() {
+    if (!exportSettingsStatsPreview) return;
+    const snap = ui.lastRunStatsSnapshot;
+    const enabled = !!(exportSettingsIncludeStats && exportSettingsIncludeStats.checked);
+
+    if (!snap) {
+      exportSettingsStatsPreview.innerHTML =
+        '<div class="muted">' +
+        (enabled ? 'No completed run yet – statsHistory.runs will be empty.' : 'No completed run yet.') +
+        '</div>';
+      return;
+    }
+
+    const whenIso = snap.runEndedAtISO || snap.runStartedAtISO || '';
+    const when = whenIso ? fmtIsoForUi(whenIso) : '';
+    const score = Number.isFinite(Number(snap.scoreGlobal)) ? Math.round(Number(snap.scoreGlobal)) : 0;
+    const maeOverall = (snap && snap.totals && snap.totals.maeMs != null) ? Number(snap.totals.maeMs) : null;
+
+    let carryRuns = [];
+    let includeLast = true;
+    try {
+      const currentSig = buildScoringSignatureFromState();
+      const canCarry = ui.loadedCodePayload && ui.loadedCodeScoringSignature && scoringSignatureEquals(ui.loadedCodeScoringSignature, currentSig);
+      if (canCarry && ui.loadedCodePayload.statsHistory != null) carryRuns = normalizeStatsHistoryArray(ui.loadedCodePayload.statsHistory);
+    } catch (_) { carryRuns = []; }
+    try {
+      const rs = snap.runStartedAtISO ? String(snap.runStartedAtISO) : '';
+      if (rs && carryRuns.some(r => r && String(r.runStartedAtISO || '') === rs)) includeLast = false;
+    } catch (_) {}
+    const runsToInclude = carryRuns.length + (includeLast ? 1 : 0);
+
+    let html = '';
+    html += '<div class="muted">' + (enabled ? 'Included in export:' : 'Preview (not included unless enabled):') + '</div>';
+    html += '<div><span class="muted">Last run:</span> ' + escapeHtml(when || '—') + '</div>';
+    html += '<div><span class="muted">Score:</span> ' + String(score) + '</div>';
+    html += '<div><span class="muted">MAE:</span> ' + ((maeOverall == null || !Number.isFinite(maeOverall)) ? '—' : (escapeHtml(fmtMs(maeOverall, false)) + ' ms')) + '</div>';
+    html += '<div><span class="muted">Runs' + (enabled ? ' included' : ' if enabled') + ':</span> ' + String(runsToInclude) + (carryRuns.length ? (' (loaded: ' + String(carryRuns.length) + ')') : '') + '</div>';
+
+    const pb = snap.perBell && typeof snap.perBell === 'object' ? snap.perBell : {};
+    const bells = Object.keys(pb).map(k => parseInt(k, 10)).filter(n => Number.isFinite(n)).sort((a,b)=>a-b);
+
+    if (bells.length) {
+      html += '<table><thead><tr><th>Bell</th><th>Targets</th><th>Hits</th><th>Misses</th><th>Acc%</th><th>MAE</th><th>Score</th></tr></thead><tbody>';
+      for (const b of bells) {
+        const s = pb[String(b)] || {};
+        const targets = Number(s.targets) || 0;
+        const hits = Number(s.hits) || 0;
+        const misses = Number(s.misses) || 0;
+        const acc = (s.accPct == null) ? null : Number(s.accPct);
+        const mae = (s.maeMs == null) ? null : Number(s.maeMs);
+        const scoreB = Number(s.score) || 0;
+        html += '<tr>';
+        html += '<td>' + bellToGlyph(b) + '</td>';
+        html += '<td>' + String(targets) + '</td>';
+        html += '<td>' + String(hits) + '</td>';
+        html += '<td>' + String(misses) + '</td>';
+        html += '<td>' + (acc == null || !Number.isFinite(acc) ? '&ndash;' : acc.toFixed(0)) + '</td>';
+        html += '<td>' + (mae == null || !Number.isFinite(mae) ? '&ndash;' : (fmtMs(mae, false) + ' ms')) + '</td>';
+        html += '<td>' + String(Math.round(scoreB)) + '</td>';
+        html += '</tr>';
+      }
+      html += '</tbody></table>';
+    } else {
+      html += '<div class="muted">No per-bell stats available.</div>';
+    }
+
+    exportSettingsStatsPreview.innerHTML = html;
+  }
+
+
+  function downloadTextFile(filename, text, mime) {
+    const fn = String(filename || 'ringer_game_settings.json');
+    const data = String(text == null ? '' : text);
+    const type = mime || 'application/json';
+
+    try {
+      const blob = new Blob([data], { type });
+      // IE/Edge legacy
+      if (navigator && navigator.msSaveOrOpenBlob) {
+        navigator.msSaveOrOpenBlob(blob, fn);
+        return true;
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fn;
+      a.rel = 'noopener';
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      window.setTimeout(() => {
+        try { URL.revokeObjectURL(url); } catch (_) {}
+        try { a.remove(); } catch (_) { try { a.parentNode && a.parentNode.removeChild(a); } catch (_) {} }
+      }, 0);
+      return true;
+    } catch (err) {
+      console.error('downloadTextFile failed', err);
+      return false;
+    }
+  }
+
+  async function copyTextToClipboard(text) {
+    const t = String(text == null ? '' : text);
+    if (!t) return false;
+
+    // Prefer async clipboard API
+    try {
+      if (navigator && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        await navigator.clipboard.writeText(t);
+        return true;
+      }
+    } catch (err) {
+      // fall through
+    }
+
+    // Fallback: hidden textarea + execCommand('copy')
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = t;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      ta.style.top = '0';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const ok = document.execCommand && document.execCommand('copy');
+      try { ta.remove(); } catch (_) { try { ta.parentNode && ta.parentNode.removeChild(ta); } catch (_) {} }
+      return !!ok;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function setExportSettingsModalOpen(open) {
+    if (!rgExportSettingsModal) return;
+    rgExportSettingsModal.classList.toggle('hidden', !open);
+    try { rgExportSettingsModal.setAttribute('aria-hidden', open ? 'false' : 'true'); } catch (_) {}
+  }
+
+  function resolveExportSettingsModal(result) {
+    const r = ui._exportSettingsModalResolve;
+    ui._exportSettingsModalResolve = null;
+    ui._exportSettingsModalMode = null;
+    setExportSettingsModalOpen(false);
+    if (typeof r === 'function') {
+      try { r(result); } catch (_) {}
+    }
+  }
+
+  function openExportSettingsModal(mode) {
+    return new Promise((resolve) => {
+      // If modal DOM is missing, fall back to silent meta.
+      if (!rgExportSettingsModal || !exportSettingsConfirmBtn || !exportSettingsTitleInput || !exportSettingsNameInput) {
+        resolve({ title: '', name: '' });
+        return;
+      }
+
+      // Close any prior pending modal.
+      if (ui._exportSettingsModalResolve) {
+        try { ui._exportSettingsModalResolve(null); } catch (_) {}
+      }
+
+      ui._exportSettingsModalResolve = resolve;
+      ui._exportSettingsModalMode = String(mode || 'generate');
+
+      // Prefill from session draft
+      try {
+        if (ui._exportSettingsDraft && typeof ui._exportSettingsDraft === 'object') {
+          exportSettingsTitleInput.value = String(ui._exportSettingsDraft.title || '');
+          exportSettingsNameInput.value = String(ui._exportSettingsDraft.name || '');
+        } else {
+          exportSettingsTitleInput.value = '';
+          exportSettingsNameInput.value = '';
+        }
+      } catch (_) {}
+
+      // Button label
+      const m = ui._exportSettingsModalMode;
+      exportSettingsConfirmBtn.textContent = (m === 'save') ? 'Save file' : 'Generate';
+
+      // v015_p04_stats_export_import_and_compare: default OFF (safe)
+      try { if (exportSettingsIncludeStats) exportSettingsIncludeStats.checked = false; } catch (_) {}
+      renderExportStatsPreview();
+
+      setExportSettingsModalOpen(true);
+
+      // Focus title first (best-effort)
+      window.setTimeout(() => {
+        try { exportSettingsTitleInput.focus(); } catch (_) {}
+        try { exportSettingsTitleInput.select(); } catch (_) {}
+      }, 0);
+    });
+  }
+
+  function bindExportSettingsModalEventsOnce() {
+    if (ui._exportSettingsModalEventsBound) return;
+    ui._exportSettingsModalEventsBound = true;
+
+    if (rgExportSettingsModal) {
+      rgExportSettingsModal.addEventListener('click', (e) => {
+        // Clicking on the dimmed backdrop cancels.
+        const panel = (e && e.target && e.target.closest) ? e.target.closest('.rg-export-panel') : null;
+        if (panel) return;
+        resolveExportSettingsModal(null);
+      });
+    }
+
+    function cancel() { resolveExportSettingsModal(null); }
+    function confirm() {
+      const title = sanitizeExportText(exportSettingsTitleInput ? exportSettingsTitleInput.value : '', 90);
+      const name = sanitizeExportText(exportSettingsNameInput ? exportSettingsNameInput.value : '', 60);
+      ui._exportSettingsDraft = { title, name };
+      const includeStats = !!(exportSettingsIncludeStats && exportSettingsIncludeStats.checked);
+      resolveExportSettingsModal({ title, name, includeStats });
+    }
+
+    if (rgExportSettingsModalClose) rgExportSettingsModalClose.addEventListener('click', () => cancel());
+    if (exportSettingsCancelBtn) exportSettingsCancelBtn.addEventListener('click', () => cancel());
+    if (exportSettingsConfirmBtn) exportSettingsConfirmBtn.addEventListener('click', () => confirm());
+    if (exportSettingsIncludeStats) exportSettingsIncludeStats.addEventListener('change', () => renderExportStatsPreview());
+
+    // Keyboard shortcuts within the modal
+    if (rgExportSettingsModal) {
+      rgExportSettingsModal.addEventListener('keydown', (e) => {
+        const k = e && e.key ? String(e.key) : '';
+        if (k === 'Escape') {
+          try { e.preventDefault(); } catch (_) {}
+          try { e.stopPropagation(); } catch (_) {}
+          cancel();
+          return;
+        }
+        if (k === 'Enter') {
+          // Enter confirms when inside inputs.
+          const t = e && e.target;
+          const isInput = t && t.tagName && (String(t.tagName).toLowerCase() === 'input');
+          if (isInput) {
+            try { e.preventDefault(); } catch (_) {}
+            try { e.stopPropagation(); } catch (_) {}
+            confirm();
+          }
+        }
+      }, true);
+    }
+  }
+
+  async function generateSettingsJsonToTextarea(meta) {
+    const payload = buildSettingsExportPayload(meta || {});
+    const json = stringifySettingsExport(payload);
+    if (loadCodeTextarea) {
+      loadCodeTextarea.value = json;
+      try { loadCodeTextarea.scrollTop = 0; } catch (_) {}
+    }
+    return { payload, json };
+  }
+
+  async function loadScreenGenerateClicked() {
+    bindExportSettingsModalEventsOnce();
+    const meta = await openExportSettingsModal('generate');
+    if (!meta) return;
+    await generateSettingsJsonToTextarea(meta);
+  }
+
+
+  // v015_p04_stats_export_import_and_compare: Append run to loaded code (append-only)
+  function getAppendRunEligibilityInfo() {
+    const hasLoaded = !!(ui.loadedCodeRoot && ui.loadedCodePayload);
+    const snap = ui.lastRunStatsSnapshot;
+    if (!hasLoaded) return { ok: false, reason: 'No loaded code in this session. Load a JSON first.' };
+    if (!snap) return { ok: false, reason: 'No completed run available to append. Play a run first.' };
+    const runSig = snap && snap.scoringSignature;
+    const loadedSig = ui.loadedCodeScoringSignature;
+    if (!runSig || !loadedSig || !scoringSignatureEquals(runSig, loadedSig)) {
+      return { ok: false, sigMismatch: true, reason: 'Cannot append: the current run settings do not match the loaded save (method/tempo/scored bells).' };
+    }
+    return { ok: true, snap: snap };
+  }
+
+  function updateLoadAppendRunButtonState() {
+    if (!loadBtnAppendRun) return;
+    const info = getAppendRunEligibilityInfo();
+    loadBtnAppendRun.disabled = !info.ok;
+    try { loadBtnAppendRun.setAttribute('aria-disabled', info.ok ? 'false' : 'true'); } catch (_) {}
+    if (!info.ok) {
+      loadBtnAppendRun.title = info.reason || 'Append is not available.';
+    } else {
+      loadBtnAppendRun.title = 'Append the most recent run stats into the currently-loaded JSON (append-only).';
+    }
+  }
+
+  async function loadScreenAppendRunClicked() {
+    const info = getAppendRunEligibilityInfo();
+    if (!info.ok) {
+      showImportSettingsModal({ title: 'Append failed', isError: true, lines: [info.reason || 'Append is not available.'] });
+      try { updateLoadAppendRunButtonState(); } catch (_) {}
+      return;
+    }
+
+    const snap = info.snap;
+    const nowIso = new Date().toISOString();
+
+    // Optional prompts (blank = skip).
+    let authorName = '';
+    let note = '';
+    try { authorName = sanitizeExportText(window.prompt('Optional: author name/nickname for this append (leave blank to skip):', '') || '', 60); } catch (_) {}
+    try { note = sanitizeExportText(window.prompt('Optional: revision note/title (leave blank to skip):', '') || '', 90); } catch (_) {}
+
+    const payload = ui.loadedCodePayload;
+    if (!payload || typeof payload !== 'object') {
+      showImportSettingsModal({ title: 'Append failed', isError: true, lines: ['No loaded code in this session. Load a JSON first.'] });
+      try { updateLoadAppendRunButtonState(); } catch (_) {}
+      return;
+    }
+
+    // Ensure metadata (preserve existing title/name; do not overwrite).
+    if (!isPlainObject(payload.metadata)) payload.metadata = {};
+
+    // Grow metadata.names[] append-only (optional).
+    if (authorName) {
+      if (!Array.isArray(payload.metadata.names)) payload.metadata.names = [];
+      payload.metadata.names.push(authorName);
+    }
+
+    // Ensure metadata.revisions[] append-only.
+    if (!Array.isArray(payload.metadata.revisions)) payload.metadata.revisions = [];
+
+    // Ensure statsHistory.runs[] (accept legacy array and migrate without loss).
+    const existingRuns = normalizeStatsHistoryArray(payload.statsHistory);
+    if (isPlainObject(payload.statsHistory)) {
+      if (!Array.isArray(payload.statsHistory.runs)) payload.statsHistory.runs = existingRuns;
+    } else {
+      payload.statsHistory = { runs: existingRuns };
+    }
+
+    const recTitle = (payload.metadata && payload.metadata.title) ? String(payload.metadata.title) : '';
+    const recName = authorName || ((payload.metadata && payload.metadata.name) ? String(payload.metadata.name) : '');
+    const rec = buildStatsRecordFromSnapshot(snap, { title: recTitle, name: recName }, nowIso);
+    payload.statsHistory.runs.push(rec);
+
+    // Record revision entry (append-only).
+    const rev = { revisedAtISO: nowIso, action: 'append_run', runId: rec.id };
+    if (authorName) rev.authorName = authorName;
+    if (note) rev.note = note;
+    payload.metadata.revisions.push(rev);
+
+    // Update in-memory historic stats for the Stats pane.
+    try { if (Array.isArray(ui.loadedStatsHistory)) ui.loadedStatsHistory.push(deepCloneJsonable(rec)); } catch (_) {}
+
+    // Update textarea with updated JSON (pretty printed).
+    try {
+      const json = JSON.stringify(ui.loadedCodeRoot, null, 2);
+      if (loadCodeTextarea) {
+        loadCodeTextarea.value = json;
+        try { loadCodeTextarea.scrollTop = 0; } catch (_) {}
+      }
+    } catch (_) {}
+
+    try { updateLoadAppendRunButtonState(); } catch (_) {}
+
+    const totalRuns = (payload.statsHistory && Array.isArray(payload.statsHistory.runs)) ? payload.statsHistory.runs.length : null;
+    const msgLines = ['Appended runId: ' + String(rec.id || ''), (totalRuns != null ? ('Total saved runs: ' + String(totalRuns)) : '')].filter(Boolean);
+    showImportSettingsModal({ title: 'Appended run', isError: false, lines: msgLines });
+  }
+
+  async function loadScreenSaveFileClicked() {
+    // If a JSON was loaded and retained in this session, save the current textarea (including any appended history).
+    const hasLoaded = !!(ui.loadedCodeRoot && ui.loadedCodePayload);
+    if (hasLoaded) {
+      let text = '';
+      try { text = loadCodeTextarea ? String(loadCodeTextarea.value || '') : ''; } catch (_) { text = ''; }
+      if (!text.trim()) {
+        try { text = JSON.stringify(ui.loadedCodeRoot, null, 2); } catch (_) { text = ''; }
+        if (loadCodeTextarea && text) {
+          loadCodeTextarea.value = text;
+          try { loadCodeTextarea.scrollTop = 0; } catch (_) {}
+        }
+      }
+      const fn = ui.loadedCodeFileName ? String(ui.loadedCodeFileName) : 'ringer_game_settings.json';
+      const ok = downloadTextFile(fn, text, 'application/json');
+      if (!ok) alert('Could not download the settings JSON file.');
+      return;
+    }
+
+    // Default: generate fresh export JSON from current settings.
+    bindExportSettingsModalEventsOnce();
+    const meta = await openExportSettingsModal('save');
+    if (!meta) return;
+    const { payload, json } = await generateSettingsJsonToTextarea(meta);
+    const title = (payload && payload.metadata && payload.metadata.title) ? String(payload.metadata.title) : '';
+    const date = (payload && payload.metadata && payload.metadata.createdAtISO) ? String(payload.metadata.createdAtISO).slice(0, 10) : (new Date().toISOString().slice(0, 10));
+    const fn = fileSlug(title, 'ringer_game_settings') + '_' + date + '.json';
+    const ok = downloadTextFile(fn, json, 'application/json');
+    if (!ok) alert('Could not download the settings JSON file.');
+  }
+
+  async function loadScreenCopyClicked() {
+    let text = '';
+    try { text = loadCodeTextarea ? String(loadCodeTextarea.value || '') : ''; } catch (_) { text = ''; }
+
+    // If there is no JSON yet, generate it first.
+    if (!text.trim()) {
+      bindExportSettingsModalEventsOnce();
+      const meta = await openExportSettingsModal('generate');
+      if (!meta) return;
+      const out = await generateSettingsJsonToTextarea(meta);
+      text = out && out.json ? out.json : '';
+    }
+
+    const btn = loadBtnCopy;
+    if (btn && !btn.dataset.rgOrigLabel) btn.dataset.rgOrigLabel = String(btn.textContent || '');
+
+    const ok = await copyTextToClipboard(text);
+    if (!ok) {
+      if (btn && btn.dataset.rgOrigLabel) btn.textContent = btn.dataset.rgOrigLabel;
+      alert('Copy failed. You can manually select the JSON and copy it.');
+      return;
+    }
+
+    if (btn) {
+      const orig = btn.dataset.rgOrigLabel || 'Copy code';
+      btn.textContent = 'Copied';
+      try { if (btn._rgCopyTimer) clearTimeout(btn._rgCopyTimer); } catch (_) {}
+      try { btn._rgCopyTimer = setTimeout(() => { try { btn.textContent = orig; } catch (_) {} }, 1500); } catch (_) {}
+    }
+}
+
+
+
+  // v015_p03_import_settings_json_load_text_file: Import settings (textarea + file) + success UX
+  function setImportSettingsModalOpen(open) {
+    if (!rgImportSettingsModal) return;
+    rgImportSettingsModal.classList.toggle('hidden', !open);
+    rgImportSettingsModal.setAttribute('aria-hidden', open ? 'false' : 'true');
+  }
+
+  function bindImportSettingsModalEventsOnce() {
+    if (ui._importSettingsModalBound) return;
+    ui._importSettingsModalBound = true;
+
+    const close = () => setImportSettingsModalOpen(false);
+
+    if (rgImportSettingsModalClose) rgImportSettingsModalClose.addEventListener('click', close);
+    if (rgImportSettingsModalOk) rgImportSettingsModalOk.addEventListener('click', close);
+
+    if (rgImportSettingsModal) {
+      rgImportSettingsModal.addEventListener('click', (e) => {
+        if (e && e.target === rgImportSettingsModal) close();
+      });
+    }
+
+    document.addEventListener('keydown', (e) => {
+      try {
+        if (!e || e.key !== 'Escape') return;
+        if (!rgImportSettingsModal) return;
+        if (rgImportSettingsModal.classList.contains('hidden')) return;
+        close();
+      } catch (_) {}
+    });
+  }
+
+  function showImportSettingsModal(opts) {
+    bindImportSettingsModalEventsOnce();
+    const o = (opts && typeof opts === 'object') ? opts : {};
+    const title = String(o.title || 'Loaded successfully');
+    const lines = Array.isArray(o.lines) ? o.lines : [];
+    const isError = !!o.isError;
+
+    if (rgImportSettingsModalTitle) rgImportSettingsModalTitle.textContent = title;
+
+    if (rgImportSettingsModalLines) {
+      rgImportSettingsModalLines.innerHTML = '';
+      for (const line of lines) {
+        const div = document.createElement('div');
+        const s = String(line || '');
+        const isWarn = !isError && (s.startsWith('⚠') || s.startsWith('↳'));
+        div.className = 'rg-import-line' + ((isError || isWarn) ? '' : ' rg-muted');
+        div.textContent = s;
+        rgImportSettingsModalLines.appendChild(div);
+      }
+    }
+
+    setImportSettingsModalOpen(true);
+  }
+
+  function isPlainObject(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
+
+  function coerceEnum(raw, allowed, fallback) {
+    const v = String(raw || '');
+    return allowed.indexOf(v) >= 0 ? v : fallback;
+  }
+
+  function isValidScaleKey(rawKey) {
+    const k = String(rawKey || '').trim();
+    if (!k) return false;
+    if (k === 'custom_hz') return true;
+    try {
+      for (const s of SCALE_LIBRARY) {
+        if (s && s.key === k) return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  function deepMergeJson(base, patch) {
+    if (typeof patch === 'undefined') return base;
+    if (Array.isArray(patch)) return patch.slice();
+    if (!isPlainObject(patch)) return patch;
+
+    const out = isPlainObject(base) ? Object.assign({}, base) : {};
+    for (const k of Object.keys(patch)) {
+      const pv = patch[k];
+      if (typeof pv === 'undefined') continue;
+      const bv = out[k];
+      if (Array.isArray(pv)) out[k] = pv.slice();
+      else if (isPlainObject(pv) && isPlainObject(bv)) out[k] = deepMergeJson(bv, pv);
+      else if (isPlainObject(pv) && !isPlainObject(bv)) out[k] = deepMergeJson({}, pv);
+      else out[k] = pv;
+    }
+    return out;
+  }
+
+  function normalizeImportedSettingsPayload(raw) {
+    if (!isPlainObject(raw)) throw new Error('JSON must be an object.');
+
+    // Allow wrappers (future/legacy)
+    let payload = raw;
+    if (isPlainObject(raw.settings) && (raw.settings.config || raw.settings.metadata)) payload = raw.settings;
+
+    const metadata = isPlainObject(payload.metadata) ? payload.metadata : (isPlainObject(raw.metadata) ? raw.metadata : {});
+    let config = isPlainObject(payload.config) ? payload.config : null;
+
+    // Legacy: treat the object itself as config if it looks like a config.
+    if (!config && (isPlainObject(payload.method) || isPlainObject(payload.run) || isPlainObject(payload.view) || isPlainObject(payload.sound) || isPlainObject(payload.input))) {
+      config = payload;
+    }
+    if (!config && isPlainObject(raw.config)) config = raw.config;
+
+    if (!config) throw new Error('Missing "config" object (settings export).');
+
+    // schemaVersion: prefer metadata.schemaVersion; else look in root/config
+    if (!metadata.schemaVersion) {
+      const sv = (payload && payload.schemaVersion) ? payload.schemaVersion : (raw && raw.schemaVersion) ? raw.schemaVersion : (config && config.schemaVersion) ? config.schemaVersion : '';
+      if (sv) metadata.schemaVersion = sv;
+    }
+
+    // Optional stats: root.stats or payload.stats (any shape)
+    let stats = null;
+    if (typeof payload.stats !== 'undefined') stats = payload.stats;
+    else if (typeof raw.stats !== 'undefined') stats = raw.stats;
+
+    // v015_p04_stats_export_import_and_compare: optional statsHistory (array of summary records)
+    let statsHistory = null;
+    if (typeof payload.statsHistory !== 'undefined') statsHistory = payload.statsHistory;
+    else if (typeof raw.statsHistory !== 'undefined') statsHistory = raw.statsHistory;
+
+    return { metadata, config, stats, statsHistory };
+  }
+
+  function validateImportedSettingsPayload(norm) {
+    const metadata = norm && norm.metadata;
+    const config = norm && norm.config;
+
+    if (!isPlainObject(config)) throw new Error('Invalid "config": expected an object.');
+    if (!isPlainObject(config.method)) throw new Error('Missing required field: config.method');
+    if (typeof config.method.key === 'undefined' || String(config.method.key || '').trim() === '') throw new Error('Missing required field: config.method.key');
+
+    const stageNum = Number(config.method.stage);
+    if (!Number.isFinite(stageNum) || stageNum < 4 || stageNum > 12) throw new Error('Invalid method.stage (expected 4-12).');
+
+    const methodKey = String(config.method.key || '').trim();
+    const okMethods = ['plainhunt', 'plainbob', 'grandsire', 'custom'];
+    if (okMethods.indexOf(methodKey) < 0) throw new Error('Unknown method.key: ' + methodKey);
+
+    const stage = clampInt(stageNum, 4, 12, 6);
+
+    const sv = (metadata && typeof metadata.schemaVersion !== 'undefined') ? String(metadata.schemaVersion || '').trim() : '';
+    if (sv) {
+      if (sv.length > 80) throw new Error('Invalid schemaVersion (too long).');
+      // Accept any "rg_settings_*" schemaVersion (legacy) or the current one.
+      if (!(sv === SETTINGS_SCHEMA_VERSION || sv.indexOf('rg_settings_') === 0)) {
+        throw new Error('Unsupported schemaVersion: ' + sv);
+      }
+    }
+
+    return { methodKey, stage, schemaVersion: sv || '' };
+  }
+
+  function extractHighestGlobalScoreFromStats(stats) {
+    if (stats === null || typeof stats === 'undefined') return null;
+    let best = null;
+
+    const tryNum = (x) => {
+      const n = Number(x);
+      if (!Number.isFinite(n)) return;
+      best = (best === null) ? n : Math.max(best, n);
+    };
+
+    // Prefer explicit fields.
+    const scanPreferred = (node, depth) => {
+      if (depth > 7) return;
+      if (node === null || typeof node === 'undefined') return;
+      if (Array.isArray(node)) { for (const v of node) scanPreferred(v, depth + 1); return; }
+      if (!isPlainObject(node)) return;
+
+      for (const [k, v] of Object.entries(node)) {
+        const key = String(k || '').toLowerCase();
+        const preferred = (key.includes('globalscore') || key.includes('global_score') || key.includes('scoreglobal') ||
+                           key.includes('totalscore') || key.includes('scoretotal') || key.includes('highscore') || key.includes('bestscore'));
+        if (preferred && (typeof v === 'number' || typeof v === 'string')) tryNum(v);
+        else scanPreferred(v, depth + 1);
+      }
+    };
+
+    const scanFallback = (node, depth) => {
+      if (best !== null) return;
+      if (depth > 6) return;
+      if (node === null || typeof node === 'undefined') return;
+      if (Array.isArray(node)) { for (const v of node) scanFallback(v, depth + 1); return; }
+      if (!isPlainObject(node)) return;
+
+      for (const [k, v] of Object.entries(node)) {
+        const key = String(k || '').toLowerCase();
+        // Fallback: only count "score" keys if they look global-ish.
+        if ((key === 'score' || key.includes('score')) && (key.includes('total') || key.includes('global'))) {
+          if (typeof v === 'number' || typeof v === 'string') tryNum(v);
+        } else {
+          scanFallback(v, depth + 1);
+        }
+      }
+    };
+
+    try { scanPreferred(stats, 0); } catch (_) {}
+    try { scanFallback(stats, 0); } catch (_) {}
+
+    return (best === null || !Number.isFinite(best)) ? null : best;
+  }
+
+  function applyImportedSettingsConfig(cfg, opts) {
+    const o = (opts && typeof opts === 'object') ? opts : {};
+    const applyPrivacy = !!o.applyPrivacy;
+    const privacyValue = (typeof o.privacyValue === 'undefined') ? '' : String(o.privacyValue || '').trim();
+    const importedConfig = (o && isPlainObject(o.importedConfig)) ? o.importedConfig : null;
+    const srcCfg = importedConfig || cfg;
+
+
+    // v015_p03a_load_hotfix_glyphs_typing_ui: fail-open optional ensure* helpers during import apply.
+    const safeEnsure = (label, fn) => {
+      if (typeof fn !== 'function') return;
+      try { fn(); } catch (_) {}
+    };
+
+    // Large config changes should stop the run first (mirrors other settings changes).
+    safeEnsure('ensureIdleForPlayChange', (typeof ensureIdleForPlayChange === 'function') ? ensureIdleForPlayChange : null);
+
+    
+    // v015_p03b_load_hotfix_mic_const_popup_copy: fail-open per-section import apply guardrail.
+    const importSectionErrors = {};
+    const importSkipped = [];
+    const importCoreOk = { method: true, run: true, view: true, input: true, sound: true };
+
+    // v015_p05a_load_drone_pause_and_volume_fix: allow load-time drone intent to override auto-start
+    const importDronesHint = isPlainObject(o.dronesHint) ? o.dronesHint : null;
+    let dronesForcedPaused = false;
+
+    const truncateImportErr = (s, maxLen) => {
+      const m = (typeof maxLen === 'number' && maxLen > 20) ? Math.floor(maxLen) : 140;
+      let out = '';
+      try { out = String(s || ''); } catch (_) { out = ''; }
+      out = out.replace(/\s+/g, ' ').trim();
+      if (out.length > m) out = out.slice(0, m - 1) + '…';
+      return out;
+    };
+
+    const recordImportSkip = (section, err, isCore) => {
+      const key = String(section || '').trim() || 'unknown';
+      if (!Object.prototype.hasOwnProperty.call(importSectionErrors, key)) {
+        const msg = err && err.message ? String(err.message) : String(err || 'Error');
+        importSectionErrors[key] = truncateImportErr(msg, 140);
+      }
+      if (!importSkipped.includes(key)) importSkipped.push(key);
+      if (isCore && Object.prototype.hasOwnProperty.call(importCoreOk, key)) importCoreOk[key] = false;
+    };
+
+    let stage = state.stage;
+    let sound = {};
+
+    try {
+// --- Method + stage ---
+    const method = isPlainObject(cfg.method) ? cfg.method : {};
+    stage = clampInt(Number(method.stage), 4, 12, 6);
+    state.stage = stage;
+    if (bellCountSelect) bellCountSelect.value = String(stage);
+
+    const methodKey = String(method.key || '').trim();
+    state.method = methodKey;
+
+    if (methodKey === 'custom') {
+      const src = String(method.source || '').trim();
+      state.methodSource = (src === 'library' || src === 'custom_rows') ? src : 'custom_rows';
+      state.methodMeta = isPlainObject(method.meta) ? deepCloneJsonable(method.meta) : null;
+      state.customRows = Array.isArray(method.customRows) ? deepCloneJsonable(method.customRows) : null;
+    } else {
+      state.methodSource = 'built_in';
+      state.methodMeta = null;
+      state.customRows = null;
+    }
+
+    computeRows();
+
+    
+    } catch (e) {
+      recordImportSkip('method', e, true);
+    }
+
+    try {
+// --- Run config ---
+    const run = isPlainObject(cfg.run) ? cfg.run : {};
+    state.bpm = clampInt(Number(run.bpm), 1, 240, 120);
+    if (bpmInput) bpmInput.value = String(state.bpm);
+    if (bpmSlider) bpmSlider.value = String(state.bpm);
+
+    state.liveCount = clampInt(Number(run.liveCount), 1, stage, stage);
+    rebuildLiveCountOptions();
+    if (liveCountSelect) liveCountSelect.value = String(state.liveCount);
+
+    if (Array.isArray(run.liveBells)) state.liveBells = run.liveBells.slice();
+    safeEnsure('ensureLiveBells', (typeof ensureLiveBells === 'function') ? ensureLiveBells : null);
+    if (Array.isArray(run.pathBells)) state.pathBells = run.pathBells.slice();
+    safeEnsure('ensurePathBells', (typeof ensurePathBells === 'function') ? ensurePathBells : null);
+
+    rebuildBellPicker();
+    rebuildPathPicker();
+
+    // Global chord
+    if (Object.prototype.hasOwnProperty.call(run, 'globalChord')) {
+      state.globalChord = sanitizeGlobalChordConfig(run.globalChord);
+      saveGlobalChordToLS();
+      syncGlobalChordControlsUI();
+    }
+
+    
+    } catch (e) {
+      recordImportSkip('run', e, true);
+    }
+
+    try {
+// --- View ---
+    const view = isPlainObject(cfg.view) ? cfg.view : {};
+
+    if (isPlainObject(view.panes)) {
+      if (viewDisplay) viewDisplay.checked = !!view.panes.display;
+      if (viewSpotlight) viewSpotlight.checked = !!view.panes.spotlight;
+      if (viewNotation) viewNotation.checked = !!view.panes.notation;
+      if (viewStats) viewStats.checked = !!view.panes.stats;
+      if (viewMic) viewMic.checked = !!view.panes.mic;
+    }
+
+    if (typeof view.layoutPreset !== 'undefined') {
+      safeSetLS(LS_LAYOUT_PRESET, String(view.layoutPreset || 'auto'));
+      syncLayoutPresetUI();
+    }
+
+    if (typeof view.notationLayout !== 'undefined') {
+      safeSetLS(LS_NOTATION_LAYOUT, String(view.notationLayout || 'compact'));
+      syncNotationLayoutUI();
+    }
+
+    if (typeof view.displayLiveBellsOnly !== 'undefined') {
+      state.displayLiveBellsOnly = !!view.displayLiveBellsOnly;
+      if (displayLiveOnly) displayLiveOnly.checked = state.displayLiveBellsOnly;
+      safeSetBoolLS(LS_DISPLAY_LIVE_BELLS_ONLY, state.displayLiveBellsOnly);
+    }
+
+    if (isPlainObject(view.spotlight)) {
+      if (typeof view.spotlight.swapsView !== 'undefined') {
+        state.spotlightSwapsView = !!view.spotlight.swapsView;
+        if (spotlightSwapsView) spotlightSwapsView.checked = state.spotlightSwapsView;
+        safeSetBoolLS(LS_SPOTLIGHT_SWAPS_VIEW, state.spotlightSwapsView);
+        syncSpotlightSwapRowTogglesUI();
+      }
+
+      if (typeof view.spotlight.showN !== 'undefined') { if (spotlightShowN) spotlightShowN.checked = !!view.spotlight.showN; }
+      if (typeof view.spotlight.showN1 !== 'undefined') { if (spotlightShowN1) spotlightShowN1.checked = !!view.spotlight.showN1; }
+      if (typeof view.spotlight.showN2 !== 'undefined') { if (spotlightShowN2) spotlightShowN2.checked = !!view.spotlight.showN2; }
+      syncSpotlightRowPrefsFromUI();
+    }
+
+    if (isPlainObject(view.notation) && typeof view.notation.swapsOverlay !== 'undefined') {
+      state.notationSwapsOverlay = !!view.notation.swapsOverlay;
+      if (notationSwapsOverlay) notationSwapsOverlay.checked = state.notationSwapsOverlay;
+      safeSetBoolLS(LS_NOTATION_SWAPS_OVERLAY, state.notationSwapsOverlay);
+      syncViewMenuSelectedUI();
+    }
+
+    if (isPlainObject(view.accuracyDots)) {
+      if (typeof view.accuracyDots.enabled !== 'undefined' && accuracyDotsEnabled) accuracyDotsEnabled.checked = !!view.accuracyDots.enabled;
+      if (typeof view.accuracyDots.display !== 'undefined' && accuracyDotsDisplay) accuracyDotsDisplay.checked = !!view.accuracyDots.display;
+      if (typeof view.accuracyDots.notation !== 'undefined' && accuracyDotsNotation) accuracyDotsNotation.checked = !!view.accuracyDots.notation;
+      if (typeof view.accuracyDots.spotlight !== 'undefined' && accuracyDotsSpotlight) accuracyDotsSpotlight.checked = !!view.accuracyDots.spotlight;
+      syncAccuracyDotsPrefsFromUI();
+    }
+
+    syncViewLayout();
+
+    
+    } catch (e) {
+      recordImportSkip('view', e, true);
+    }
+
+    try {
+// --- Input / bindings ---
+    const input = isPlainObject(srcCfg.input) ? srcCfg.input : {};
+    const kbPresent = Object.prototype.hasOwnProperty.call(input, 'keyBindings');
+    if (kbPresent && isPlainObject(input.keyBindings)) {
+      state.keyBindings = deepCloneJsonable(input.keyBindings);
+      safeEnsure('ensureKeyBindings', (typeof ensureKeyBindings === 'function') ? ensureKeyBindings : null);
+      saveKeyBindings();
+      rebuildKeybindPanel();
+    } else {
+      try { resetKeyBindingsToDefaults(); } catch (_) {}
+      try { rebuildKeybindPanel(); } catch (_) {}
+      if (kbPresent && !isPlainObject(input.keyBindings)) recordImportSkip('keyBindings', new Error('Invalid keyBindings; reset to defaults'), false);
+    }
+
+    const gbPresent = Object.prototype.hasOwnProperty.call(input, 'glyphBindings');
+    if (gbPresent && isPlainObject(input.glyphBindings)) {
+      state.glyphBindings = deepCloneJsonable(input.glyphBindings);
+      safeEnsure('ensureGlyphBindings', (typeof ensureGlyphBindings === 'function') ? ensureGlyphBindings : null);
+      saveGlyphBindings();
+    } else {
+      safeDelLS(LS_GLYPHBINDS);
+      try { loadGlyphBindings(); } catch (_) {}
+      safeEnsure('ensureGlyphBindings', (typeof ensureGlyphBindings === 'function') ? ensureGlyphBindings : null);
+      if (gbPresent && !isPlainObject(input.glyphBindings)) recordImportSkip('glyphBindings', new Error('Invalid glyphBindings; reset to defaults'), false);
+    }
+
+    const gsPresent = Object.prototype.hasOwnProperty.call(input, 'glyphStyle');
+    if (gsPresent && isPlainObject(input.glyphStyle)) {
+      state.glyphStyle = deepCloneJsonable(input.glyphStyle);
+      safeEnsure('ensureGlyphStyleState', (typeof ensureGlyphStyleState === 'function') ? ensureGlyphStyleState : null);
+      saveGlyphStyle();
+    } else {
+      safeDelLS(LS_GLYPHSTYLE);
+      try { loadGlyphStyle(); } catch (_) {}
+      safeEnsure('ensureGlyphStyleState', (typeof ensureGlyphStyleState === 'function') ? ensureGlyphStyleState : null);
+      if (gsPresent && !isPlainObject(input.glyphStyle)) recordImportSkip('glyphStyle', new Error('Invalid glyphStyle; reset to defaults'), false);
+    }
+    } catch (e) {
+      recordImportSkip('input', e, true);
+    }
+
+    try {
+// --- Mic prefs ---
+    const micPresent = Object.prototype.hasOwnProperty.call(srcCfg, 'mic');
+    // Stop capture before mutating prefs to avoid dangling audio state.
+    try { setMicEnabled(false, { source: 'import' }); } catch (_) {}
+    // Clear persisted mic keys so sparse imports can't inherit prior values.
+    safeDelLS(LS_MIC_ENABLED);
+    safeDelLS(LS_MIC_BELLS);
+    safeDelLS(LS_MIC_THRESHOLD);
+    safeDelLS(LS_MIC_COOLDOWN_MS);
+    safeDelLS(OLD_LS_MIC_THRESHOLD_DB);
+
+    const mic = (micPresent && isPlainObject(srcCfg.mic)) ? srcCfg.mic : null;
+    if (mic) {
+      if (typeof mic.enabled !== 'undefined') safeSetBoolLS(LS_MIC_ENABLED, !!mic.enabled);
+      if (Array.isArray(mic.bells)) safeSetLS(LS_MIC_BELLS, mic.bells.slice().join(','));
+      if (typeof mic.thresholdRms !== 'undefined') safeSetLS(LS_MIC_THRESHOLD, String(Number(mic.thresholdRms) || 0));
+      if (typeof mic.cooldownMs !== 'undefined') safeSetLS(LS_MIC_COOLDOWN_MS, String(clampInt(Number(mic.cooldownMs), 100, 400, 200)));
+    } else {
+      if (micPresent) recordImportSkip('mic', new Error('Invalid mic prefs; reset to defaults'), false);
+    }
+
+    loadMicPrefs();
+    if (mic && typeof mic.enabled !== 'undefined') setMicEnabled(!!mic.enabled, { source: 'import' });
+    } catch (e) {
+      recordImportSkip('mic', e, false);
+    }
+
+    try {
+// --- Library state (informational) ---
+    const lib = isPlainObject(cfg.library) ? cfg.library : null;
+    if (lib) {
+      if (typeof lib.loaded !== 'undefined') state.libraryLoaded = !!lib.loaded;
+      if (typeof lib.fileName !== 'undefined') state.libraryFileName = String(lib.fileName || '');
+    }
+
+    
+    } catch (e) {
+      recordImportSkip('library', e, false);
+    }
+
+    try {
+// --- Sound ---
+    sound = isPlainObject(cfg.sound) ? cfg.sound : {};
+
+    // Pitch / scale
+    const pitch = isPlainObject(sound.pitch) ? sound.pitch : {};
+    if (typeof pitch.scaleKey !== 'undefined') {
+      const nextScaleKey = String(pitch.scaleKey || '');
+      if (isValidScaleKey(nextScaleKey)) state.scaleKey = nextScaleKey;
+    }
+    if (typeof pitch.octaveC !== 'undefined') state.octaveC = clampInt(Number(pitch.octaveC), 1, 6, 4);
+    if (typeof pitch.customHz !== 'undefined') state.bellCustomHz = clamp(Number(pitch.customHz) || 440, 20, 20000);
+    if (typeof pitch.bellPitchFamily !== 'undefined') state.bellPitchFamily = coerceBellPitchFamily(String(pitch.bellPitchFamily || 'diatonic'));
+    if (typeof pitch.bellPitchSpan !== 'undefined') state.bellPitchSpan = (String(pitch.bellPitchSpan) === 'extended') ? 'extended' : 'compact';
+    if (typeof pitch.bellPitchSpanUser !== 'undefined') state.bellPitchSpanUser = !!pitch.bellPitchSpanUser;
+
+    if (typeof pitch.bellPitchPentVariant !== 'undefined') state.bellPitchPentVariant = coerceEnum(pitch.bellPitchPentVariant, ['major_pent', 'minor_pent', 'whole_tone', 'blues_hex'], 'major_pent');
+    if (typeof pitch.bellPitchChromaticDirection !== 'undefined') state.bellPitchChromaticDirection = coerceEnum(pitch.bellPitchChromaticDirection, ['ascending', 'descending'], 'ascending');
+    if (typeof pitch.bellPitchFifthsType !== 'undefined') state.bellPitchFifthsType = coerceEnum(pitch.bellPitchFifthsType, ['circle', 'line'], 'circle');
+    if (typeof pitch.bellPitchFifthsShape !== 'undefined') state.bellPitchFifthsShape = coerceEnum(pitch.bellPitchFifthsShape, ['soft', 'hard'], 'soft');
+    if (typeof pitch.bellPitchPartialsShape !== 'undefined') state.bellPitchPartialsShape = coerceEnum(pitch.bellPitchPartialsShape, ['harmonic', 'inharmonic'], 'harmonic');
+
+    if (scaleSelect) scaleSelect.value = String(state.scaleKey || '');
+    if (octaveSelect) octaveSelect.value = String(state.octaveC || 4);
+    if (bellCustomHzInput) bellCustomHzInput.value = String(Number.isFinite(Number(state.bellCustomHz)) ? state.bellCustomHz : 440);
+    syncBellCustomHzUI();
+    syncBellPitchFamilyUI();
+    syncBellPitchSpanUI();
+    syncBellPitchSummaryUI();
+
+    rebuildBellFrequencies();
+    try { onBellTuningChanged(); } catch (_) {}
+
+    const bells = isPlainObject(sound.bells) ? sound.bells : {};
+    const soundSrc = isPlainObject(srcCfg.sound) ? srcCfg.sound : {};
+    const bellsSrc = isPlainObject(soundSrc.bells) ? soundSrc.bells : {};
+    const pboPresent = Object.prototype.hasOwnProperty.call(bellsSrc, 'perBellOverrides');
+    const pbo = isPlainObject(bellsSrc.perBellOverrides) ? bellsSrc.perBellOverrides : null;
+    // v015_p05b_load_no_leak_between_imports: sparse imports must not retain prior per-bell overrides.
+    try { resetAllBellOverrides(); } catch (_) {}
+    try { state.bellPan = new Array(13).fill(0); } catch (_) {}
+    try { state.bellDepth = new Array(13).fill(0); } catch (_) {}
+    try { state.spatialDepthMode = 'normal'; } catch (_) {}
+    safeDelLS(LS_BELL_PAN);
+    safeDelLS(LS_BELL_DEPTH);
+    safeDelLS(LS_SPATIAL_DEPTH_MODE);
+    if (pboPresent && !pbo) recordImportSkip('perBellOverrides', new Error('Invalid perBellOverrides; reset to defaults'), false);
+
+    if (typeof bells.masterVolume !== 'undefined') {
+      state.bellVolume = clampInt(Number(bells.masterVolume), 0, 100, 100);
+      if (bellVolume) bellVolume.value = String(state.bellVolume);
+      applyBellMasterGain(true);
+    }
+
+    // Global bell timbre
+    if (isPlainObject(bells.timbre)) {
+      const t = bells.timbre;
+      if (typeof t.ringLength01 !== 'undefined') state.bellRingLength = clamp(Number(t.ringLength01) || 0, 0, 1);
+      if (typeof t.brightness01 !== 'undefined') state.bellBrightness = clamp(Number(t.brightness01) || 0, 0, 1);
+      if (typeof t.strikeHardness01 !== 'undefined') state.bellStrikeHardness = clamp(Number(t.strikeHardness01) || 0, 0, 1);
+      saveBellTimbreToLS();
+      syncBellTimbreUI();
+    }
+
+    // Per-bell overrides: persist via existing LS formats, then re-load.
+    const setOrClearMap = (lsKey, mapObj) => {
+      try {
+        if (mapObj && isPlainObject(mapObj) && Object.keys(mapObj).length) safeSetLS(lsKey, JSON.stringify(mapObj));
+        else safeDelLS(lsKey);
+      } catch (_) { safeDelLS(lsKey); }
+    };
+
+    if (pbo) {
+      setOrClearMap(LS_BELL_HZ_OVERRIDE, isPlainObject(pbo.hz) ? pbo.hz : null);
+      setOrClearMap(LS_BELL_VOL_OVERRIDE, isPlainObject(pbo.volume) ? pbo.volume : null);
+      setOrClearMap(LS_BELL_KEY_OVERRIDE, isPlainObject(pbo.key) ? pbo.key : null);
+      setOrClearMap(LS_BELL_OCT_OVERRIDE, isPlainObject(pbo.octave) ? pbo.octave : null);
+      setOrClearMap(LS_BELL_PAN, isPlainObject(pbo.pan) ? pbo.pan : null);
+      setOrClearMap(LS_BELL_DEPTH, isPlainObject(pbo.depth) ? pbo.depth : null);
+
+      if (typeof pbo.spatialDepthMode !== 'undefined') {
+        state.spatialDepthMode = String(pbo.spatialDepthMode || 'static');
+        saveSpatialDepthModeToLS();
+      }
+
+      setOrClearMap(LS_BELL_TIMBRE_OVERRIDES, isPlainObject(pbo.timbre) ? pbo.timbre : null);
+      setOrClearMap(LS_BELL_CHORD_OVERRIDES, isPlainObject(pbo.chords) ? pbo.chords : null);
+    }
+
+    loadBellOverridesFromLS();
+    loadBellTimbreOverridesFromLS();
+    loadBellChordOverridesFromLS();
+
+    rebuildBellFrequencies();
+    try { onBellTuningChanged(); } catch (_) {}
+    rebuildBellOverridesUI();
+    applyBellPanToAudio();
+    applyBellDepthToAudio();
+
+    
+    } catch (e) {
+      recordImportSkip('sound', e, true);
+    }
+
+    try {
+// Drones + master FX
+    const soundSrc = isPlainObject(srcCfg.sound) ? srcCfg.sound : {};
+    const dronesPresent = Object.prototype.hasOwnProperty.call(soundSrc, 'drones');
+
+    // v015_p05b_load_no_leak_between_imports: reset drones to defaults first so sparse imports can't leak prior state.
+    try { if (state.droneOn) setDroneOn(false); } catch (_) {}
+    state.droneOn = false;
+    state.dronesEnabled = false;
+    state.dronePaused = false;
+    state.dronesPaused = false;
+
+    state.droneType = 'single';
+    state.droneScaleKey = 'Fs_major';
+    state.droneOctaveC = 3;
+    state.droneCustomHz = 440;
+    state.droneVolume = 50;
+    state.dronesMasterVolume = 50;
+    state.droneOwner = 'run';
+
+    safeSetBoolLS(LS_DRONE_ON, false);
+    safeSetLS(LS_DRONE_OCTAVE_C, String(state.droneOctaveC));
+    safeDelLS(LS_DRONE_VARIANTS);
+    try { loadDroneVariantsFromLS(); } catch (_) {}
+    safeDelLS(LS_DRONE_LAYERS);
+    state.droneLayers = null;
+    safeEnsure('ensureDroneLayersState', (typeof ensureDroneLayersState === 'function') ? ensureDroneLayersState : null);
+    try { saveDroneLayersToLS(); } catch (_) {}
+    try { syncDroneOnOffUI(); } catch (_) {}
+    try { syncDronePauseBtnUI(); } catch (_) {}
+    try { rebuildDroneLayersUI(); } catch (_) {}
+    try { applyDroneMasterGain(); } catch (_) {}
+    try { refreshAllDroneLayers(); } catch (_) {}
+
+    const dronesCfg = (dronesPresent && isPlainObject(soundSrc.drones)) ? soundSrc.drones : null;
+    if (dronesCfg) {
+      const drones = dronesCfg;
+      if (typeof drones.owner !== 'undefined') {
+        const o = String(drones.owner || 'run');
+        state.droneOwner = (o === 'meditation') ? 'meditation' : 'run';
+      }
+      const legacy = isPlainObject(drones.legacy) ? drones.legacy : {};
+      const layers = isPlainObject(drones.layers) ? drones.layers : {};
+
+      // Legacy fields (also drive layer 1)
+      if (typeof legacy.type !== 'undefined') state.droneType = String(legacy.type || 'sine');
+      if (typeof legacy.scaleKey !== 'undefined') {
+        const nextDroneScaleKey = String(legacy.scaleKey || '');
+        if (isValidScaleKey(nextDroneScaleKey)) state.droneScaleKey = nextDroneScaleKey;
+      }
+      if (typeof legacy.octaveC !== 'undefined') state.droneOctaveC = clampInt(Number(legacy.octaveC), 1, 6, 4);
+      if (typeof legacy.customHz !== 'undefined') state.droneCustomHz = clamp(Number(legacy.customHz) || 55, 20, 20000);
+
+      // v015_p05a_load_drone_pause_and_volume_fix: accept volume stored as 0..100 or 0..1, but keep state in 0..100
+      const coerceImportVolPct = (raw, fallbackPct) => {
+        const n = Number(raw);
+        if (!Number.isFinite(n)) return fallbackPct;
+        if (n >= 0 && n <= 1) return clampInt(Math.round(n * 100), 0, 100, fallbackPct);
+        return clampInt(Math.round(n), 0, 100, fallbackPct);
+      };
+      if (typeof legacy.volume !== 'undefined') state.droneVolume = coerceImportVolPct(legacy.volume, clampInt(Number(state.droneVolume) || 0, 0, 100, 50));
+
+      safeSetLS(LS_DRONE_OCTAVE_C, String(state.droneOctaveC));
+
+      if (typeof legacy.variants !== 'undefined' && isPlainObject(legacy.variants)) {
+        const v = legacy.variants;
+        if (typeof v.normalize !== 'undefined') state.droneNormalize = !!v.normalize;
+        if (typeof v.warp !== 'undefined') state.droneWarp = clamp(Number(v.warp) || 0, 0, 1);
+        if (typeof v.detuneCents !== 'undefined') state.droneDetuneCents = clamp(Number(v.detuneCents) || 0, -50, 50);
+        if (typeof v.spreadCents !== 'undefined') state.droneSpreadCents = clamp(Number(v.spreadCents) || 0, 0, 60);
+        if (typeof v.density01 !== 'undefined') state.droneDensity01 = clamp(Number(v.density01) || 0, 0, 1);
+        if (typeof v.densityByType !== 'undefined' && isPlainObject(v.densityByType)) state.droneDensityByType = deepCloneJsonable(v.densityByType);
+        saveDroneVariantsToLS();
+      }
+
+      // Layers (optional)
+      if (typeof layers.masterVolume !== 'undefined') state.dronesMasterVolume = coerceImportVolPct(layers.masterVolume, clampInt(Number(state.dronesMasterVolume) || 0, 0, 100, 50));
+      if (Array.isArray(layers.droneLayers)) state.droneLayers = deepCloneJsonable(layers.droneLayers);
+
+      // Mirror layered master volume into legacy master for the gain stage.
+      state.droneVolume = clampInt(Number(state.droneVolume) || 0, 0, 100, 50);
+      state.dronesMasterVolume = clampInt((typeof state.dronesMasterVolume !== 'undefined') ? Number(state.dronesMasterVolume) : state.droneVolume, 0, 100, state.droneVolume);
+      state.droneVolume = clampInt(state.dronesMasterVolume, 0, 100, state.droneVolume);
+
+      // On/off + pause state
+      const wantOn = (typeof legacy.on !== 'undefined') ? !!legacy.on : (typeof layers.enabled !== 'undefined') ? !!layers.enabled : !!state.droneOn;
+      const wantPaused = (typeof legacy.paused !== 'undefined') ? !!legacy.paused : (typeof layers.paused !== 'undefined') ? !!layers.paused : !!state.dronePaused;
+      const loadIndicatedEnabled = !!(importDronesHint && importDronesHint.present && importDronesHint.enabled);
+      const loadIndicatedPaused = !!(importDronesHint && importDronesHint.present && importDronesHint.paused);
+      const targetOn = !!wantOn;
+      const forcePaused = loadIndicatedEnabled && targetOn;
+      const targetPaused = targetOn ? (forcePaused ? true : !!wantPaused) : false;
+      if (forcePaused && !loadIndicatedPaused) dronesForcedPaused = true;
+
+      // Ensure layer 1 matches legacy state.
+      safeEnsure('ensureDroneLayersState', (typeof ensureDroneLayersState === 'function') ? ensureDroneLayersState : null);
+      syncLayer1FromLegacyDroneState();
+
+      // UI fields
+      if (droneTypeSelect) droneTypeSelect.value = String(state.droneType || 'sine');
+      if (droneScaleSelect) droneScaleSelect.value = String(state.droneScaleKey || '');
+      if (droneOctaveSelect) droneOctaveSelect.value = String(state.droneOctaveC || 4);
+      if (droneVolume) droneVolume.value = String(clampInt(Math.round(Number(state.droneVolume) || 0), 0, 100, 50));
+      if (droneCustomHzInput) droneCustomHzInput.value = String(Number.isFinite(Number(state.droneCustomHz)) ? state.droneCustomHz : 55);
+
+      syncDroneCustomHzUI();
+      syncDroneVariantsForType();
+      syncDroneVariantsUI();
+      rebuildDroneLayersUI();
+
+      const wasOn = !!state.droneOn;
+
+      // Apply on/off and pause state.
+      if (!targetOn) {
+        if (state.droneOn) setDroneOn(false);
+        state.droneOn = false;
+        state.dronesEnabled = false;
+        state.dronePaused = false;
+        state.dronesPaused = false;
+        safeSetBoolLS(LS_DRONE_ON, false);
+        saveDroneLayersToLS();
+        syncDroneOnOffUI();
+      } else if (forcePaused) {
+        // Preserve enabled state, but ensure drones load paused so no audible output begins automatically.
+        state.droneOn = true;
+        state.dronesEnabled = true;
+        state.dronePaused = true;
+        state.dronesPaused = true;
+
+        safeSetBoolLS(LS_DRONE_ON, true);
+        saveDroneLayersToLS();
+
+        // If drones were already running in this session, refresh silently (paused) to apply config.
+        if (wasOn) {
+          applyDroneMasterGain();
+          refreshAllDroneLayers();
+        } else {
+          applyDroneMasterGain();
+        }
+
+        syncDroneOnOffUI();
+      } else {
+        // Legacy apply path: respect saved paused state, and allow auto-start.
+        safeSetBoolLS(LS_DRONE_ON, true);
+        if (!state.droneOn) setDroneOn(true);
+
+        state.dronePaused = !!wantPaused;
+        state.dronesPaused = state.dronePaused;
+        saveDroneLayersToLS();
+        applyDroneMasterGain();
+        syncDronePauseBtnUI();
+
+        refreshAllDroneLayers();
+      }
+    } else if (dronesPresent) {
+      recordImportSkip('drones', new Error('Invalid drones config; reset to defaults'), false);
+    }
+
+    
+    } catch (e) {
+      recordImportSkip('drones', e, false);
+    }
+
+    try {
+// --- Master FX ---
+    const soundSrc = isPlainObject(srcCfg.sound) ? srcCfg.sound : {};
+    const fxPresent = Object.prototype.hasOwnProperty.call(soundSrc, 'masterFx');
+
+    // v015_p05b_load_no_leak_between_imports: reset first so sparse imports can't inherit prior FX state.
+    safeDelLS(LS_MASTER_FX);
+    loadMasterFxFromLS();
+
+    const fx = (fxPresent && isPlainObject(soundSrc.masterFx)) ? soundSrc.masterFx : null;
+    if (fx) {
+      const limiter = isPlainObject(fx.limiter) ? fx.limiter : {};
+      const reverb = isPlainObject(fx.reverb) ? fx.reverb : {};
+
+      if (typeof limiter.enabled !== 'undefined') state.fxLimiterEnabled = !!limiter.enabled;
+      if (typeof limiter.amount01 !== 'undefined') state.fxLimiterAmount = clamp(Number(limiter.amount01) || 0, 0, 1);
+
+      if (typeof reverb.enabled !== 'undefined') state.fxReverbEnabled = !!reverb.enabled;
+      if (typeof reverb.mix01 !== 'undefined') state.fxReverbMix = clamp(Number(reverb.mix01) || 0, 0, 1);
+      else if (typeof reverb.send01 !== 'undefined') state.fxReverbMix = clamp(Number(reverb.send01) || 0, 0, 1); // legacy
+      if (typeof reverb.size01 !== 'undefined') state.fxReverbSize = clamp(Number(reverb.size01) || 0, 0, 1);
+      else if (typeof reverb.size !== 'undefined') state.fxReverbSize = clamp(Number(reverb.size) || 0, 0, 1); // legacy
+      if (typeof reverb.highCutHz !== 'undefined') state.fxReverbHighCutHz = clamp(Number(reverb.highCutHz) || 6000, 500, 20000);
+      else if (typeof reverb.highCut01 !== 'undefined') {
+        const x = clamp(Number(reverb.highCut01) || 0, 0, 1);
+        const minHz = 500, maxHz = 20000;
+        state.fxReverbHighCutHz = clamp(minHz * Math.pow(maxHz / minHz, x), 500, 20000);
+      }
+
+      // Keep legacy fields if present (harmless; some older builds used these names).
+      if (typeof reverb.send01 !== 'undefined') state.fxReverbSend = clamp(Number(reverb.send01) || 0, 0, 1);
+      if (typeof reverb.highCut01 !== 'undefined') state.fxReverbHighCut = clamp(Number(reverb.highCut01) || 0, 0, 1);
+
+      saveMasterFxToLS();
+    } else {
+      if (fxPresent) recordImportSkip('masterFx', new Error('Invalid masterFx; reset to defaults'), false);
+    }
+
+    syncMasterFxUI();
+    applyMasterFxAll(true);
+    queueMasterReverbImpulseRebuild();
+
+    } catch (e) {
+      recordImportSkip('masterFx', e, false);
+    }
+
+    try {
+// --- Privacy ---
+    if (applyPrivacy) {
+      setAudienceConsent(privacyValue || '');
+      syncAudienceConsentUI();
+    }
+
+    
+    } catch (e) {
+      recordImportSkip('privacy', e, false);
+    }
+
+    const coreFailed = Object.keys(importCoreOk).filter(k => !importCoreOk[k]);
+    if (coreFailed.length) {
+      const first = coreFailed[0];
+      const why = Object.prototype.hasOwnProperty.call(importSectionErrors, first) ? (' — ' + first + ': ' + importSectionErrors[first]) : '';
+      throw new Error('Core sections failed: ' + coreFailed.join(', ') + why);
+    }
+// Final refresh
+    syncGameHeaderMeta();
+    syncMethodSelectSourceDropdown();
+    renderScoringExplanation();
+    resetStats();
+
+    markDirty();
+    if (!inLoopTick) kickLoop();
+
+    const optionalSkipped = importSkipped.filter(s => !Object.prototype.hasOwnProperty.call(importCoreOk, s));
+    const warnings = optionalSkipped.map(s => s + (Object.prototype.hasOwnProperty.call(importSectionErrors, s) ? (': ' + importSectionErrors[s]) : ''));
+    return { optionalSkipped, warnings, dronesForcedPaused };
+
+  }
+
+  async function importSettingsFromText(rawText, opts) {
+    const src = (opts && opts.sourceLabel) ? String(opts.sourceLabel) : '';
+    let text = '';
+    try { text = String(rawText || ''); } catch (_) { text = ''; }
+    if (!text.trim()) {
+      showImportSettingsModal({ title: 'Load failed', isError: true, lines: ['Nothing to load (empty JSON).'] });
+      return false;
+    }
+
+    let parsed = null;
+    try {
+      parsed = JSON.parse(text);
+    } catch (e) {
+      const msg = (e && e.message) ? String(e.message) : 'Invalid JSON.';
+      showImportSettingsModal({ title: 'Load failed', isError: true, lines: ['Invalid JSON: ' + msg] });
+      return false;
+    }
+
+    let norm = null;
+    let vinfo = null;
+    try {
+      norm = normalizeImportedSettingsPayload(parsed);
+      vinfo = validateImportedSettingsPayload(norm);
+    } catch (e) {
+      const msg = (e && e.message) ? String(e.message) : String(e || 'Invalid settings JSON.');
+      showImportSettingsModal({ title: 'Load failed', isError: true, lines: [msg] });
+      return false;
+    }
+
+    // Snapshot current settings to allow rollback on apply failure.
+    const beforeConsent = getAudienceConsent();
+    const before = buildSettingsExportPayload({});
+    const beforeConfig = (before && before.config) ? before.config : {};
+
+    // Merge: imported values override current settings; missing fields keep current values.
+    const merged = deepMergeJson(beforeConfig, norm.config);
+
+    const privacySpecified = !!(norm.config && isPlainObject(norm.config.privacy) && Object.prototype.hasOwnProperty.call(norm.config.privacy, 'audienceMeasurementConsent'));
+    const wantedConsent = privacySpecified ? String(norm.config.privacy.audienceMeasurementConsent || '').trim() : '';
+
+    // v015_p05a_load_drone_pause_and_volume_fix: detect drone intent in the loaded JSON
+    const dronesHint = (() => {
+      try {
+        const sc = (norm && norm.config) ? norm.config : null;
+        const snd = (sc && isPlainObject(sc.sound)) ? sc.sound : null;
+        const d = (snd && isPlainObject(snd.drones)) ? snd.drones : null;
+        const legacy = (d && isPlainObject(d.legacy)) ? d.legacy : null;
+        const layers = (d && isPlainObject(d.layers)) ? d.layers : null;
+        const enabled = !!((legacy && legacy.on) || (layers && layers.enabled));
+        const paused = !!((legacy && legacy.paused) || (layers && layers.paused));
+        return { present: !!d, enabled, paused };
+      } catch (_) { return { present: false, enabled: false, paused: false }; }
+    })();
+
+    // Apply atomically (best effort)
+    let applyInfo = null;
+    try {
+      applyInfo = applyImportedSettingsConfig(merged, { importedConfig: norm.config, applyPrivacy: privacySpecified, privacyValue: wantedConsent, dronesHint });
+    } catch (e) {
+      // Rollback attempt
+      try { applyImportedSettingsConfig(beforeConfig, { applyPrivacy: true, privacyValue: beforeConsent }); } catch (_) {}
+
+      const msg = (e && e.message) ? String(e.message) : String(e || 'Apply failed.');
+      const lines = ['Failed to apply settings: ' + msg];
+      if (src) lines.push('Source: ' + src);
+      showImportSettingsModal({ title: 'Load failed', isError: true, lines });
+      return false;
+    }
+
+    // Success UX
+    const meta = (norm && norm.metadata) ? norm.metadata : {};
+    const title = (meta && (meta.title || meta.Title)) ? String(meta.title || meta.Title) : '';
+    const name = (meta && (meta.name || meta.nickname || meta.nick)) ? String(meta.name || meta.nickname || meta.nick) : '';
+    // v015_p04_stats_export_import_and_compare: store imported statsHistory (UI-only)
+    const importedHistory = normalizeStatsHistoryArray(norm.statsHistory);
+    ui.loadedStatsHistory = importedHistory;
+    // v015_p04_stats_export_import_and_compare: retain loaded JSON for append-only updates
+    try {
+      ui.loadedCodeRoot = deepCloneJsonable(parsed);
+      ui.loadedCodePayload = ui.loadedCodeRoot;
+      if (ui.loadedCodeRoot && isPlainObject(ui.loadedCodeRoot.settings) && (ui.loadedCodeRoot.settings.config || ui.loadedCodeRoot.settings.metadata)) {
+        ui.loadedCodePayload = ui.loadedCodeRoot.settings;
+      }
+      ui.loadedCodeFileName = (opts && opts.sourceFileName) ? String(opts.sourceFileName) : '';
+      ui.loadedCodeScoringSignature = buildScoringSignatureFromState();
+    } catch (_) {
+      ui.loadedCodeRoot = null;
+      ui.loadedCodePayload = null;
+      ui.loadedCodeFileName = '';
+      ui.loadedCodeScoringSignature = null;
+    }
+    try { updateLoadAppendRunButtonState(); } catch (_) {}
+
+    const highest = (importedHistory && importedHistory.length)
+      ? extractHighestGlobalScoreFromStatsHistory(importedHistory)
+      : extractHighestGlobalScoreFromStats(norm.stats);
+
+    const lines = [];
+    if (title) lines.push('Title: ' + title);
+    if (name) lines.push('Name: ' + name);
+    if (highest !== null) lines.push('Highest score: ' + String(Math.round(highest)));
+
+    lines.push('Loaded successfully' + (vinfo && vinfo.schemaVersion ? ' (' + vinfo.schemaVersion + ')' : '') + '.');
+
+    if (applyInfo && applyInfo.dronesForcedPaused) lines.push('Drones loaded paused.');
+
+    const warnSections = (applyInfo && Array.isArray(applyInfo.optionalSkipped)) ? applyInfo.optionalSkipped : [];
+    if (warnSections.length) {
+      lines.push('⚠ Loaded with warnings: ' + warnSections.join(', ') + '.');
+      const wlines = (applyInfo && Array.isArray(applyInfo.warnings)) ? applyInfo.warnings : [];
+      for (const w of wlines) lines.push('↳ ' + String(w || ''));
+    }
+    showImportSettingsModal({ title: (warnSections.length ? 'Loaded with warnings' : 'Loaded successfully'), isError: false, lines });
+
+    return true;
+  }
+
+  async function loadScreenLoadClicked() {
+    const txt = loadCodeTextarea ? String(loadCodeTextarea.value || '') : '';
+    await importSettingsFromText(txt, { sourceLabel: 'Textarea' });
+  }
+
+  function ensureLoadSettingsFileInput() {
+    if (ui._loadSettingsFileInput) return ui._loadSettingsFileInput;
+
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,application/json';
+    input.tabIndex = -1;
+    input.style.position = 'fixed';
+    input.style.left = '-10000px';
+    input.style.top = '0';
+    input.style.width = '1px';
+    input.style.height = '1px';
+
+    input.addEventListener('change', () => {
+      const file = (input.files && input.files[0]) ? input.files[0] : null;
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const text = String(reader.result || '');
+        await importSettingsFromText(text, { sourceLabel: file && file.name ? file.name : 'File', sourceFileName: file && file.name ? file.name : '' });
+        try { input.value = ''; } catch (_) {}
+      };
+      reader.onerror = () => {
+        showImportSettingsModal({ title: 'Load failed', isError: true, lines: ['Failed to read file.'] });
+        try { input.value = ''; } catch (_) {}
+      };
+      try { reader.readAsText(file); } catch (_) {
+        showImportSettingsModal({ title: 'Load failed', isError: true, lines: ['Failed to read file.'] });
+        try { input.value = ''; } catch (_) {}
+      }
+    });
+
+    try { document.body.appendChild(input); } catch (_) {}
+    ui._loadSettingsFileInput = input;
+    return input;
+  }
+
+  function loadScreenLoadFileClicked() {
+    const input = ensureLoadSettingsFileInput();
+    if (!input) {
+      showImportSettingsModal({ title: 'Load failed', isError: true, lines: ['File picker is not available.'] });
+      return;
+    }
+    try { input.click(); } catch (_) {
+      showImportSettingsModal({ title: 'Load failed', isError: true, lines: ['File picker is not available.'] });
+    }
+  }
+  // Wire Load screen actions
+  if (loadBtnGenerate) loadBtnGenerate.addEventListener('click', () => { loadScreenGenerateClicked(); });
+  if (loadBtnSaveFile) loadBtnSaveFile.addEventListener('click', () => { loadScreenSaveFileClicked(); });
+  if (loadBtnAppendRun) loadBtnAppendRun.addEventListener('click', () => { loadScreenAppendRunClicked(); });
+  if (loadBtnCopy) loadBtnCopy.addEventListener('click', () => { loadScreenCopyClicked(); });
+  if (loadBtnLoad) loadBtnLoad.addEventListener('click', () => { loadScreenLoadClicked(); });
+  if (loadBtnLoadFile) loadBtnLoadFile.addEventListener('click', () => { loadScreenLoadFileClicked(); });
+
 
   // v011_p01_sound_intro_page: Sound -> Sound Menu Introduction (SPA navigation)
   if (soundIntroLink) {
@@ -9373,7 +11471,24 @@ function rebuildBellFrequencies() {
     safeSetLS(LS_GLYPHBINDS, JSON.stringify(state.glyphBindings || {}));
   }
 
-  // v013_p01c_setup_glyph_color_bindings: setup-only glyph styling persistence.
+    // v015_p03a_load_hotfix_glyphs_typing_ui: validate imported glyph binding overrides.
+  function ensureGlyphBindings() {
+    if (!state.glyphBindings || typeof state.glyphBindings !== 'object') {
+      state.glyphBindings = {};
+      return;
+    }
+    const cleaned = {};
+    for (const k in state.glyphBindings) {
+      if (!Object.prototype.hasOwnProperty.call(state.glyphBindings, k)) continue;
+      const bell = parseInt(k, 10);
+      if (!isFinite(bell) || bell < 1 || bell > 12) continue;
+      const v = state.glyphBindings[k];
+      if (typeof v === 'string' && v.length === 1) cleaned[bell] = v;
+    }
+    state.glyphBindings = cleaned;
+  }
+
+// v013_p01c_setup_glyph_color_bindings: setup-only glyph styling persistence.
   function ensureGlyphStyleState() {
     if (!state.glyphStyle || typeof state.glyphStyle !== 'object') {
       state.glyphStyle = { defaultColor: '', bellColors: {}, colorOnly: {} };
@@ -10798,13 +12913,23 @@ function rebuildBellFrequencies() {
     const target = pickAnyTargetInWindow(nowMs);
     if (!target) return false;
 
-    if (src === 'mic') registerMicHit(target.bell, nowMs);
-    else ringBell(target.bell);
+    if (src === 'mic') {
+      markRunInputUsed('mic');
+      registerMicHit(target.bell, nowMs);
+    } else if (src === 'tap') {
+      markRunInputUsed('tap');
+      ringBell(target.bell);
+    } else {
+      markRunInputUsed('keyboard');
+      ringBell(target.bell);
+    }
     return true;
   }
 
   function registerMicHit(bell, timeMs) {
     if (state.mode !== 'play') return;
+    // v015_p04_stats_export_import_and_compare: input fidelity (mic)
+    markRunInputUsed('mic');
     // Mic hits are silent: score + visuals only, no bell audio.
     markRung(bell, timeMs);
     scoreHit(bell, timeMs);
@@ -12650,6 +14775,114 @@ function rebuildBellFrequencies() {
 
     html += '<div class="stats-info" id="statsScoringExplain"></div>';
 
+    // v015_p04_stats_export_import_and_compare: show loaded historic stats when compatible
+    const histAll = (ui.loadedStatsHistory && Array.isArray(ui.loadedStatsHistory)) ? ui.loadedStatsHistory : [];
+    if (histAll.length) {
+      const currentSig = buildScoringSignatureFromState();
+      const matching = [];
+      let otherCount = 0;
+      for (const rec of histAll) {
+        const sig = rec && rec.scoringSignature;
+        if (sig && scoringSignatureEquals(currentSig, sig)) matching.push(rec);
+        else otherCount += 1;
+      }
+
+      if (matching.length) {
+        const getMaeMs = (rec) => {
+          const m = Number(rec && rec.MAEms);
+          if (Number.isFinite(m)) return Math.round(m);
+          // Fallback: weighted MAE from perBell (may be approximate due to rounding).
+          const pb = (rec && rec.perBell && typeof rec.perBell === 'object') ? rec.perBell : {};
+          let hits = 0, sum = 0;
+          for (const k of Object.keys(pb)) {
+            const s = pb[k] || {};
+            const h = Number(s.hits) || 0;
+            const mae = Number(s.maeMs);
+            if (h > 0 && Number.isFinite(mae)) { hits += h; sum += h * mae; }
+          }
+          return hits > 0 ? Math.round(sum / hits) : null;
+        };
+
+        const getWhenIso = (rec) => (rec && rec.savedAtISO) ? String(rec.savedAtISO) : ((rec && rec.runEndedAtISO) ? String(rec.runEndedAtISO) : '');
+        const getWhenMs = (iso) => { const d = safeParseIso(iso); return d ? d.getTime() : 0; };
+
+        const formatPanesCompact = (panes) => {
+          const p = panes && typeof panes === 'object' ? panes : {};
+          const out = [];
+          if (p.display) out.push('D');
+          if (p.spotlight) out.push('S');
+          if (p.notation) out.push('N');
+          if (p.stats) out.push('T');
+          if (p.mic) out.push('M');
+          return out.length ? out.join('') : '—';
+        };
+
+        matching.sort((a, b) => {
+          const sa = Number(a && a.scoreGlobal);
+          const sb = Number(b && b.scoreGlobal);
+          const sca = Number.isFinite(sa) ? sa : -Infinity;
+          const scb = Number.isFinite(sb) ? sb : -Infinity;
+          if (scb !== sca) return scb - sca;
+
+          const ma = getMaeMs(a);
+          const mb = getMaeMs(b);
+          const maa = Number.isFinite(ma) ? ma : Infinity;
+          const mbb = Number.isFinite(mb) ? mb : Infinity;
+          if (maa !== mbb) return maa - mbb;
+
+          const ta = getWhenMs(getWhenIso(a));
+          const tb = getWhenMs(getWhenIso(b));
+          return tb - ta;
+        });
+
+        const top = matching.slice(0, 10);
+
+        html += '<div class="stats-historic">';
+        html += '<div class="stats-historic-title">Historic (Top 10)</div>';
+
+        for (const rec of top) {
+          const score = Number(rec && rec.scoreGlobal);
+          const scoreTxt = Number.isFinite(score) ? String(Math.round(score)) : '&ndash;';
+
+          const mae = getMaeMs(rec);
+          const maeTxt = (mae == null || !Number.isFinite(mae)) ? '&ndash;' : (escapeHtml(fmtMs(mae, false)) + ' ms');
+
+          const whenIso = getWhenIso(rec);
+          const whenTxt = whenIso ? escapeHtml(fmtIsoForUi(whenIso)) : '&ndash;';
+
+          const meta = (rec && rec.meta && typeof rec.meta === 'object') ? rec.meta : {};
+          const nm = meta && meta.name ? String(meta.name) : '';
+          const label = nm ? escapeHtml(nm) : '';
+
+          const inputTxt = formatInputMethodsSummary(rec);
+          const panesTxt = formatPanesCompact(rec && rec.panesEnabled);
+
+
+          html += '<div class="stats-historic-item">';
+          html += '<span class="stats-historic-score">' + scoreTxt + '</span>';
+          html += '<span class="stats-historic-mae">' + maeTxt + '</span>';
+          html += '<span class="stats-historic-when">' + whenTxt + '</span>';
+          if (label) html += '<span class="stats-historic-label">' + label + '</span>';
+          html += '<span class="stats-historic-details">Input: ' + escapeHtml(inputTxt) + ' • Panes:' + escapeHtml(panesTxt) + '</span>';
+          html += '</div>';
+        }
+
+        if (matching.length > 10) {
+          html += '<div class="stats-historic-note">Showing top 10 of ' + String(matching.length) + ' matching runs.</div>';
+        }
+
+        if (otherCount > 0) {
+          html += '<div class="stats-historic-note">Saved stats exist for other setups (' + otherCount + ').</div>';
+        }
+        html += '</div>';
+      } else {
+        html += '<div class="stats-historic">';
+        html += '<div class="stats-historic-title">Historic</div>';
+        html += '<div class="stats-historic-note">Saved stats exist for other setups.</div>';
+        html += '</div>';
+      }
+    }
+
     statsDiv.innerHTML = html;
     renderScoringExplanation();
   }
@@ -12668,7 +14901,17 @@ function rebuildBellFrequencies() {
     rebuildKeybindPanel();
 
     const playId = rid('p_');
-    state.currentPlay = { playId, began: false, mode: state.mode };
+    state.currentPlay = {
+      playId,
+      began: false,
+      mode: state.mode,
+      createdAtISO: new Date().toISOString(),
+      startedAtISO: null,
+      endedAtISO: null,
+      panesEnabled: snapshotPanesEnabled(),
+      anyBells: getAnyKeyboundBells(),
+      inputUsed: { keyboard: false, tap: false, mic: false },
+    };
 
     const tempoBpm = clamp(parseInt(bpmInput.value, 10) || 80, 1, 240);
     state.bpm = tempoBpm;
@@ -12838,9 +15081,18 @@ function rebuildBellFrequencies() {
     if (demoBtn) demoBtn.disabled = false;
 
     if (hadPlay) {
+      // v015_p04_stats_export_import_and_compare: snapshot run-end info for optional export
+      try { if (state.currentPlay) state.currentPlay.endedAtISO = new Date().toISOString(); } catch (_) {}
+
       const payload = buildPlayEndPayload(now, endReason);
       payload.mode = runMode;
       if (runMode === 'play') updateVisitorTotals(payload);
+
+      if (runMode === 'play') {
+        try { ui.lastRunStatsSnapshot = captureLastRunStatsSnapshot(); } catch (_) { ui.lastRunStatsSnapshot = null; }
+        try { updateLoadAppendRunButtonState(); } catch (_) {}
+      }
+
       state.currentPlay = null;
     }
 
@@ -12955,6 +15207,7 @@ function rebuildBellFrequencies() {
 
         if (state.currentPlay && !state.currentPlay.began) {
           state.currentPlay.began = true;
+          try { if (!state.currentPlay.startedAtISO) state.currentPlay.startedAtISO = new Date().toISOString(); } catch (_) {}
         }
       }
 
@@ -13151,8 +15404,15 @@ function rebuildBellFrequencies() {
   }
 
   document.addEventListener('keydown', (e) => {
-    const t = e.target;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    const t = e && e.target;
+    const tag = t && t.tagName;
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || (t && t.isContentEditable)) return;
+    const a = document.activeElement;
+    const atag = a && a.tagName;
+    if (a && a !== t && (atag === 'INPUT' || atag === 'SELECT' || atag === 'TEXTAREA' || a.isContentEditable)) return;
+
+    // v015_p03a_load_hotfix_glyphs_typing_ui: avoid global shortcuts while Export settings modal is open (typing safety).
+    if (rgExportSettingsModal && !rgExportSettingsModal.classList.contains('hidden')) return;
 
     // v013_p01c_setup_glyph_color_bindings: glyph picker overlay intercepts keys.
     if (state.glyphPickerBell != null) {
@@ -13239,6 +15499,8 @@ function rebuildBellFrequencies() {
     // Default extra keys: if exactly one live bell is selected, Space and Enter also ring it.
     if (state.liveBells.length === 1 && (k === 'Space' || k === 'Enter')) {
       e.preventDefault();
+      // v015_p04_stats_export_import_and_compare: input fidelity (keyboard)
+      markRunInputUsed('keyboard');
       ringBell(state.liveBells[0]);
       return;
     }
@@ -13257,6 +15519,8 @@ function rebuildBellFrequencies() {
     if (hits > 1) return;
     if (found != null) {
       if (k === 'Space') e.preventDefault();
+      // v015_p04_stats_export_import_and_compare: input fidelity (keyboard)
+      markRunInputUsed('keyboard');
       ringBell(found);
       return;
     }
@@ -13265,7 +15529,7 @@ function rebuildBellFrequencies() {
     const defBell = globalDefaultRingBellForKey(k);
     if (defBell != null) {
       const stage = clamp(parseInt(state.stage, 10) || 0, 1, 12);
-      if (defBell <= stage) ringBell(defBell);
+      if (defBell <= stage) { markRunInputUsed('keyboard'); ringBell(defBell); }
       return;
     }
   });
@@ -13273,7 +15537,7 @@ function rebuildBellFrequencies() {
   // Display tap: ring the tapped bell (standard touch control).
   displayCanvas.addEventListener('pointerdown', (e) => {
     const bell = displayHitTest(e.clientX, e.clientY);
-    if (bell != null) { e.preventDefault(); if (tryCaptureAnyInput(perfNow(), 'tap', e, null)) return; ringBell(bell); }
+    if (bell != null) { e.preventDefault(); if (tryCaptureAnyInput(perfNow(), 'tap', e, null)) return; markRunInputUsed('tap'); ringBell(bell); }
   });
 
   // v06_p13_notation_touch_polish: tap + drag-across-to-ring on notation (both pages)
@@ -13308,7 +15572,7 @@ function rebuildBellFrequencies() {
     ui.notationTapFlash = { rowIndex: hit.rowIndex, bell: hit.bell, untilMs: perfNow() + 150 };
 
     // Ring audibly (and score via the existing input path when applicable).
-    if (!tryCaptureAnyInput(perfNow(), 'tap', e, null)) ringBell(hit.bell);
+    if (!tryCaptureAnyInput(perfNow(), 'tap', e, null)) { markRunInputUsed('tap'); ringBell(hit.bell); }
 
     // Prevent tap highlight / selection only while actively tracking a notation gesture.
     e.preventDefault();
@@ -13334,7 +15598,7 @@ function rebuildBellFrequencies() {
 
     ui.notationCursorRow = hit.rowIndex;
     ui.notationTapFlash = { rowIndex: hit.rowIndex, bell: hit.bell, untilMs: perfNow() + 150 };
-    if (!tryCaptureAnyInput(perfNow(), 'tap', e, null)) ringBell(hit.bell);
+    if (!tryCaptureAnyInput(perfNow(), 'tap', e, null)) { markRunInputUsed('tap'); ringBell(hit.bell); }
 
     e.preventDefault();
   });
@@ -13469,7 +15733,7 @@ function rebuildBellFrequencies() {
     ui.spotlightTapFlash = { rowKind: hit.rowKind, bell: hit.bell, untilMs: perfNow() + 150 };
 
     // Ring audibly (and score via the existing input path when applicable).
-    if (!tryCaptureAnyInput(perfNow(), 'tap', e, null)) ringBell(hit.bell);
+    if (!tryCaptureAnyInput(perfNow(), 'tap', e, null)) { markRunInputUsed('tap'); ringBell(hit.bell); }
 
     // Ensure the flash is rendered promptly under the existing perf loop.
     markDirty();
@@ -13497,7 +15761,7 @@ function rebuildBellFrequencies() {
     ui.spotlightDragLastKey = key;
 
     ui.spotlightTapFlash = { rowKind: hit.rowKind, bell: hit.bell, untilMs: perfNow() + 150 };
-    if (!tryCaptureAnyInput(perfNow(), 'tap', e, null)) ringBell(hit.bell);
+    if (!tryCaptureAnyInput(perfNow(), 'tap', e, null)) { markRunInputUsed('tap'); ringBell(hit.bell); }
     markDirty();
 
     e.preventDefault();
