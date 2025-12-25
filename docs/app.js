@@ -75,7 +75,7 @@
   // === Analytics (GA4) ===
   const GA_MEASUREMENT_ID = 'G-7TEG531231';
   const GA_ID = GA_MEASUREMENT_ID;
-  const SITE_VERSION = 'v015_p05b_load_no_leak_between_imports';
+  const SITE_VERSION = 'v016_p03_library_play_async_precompute';
 
   function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
   function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
@@ -1316,6 +1316,7 @@ const next = (nn === 'home' || nn === 'play' || nn === 'view' || nn === 'sound' 
       capped: false,
       pn: pn,
       tokens: null,
+      leadLenWarn: '',
       tokenIdx: 0,
       curRow: rounds.slice(),
       roundsStr: libPreviewNumbersToRowString(rounds),
@@ -1330,6 +1331,10 @@ const next = (nn === 'home' || nn === 'play' || nn === 'view' || nn === 'sound' 
         if (toks && toks.length) {
           cache.tokens = toks.slice();
           cache.genMode = 'pn';
+          let ll = (m && m.lengthOfLead != null) ? parseInt(m.lengthOfLead, 10) : NaN;
+          if (isFinite(ll) && ll > 0 && cache.tokens.length !== ll) {
+            cache.leadLenWarn = 'Warning: lead length mismatch (lengthOfLead=' + ll + ', PN tokens=' + cache.tokens.length + ').';
+          }
         }
       } catch (_) {}
     }
@@ -1414,7 +1419,14 @@ const next = (nn === 'home' || nn === 'play' || nn === 'view' || nn === 'sound' 
     }
 
     if (libraryPreviewLimitNote) {
-      libraryPreviewLimitNote.classList.toggle('hidden', !p.capped);
+      const showNote = !!p.capped || !!p.leadLenWarn;
+      libraryPreviewLimitNote.classList.toggle('hidden', !showNote);
+      if (showNote) {
+        let msg = '';
+        if (p.capped) msg = 'Preview limit reached.';
+        if (p.leadLenWarn) msg = (msg ? (msg + ' ') : '') + p.leadLenWarn;
+        libraryPreviewLimitNote.textContent = msg || 'Preview limit reached.';
+      }
     }
 
     const canPrev = (left > 0);
@@ -1772,7 +1784,9 @@ const next = (nn === 'home' || nn === 'play' || nn === 'view' || nn === 'sound' 
     }
   }
 
-  function libraryEnterWithSelected(mode) {
+  let libraryMethodLoadInFlight = false;
+
+  async function libraryEnterWithSelected(mode) {
     const idx = ui.librarySelectedIdx;
     if (idx == null) return;
 
@@ -1781,15 +1795,57 @@ const next = (nn === 'home' || nn === 'play' || nn === 'view' || nn === 'sound' 
       return;
     }
 
+    if (libraryMethodLoadInFlight) return;
+    libraryMethodLoadInFlight = true;
+
     // Selecting a library method is a user configuration change.
     markUserTouchedConfig();
 
-    const result = loadCCCBRMethod(idx);
-    if (!result) return;
+    const setLoading = (isLoading, msg) => {
+      try {
+        if (libraryMethodLoading) {
+          if (msg != null) libraryMethodLoading.textContent = String(msg);
+          if (isLoading) libraryMethodLoading.classList.remove('hidden');
+          else libraryMethodLoading.classList.add('hidden');
+        }
+      } catch (_) {}
+      try { if (libraryPlaySelectedBtn) libraryPlaySelectedBtn.disabled = !!isLoading; } catch (_) {}
+      try { if (libraryDemoSelectedBtn) libraryDemoSelectedBtn.disabled = !!isLoading; } catch (_) {}
+    };
 
-    setScreen('game');
-    if (mode === 'demo') {
-      startDemoFromUi();
+    setLoading(true, 'Loading method…');
+
+    try {
+      const result = await loadCCCBRMethod(idx, {
+        chunkRows: 1500,
+        chunkLeads: 5000,
+        onProgress: (p) => {
+          try {
+            const r = (p && p.rows != null) ? Number(p.rows) : null;
+            const l = (p && p.leadsDone != null) ? Number(p.leadsDone) : null;
+            if (isFinite(r) && isFinite(l)) setLoading(true, 'Loading method… (' + r + ' rows, ' + l + ' leads)');
+            else if (isFinite(r)) setLoading(true, 'Loading method… (' + r + ' rows)');
+          } catch (_) {}
+        }
+      });
+      if (!result) return;
+
+      setLoading(false, '');
+
+      setScreen('game');
+      if (mode === 'demo') {
+        startDemoFromUi();
+      }
+    } finally {
+      libraryMethodLoadInFlight = false;
+      try {
+        if (ui.screen === 'library') {
+          if (libraryMethodLoading) libraryMethodLoading.classList.add('hidden');
+          const hasSel = (ui.librarySelectedIdx != null);
+          if (libraryPlaySelectedBtn) libraryPlaySelectedBtn.disabled = !hasSel;
+          if (libraryDemoSelectedBtn) libraryDemoSelectedBtn.disabled = !hasSel;
+        }
+      } catch (_) {}
     }
   }
 
@@ -2455,6 +2511,7 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
   const libraryNotes = document.getElementById('libraryNotes');
   const libraryPlaySelectedBtn = document.getElementById('libraryPlaySelectedBtn');
   const libraryDemoSelectedBtn = document.getElementById('libraryDemoSelectedBtn');
+  const libraryMethodLoading = document.getElementById('libraryMethodLoading');
   const libraryPreview = document.getElementById('libraryPreview');
   const libraryPreviewPrevBtn = document.getElementById('libraryPreviewPrevBtn');
   const libraryPreviewNextBtn = document.getElementById('libraryPreviewNextBtn');
@@ -9262,7 +9319,9 @@ function refreshDrone() {
       let stageText = cccbFirstText(mEl, 'stage');
       let classText = cccbFirstText(mEl, ['class', 'classification']);
 
-      if (!stageText || !classText) {
+      
+
+      let leadLenText = cccbFirstText(mEl, 'lengthOfLead');if (!stageText || !classText || !leadLenText) {
         let cur = mEl.parentElement;
         while (cur && cur.nodeType === 1) {
           const props = cccbGetElements(cur, 'properties');
@@ -9277,8 +9336,12 @@ function refreshDrone() {
               const cl = cccbFirstText(p, ['class', 'classification']);
               if (cl) classText = cl;
             }
+            if (!leadLenText) {
+              const ll = cccbFirstText(p, 'lengthOfLead');
+              if (ll) leadLenText = ll;
+            }
           }
-          if (stageText && classText) break;
+          if (stageText && classText && leadLenText) break;
           cur = cur.parentElement;
         }
       }
@@ -9288,6 +9351,9 @@ function refreshDrone() {
       stageNum = clamp(stageNum, 1, 16);
       if (stageNum < 4 || stageNum > 12) continue;
 
+      let lengthOfLead = parseInt(leadLenText, 10);
+      if (!isFinite(lengthOfLead) || lengthOfLead <= 0) lengthOfLead = undefined;
+
       let pnNorm = pnRaw == null ? '' : String(pnRaw);
       pnNorm = pnNorm.replace(/;/g, ' ').replace(/\s+/g, ' ').trim();
       pnNorm = pnNorm.replace(/\s*,\s*/g, ',');
@@ -9296,6 +9362,7 @@ function refreshDrone() {
         title: title,
         class: classText || '',
         stage: stageNum,
+        lengthOfLead: lengthOfLead,
         pn: pnNorm,
         lh: lh || '',
         family: family
@@ -9387,28 +9454,50 @@ function refreshDrone() {
     if (pn == null) return [];
     let raw = String(pn);
     raw = raw.replace(/;/g, ' ').replace(/[\r\n]+/g, ' ').trim();
+    raw = raw.replace(/\s*,\s*/g, ',');
     if (!raw) return [];
-    const parts = raw.split(/[.,\s]+/);
-    const tokens = [];
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      if (!part) continue;
-      let buf = '';
-      for (let j = 0; j < part.length; j++) {
-        const ch = part[j];
-        if (ch === 'x' || ch === 'X' || ch === '-') {
-          if (buf) {
-            tokens.push(buf);
-            buf = '';
+
+    function tokenizeSide(sideRaw) {
+      const parts = String(sideRaw || '').split(/[.\s]+/);
+      const tokens = [];
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        if (!part) continue;
+        let buf = '';
+        for (let j = 0; j < part.length; j++) {
+          const ch = part[j];
+          if (ch === 'x' || ch === 'X' || ch === '-') {
+            if (buf) {
+              tokens.push(buf);
+              buf = '';
+            }
+            tokens.push('-');
+          } else if (/[0-9A-Za-z]/.test(ch)) {
+            buf += ch;
           }
-          tokens.push('-');
-        } else if (/[0-9A-Za-z]/.test(ch)) {
-          buf += ch;
         }
+        if (buf) tokens.push(buf);
       }
-      if (buf) tokens.push(buf);
+      return tokens;
     }
-    return tokens;
+
+    function expandPal(seq) {
+      const base = (seq && seq.length) ? seq.slice() : [];
+      if (base.length <= 1) return base;
+      for (let i = base.length - 2; i >= 0; i--) base.push(base[i]);
+      return base;
+    }
+
+    const commaIdx = raw.indexOf(',');
+    if (commaIdx >= 0) {
+      const left = raw.slice(0, commaIdx).trim();
+      const right = raw.slice(commaIdx + 1).trim();
+      const leftTokens = tokenizeSide(left);
+      const rightTokens = tokenizeSide(right);
+      return expandPal(leftTokens).concat(expandPal(rightTokens));
+    }
+
+    return tokenizeSide(raw);
   }
 
   function cccbPlacesFromToken(token, stage) {
@@ -9490,6 +9579,162 @@ function refreshDrone() {
     }
     return rows;
   }
+
+  // v016_p02_library_play_full_cycle_sync: guardrails for CCCBR Library→Play/Demo generation (synchronous)
+  const CCCBR_PLAY_MAX_ROWS = 20000;
+  const CCCBR_PLAY_MAX_LEADS = 2000;
+
+  // v016_p02_library_play_full_cycle_sync:
+  // Full CCCBR "method" definition for Library Play/Demo:
+  // - start at rounds
+  // - repeat PN tokens lead-by-lead
+  // - stop only when we return to the starting row at a LEAD BOUNDARY (tokenIdx wraps to 0)
+  // - cap with explicit warning handled by caller (no silent truncation)
+  function cccbRowsFromPnFullCycle(stage, pn, maxRows, maxLeads) {
+    let s = parseInt(stage, 10);
+    if (!isFinite(s) || s <= 1) return { rows: null, done: false, capped: false, capReason: '' };
+    s = clamp(s, 2, 12);
+
+    const tokens = cccbParsePnTokens(pn);
+    if (!tokens.length) return { rows: null, done: false, capped: false, capReason: '' };
+
+    let mr = parseInt(maxRows, 10);
+    if (!isFinite(mr) || mr <= 0) mr = CCCBR_PLAY_MAX_ROWS;
+    mr = clamp(mr, 10, 200000);
+
+    let ml = parseInt(maxLeads, 10);
+    if (!isFinite(ml) || ml <= 0) ml = CCCBR_PLAY_MAX_LEADS;
+    ml = clamp(ml, 1, 50000);
+
+    const startRow = [];
+    for (let i = 1; i <= s; i++) startRow.push(i);
+
+    const rows = [];
+    let row = startRow.slice();
+    rows.push(row.slice());
+
+    let tokenIdx = 0;
+    let leadsDone = 0;
+    let done = false;
+    let capped = false;
+    let capReason = '';
+
+    while (!done) {
+      if (rows.length >= mr) { capped = true; capReason = 'maxRows'; break; }
+      if (leadsDone >= ml) { capped = true; capReason = 'maxLeads'; break; }
+
+      const tok = tokens[tokenIdx];
+      row = cccbApplyPn(row, s, tok);
+      rows.push(row.slice());
+
+      tokenIdx += 1;
+      if (tokenIdx >= tokens.length) {
+        tokenIdx = 0;
+        leadsDone += 1;
+
+        // Complete cycle: back to the starting row at a lead boundary.
+        if (rows.length > 1) {
+          let same = true;
+          for (let k = 0; k < startRow.length; k++) {
+            if (row[k] !== startRow[k]) { same = false; break; }
+          }
+          if (same) done = true;
+        }
+      }
+    }
+
+    return { rows: rows, done: done, capped: capped, capReason: capReason, leadsDone: leadsDone };
+  }
+
+  // v016_p03_library_play_async_precompute: async chunked full-cycle generator (yields to UI; no mid-play streaming)
+  async function cccbRowsFromPnFullCycleAsync(stage, pn, maxRows, maxLeads, opts) {
+    let s = parseInt(stage, 10);
+    if (!isFinite(s) || s <= 1) return { rows: null, done: false, capped: false, capReason: '' };
+    s = clamp(s, 2, 12);
+
+    const tokens = cccbParsePnTokens(pn);
+    if (!tokens.length) return { rows: null, done: false, capped: false, capReason: '' };
+
+    let mr = parseInt(maxRows, 10);
+    if (!isFinite(mr) || mr <= 0) mr = CCCBR_PLAY_MAX_ROWS;
+    mr = clamp(mr, 10, 200000);
+
+    let ml = parseInt(maxLeads, 10);
+    if (!isFinite(ml) || ml <= 0) ml = CCCBR_PLAY_MAX_LEADS;
+    ml = clamp(ml, 1, 50000);
+
+    const o = opts || {};
+    let chunkRows = parseInt(o.chunkRows, 10);
+    if (!isFinite(chunkRows) || chunkRows <= 0) chunkRows = 1500;
+    chunkRows = clamp(chunkRows, 100, 50000);
+
+    let chunkLeads = parseInt(o.chunkLeads, 10);
+    if (!isFinite(chunkLeads) || chunkLeads <= 0) chunkLeads = 5000;
+    chunkLeads = clamp(chunkLeads, 1, 50000);
+
+    const onProgress = (typeof o.onProgress === 'function') ? o.onProgress : null;
+
+    const yieldToUi = () => new Promise(resolve => setTimeout(resolve, 0));
+
+    const startRow = [];
+    for (let i = 1; i <= s; i++) startRow.push(i);
+
+    const rows = [];
+    let row = startRow.slice();
+    rows.push(row.slice());
+
+    let tokenIdx = 0;
+    let leadsDone = 0;
+    let done = false;
+    let capped = false;
+    let capReason = '';
+
+    let rowsSinceYield = 0;
+    let leadsSinceYield = 0;
+
+    while (!done) {
+      if (rows.length >= mr) { capped = true; capReason = 'maxRows'; break; }
+      if (leadsDone >= ml) { capped = true; capReason = 'maxLeads'; break; }
+
+      const tok = tokens[tokenIdx];
+      row = cccbApplyPn(row, s, tok);
+      rows.push(row.slice());
+      rowsSinceYield += 1;
+
+      tokenIdx += 1;
+      if (tokenIdx >= tokens.length) {
+        tokenIdx = 0;
+        leadsDone += 1;
+        leadsSinceYield += 1;
+
+        // Complete cycle: back to the starting row at a lead boundary.
+        if (rows.length > 1) {
+          let same = true;
+          for (let k = 0; k < startRow.length; k++) {
+            if (row[k] !== startRow[k]) { same = false; break; }
+          }
+          if (same) done = true;
+        }
+      }
+
+      if (rowsSinceYield >= chunkRows || leadsSinceYield >= chunkLeads) {
+        if (onProgress) {
+          try { onProgress({ rows: rows.length, leadsDone: leadsDone, done: done, capped: capped, capReason: capReason }); } catch (_) {}
+        }
+        rowsSinceYield = 0;
+        leadsSinceYield = 0;
+        await yieldToUi();
+      }
+    }
+
+    if (onProgress) {
+      try { onProgress({ rows: rows.length, leadsDone: leadsDone, done: done, capped: capped, capReason: capReason }); } catch (_) {}
+    }
+
+    return { rows: rows, done: done, capped: capped, capReason: capReason, leadsDone: leadsDone };
+  }
+
+
 
   async function inflateZipDeflate(data) {
     const bytes = data instanceof Uint8Array ? data : new Uint8Array(data || 0);
@@ -9760,7 +10005,7 @@ function refreshDrone() {
     list.appendChild(summary);
   }
 
-  function loadCCCBRMethod(i) {
+  async function loadCCCBRMethod(i, opts) {
     const methods = RG.methods || [];
     const m = methods[i];
     if (!m) {
@@ -9792,7 +10037,8 @@ function refreshDrone() {
       family: m.family || '',
       class: m.class || '',
       stage: stage,
-      pnPresent: !!(m.pn && String(m.pn).trim())
+      pnPresent: !!(m.pn && String(m.pn).trim()),
+      cycleWarning: ''
     };
 
     state.stage = stage;
@@ -9801,7 +10047,15 @@ function refreshDrone() {
     let rows = null;
     if (m.pn && String(m.pn).trim()) {
       try {
-        rows = cccbRowsFromPn(stage, m.pn, 5);
+        const gen = await cccbRowsFromPnFullCycleAsync(stage, m.pn, CCCBR_PLAY_MAX_ROWS, CCCBR_PLAY_MAX_LEADS, opts);
+        rows = (gen && gen.rows) ? gen.rows : null;
+        if (gen && gen.capped && !gen.done) {
+          const warn = '⚠ Method truncated (limit reached); may not be a complete cycle.';
+          try { if (state.methodMeta) state.methodMeta.cycleWarning = warn; } catch (_) {}
+          alert('Warning: This library method hit the safety limit while generating and was truncated.\n\nIt may NOT be a complete cycle.');
+        } else {
+          try { if (state.methodMeta) state.methodMeta.cycleWarning = ''; } catch (_) {}
+        }
       } catch (err) {
         console.error('cccbRowsFromPn failed', m, err);
       }
@@ -9936,6 +10190,7 @@ function refreshDrone() {
         const parts = ['CCCBR'];
         if (state.methodMeta && state.methodMeta.family) parts.push(String(state.methodMeta.family));
         if (state.methodMeta && state.methodMeta.class) parts.push(String(state.methodMeta.class));
+        if (state.methodMeta && state.methodMeta.cycleWarning) parts.push(String(state.methodMeta.cycleWarning));
         attr = parts.filter(Boolean).join(' • ');
       } else if (state.methodSource === 'custom_rows') {
         const fn = state.methodMeta && state.methodMeta.fileName ? String(state.methodMeta.fileName) : '';

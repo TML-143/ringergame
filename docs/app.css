@@ -1273,6 +1273,10 @@ select option { background-color: #0b1026; color: #e8eeff; }
   margin:10px 0 8px 0;
 }
 
+
+.rg-library-loading{
+  margin:0 0 8px 0;
+}
 #screenLibrary .rg-library-section-title{
   font-weight:900;
   margin-bottom:6px;
