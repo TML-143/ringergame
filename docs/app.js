@@ -75,7 +75,7 @@
   // === Analytics (GA4) ===
   const GA_MEASUREMENT_ID = 'G-7TEG531231';
   const GA_ID = GA_MEASUREMENT_ID;
-  const SITE_VERSION = 'v017_p03_polyrhythm_load_save';
+  const SITE_VERSION = 'v018_p06_more_presets_drone_custom_intervals';
 
   function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
   function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
@@ -408,6 +408,9 @@ Contact: ringergame143@gmail.com`;
 
   const droneOnOffBtn = document.getElementById('droneOnOffBtn');
   const droneTypeSelect = document.getElementById('droneTypeSelect');
+  const droneCustomIntervalsControl = document.getElementById('droneCustomIntervalsControl');
+  const droneCustomIntervalsInput = document.getElementById('droneCustomIntervalsInput');
+  const droneCustomIntervalsWarn = document.getElementById('droneCustomIntervalsWarn');
   const droneScaleSelect = document.getElementById('droneScaleSelect');
   const droneOctaveSelect = document.getElementById('droneOctaveSelect');
   const droneVolume = document.getElementById('droneVolume');
@@ -2418,6 +2421,7 @@ function ensureBellPitchPatternBlocks(destEl) {
 
     // Layer 1 (legacy controls)
     moveControlByChildId('droneTypeSelect', droneLayer1Body);
+    moveControlByChildId('droneCustomIntervalsInput', droneLayer1Body);
     moveControlByChildId('droneVariantsAnchor', droneLayer1Body);
     moveControlByChildId('droneScaleSelect', droneLayer1Body);
     moveControlByChildId('droneOctaveSelect', droneLayer1Body);
@@ -2871,6 +2875,22 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
               token: clamp(parseInt(layer.token, 10) || 1, 1, 12),
               phrase: String(layer.phrase || ''),
               bellSound: polyBellSoundToJSON(layer.bellSound),
+            // v018_p01_poly_synth_core
+            synthPreset: String(layer.synthPreset || ''),
+            pitchSource: String(layer.pitchSource || ''),
+            pitchBase: clamp(parseInt(String(layer.pitchBase ?? 60), 10) || 60, 0, 127),
+            pitchHz: (Number.isFinite(Number(layer.pitchHz)) && Number(layer.pitchHz) > 0) ? Number(layer.pitchHz) : null,
+            synthParams: (layer.synthParams && typeof layer.synthParams === 'object' && !Array.isArray(layer.synthParams)) ? layer.synthParams : {},
+            percPreset: String(layer.percPreset || ''),
+            percParams: (layer.percParams && typeof layer.percParams === 'object' && !Array.isArray(layer.percParams)) ? layer.percParams : {},
+              // v018_p01_poly_synth_core
+              synthPreset: String(layer.synthPreset || ''),
+              pitchSource: String(layer.pitchSource || ''),
+              pitchBase: clamp(parseInt(String(layer.pitchBase ?? 60), 10) || 60, 0, 127),
+              pitchHz: (Number.isFinite(Number(layer.pitchHz)) && Number(layer.pitchHz) > 0) ? Number(layer.pitchHz) : null,
+              synthParams: (layer.synthParams && typeof layer.synthParams === 'object' && !Array.isArray(layer.synthParams)) ? layer.synthParams : {},
+              percPreset: String(layer.percPreset || ''),
+              percParams: (layer.percParams && typeof layer.percParams === 'object' && !Array.isArray(layer.percParams)) ? layer.percParams : {},
             };
           }),
         };
@@ -4426,7 +4446,25 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
 
       // UI fields
       if (droneTypeSelect) droneTypeSelect.value = String(state.droneType || 'sine');
-      if (droneScaleSelect) droneScaleSelect.value = String(state.droneScaleKey || '');
+        if (droneCustomIntervalsInput) {
+    const commitDroneCustomIntervals = () => {
+      markUserTouchedConfig();
+      ensureDroneLayersState();
+      if (state.droneLayers && state.droneLayers[0]) {
+        state.droneLayers[0].customIntervals = String(droneCustomIntervalsInput.value || '');
+      }
+      saveDroneLayersToLS();
+      rebuildDroneLayersUI();
+      if (state.droneOn) refreshAllDroneLayers();
+    };
+    droneCustomIntervalsInput.addEventListener('change', commitDroneCustomIntervals);
+    droneCustomIntervalsInput.addEventListener('blur', commitDroneCustomIntervals);
+    droneCustomIntervalsInput.addEventListener('keydown', (e) => {
+      if (e && e.key === 'Enter') { try { e.preventDefault(); } catch (_) {} commitDroneCustomIntervals(); }
+    });
+  }
+
+if (droneScaleSelect) droneScaleSelect.value = String(state.droneScaleKey || '');
       if (droneOctaveSelect) droneOctaveSelect.value = String(state.droneOctaveC || 4);
       if (droneVolume) droneVolume.value = String(clampInt(Math.round(Number(state.droneVolume) || 0), 0, 100, 50));
       if (droneCustomHzInput) droneCustomHzInput.value = String(Number.isFinite(Number(state.droneCustomHz)) ? state.droneCustomHz : 55);
@@ -6935,6 +6973,33 @@ if (reverbImpulseRebuildTimer) {
         try { n.osc.stop(now); } catch (_) {}
         try { n.osc.disconnect(); } catch (_) {}
       }
+      if (n && n.oscs && Array.isArray(n.oscs)) {
+        for (let j = 0; j < n.oscs.length; j++) {
+          const o = n.oscs[j];
+          if (!o) continue;
+          try { o.stop(now); } catch (_) {}
+          try { o.disconnect(); } catch (_) {}
+        }
+      }
+      if (n && n.modOscs && Array.isArray(n.modOscs)) {
+        for (let j = 0; j < n.modOscs.length; j++) {
+          const o = n.modOscs[j];
+          if (!o) continue;
+          try { o.stop(now); } catch (_) {}
+          try { o.disconnect(); } catch (_) {}
+        }
+      }
+      if (n && n.modGains && Array.isArray(n.modGains)) {
+        for (let j = 0; j < n.modGains.length; j++) {
+          const g = n.modGains[j];
+          if (!g) continue;
+          try { g.disconnect(); } catch (_) {}
+        }
+      }
+      if (n && n.src) {
+        try { n.src.stop(now); } catch (_) {}
+        try { n.src.disconnect(); } catch (_) {}
+      }
       if (n && n.hardSrc) {
         try { n.hardSrc.stop(now); } catch (_) {}
         try { n.hardSrc.disconnect(); } catch (_) {}
@@ -6948,6 +7013,77 @@ if (reverbImpulseRebuildTimer) {
     }
     scheduledPolyNodes.length = 0;
   }
+
+
+  // v018_p01_poly_synth_core: cancel only synth/perc nodes in scheduledPolyNodes (leave poly bell/tick tails intact)
+  function cancelScheduledPolySynthAudioNow() {
+    if (!scheduledPolyNodes.length) return;
+    if (!audioCtx) return;
+
+    const now = audioCtx.currentTime;
+    const MIN_G = 0.0001;
+
+    const keep = [];
+    for (let i = 0; i < scheduledPolyNodes.length; i++) {
+      const n = scheduledPolyNodes[i];
+      const kind = n ? String(n.kind || '') : '';
+      const isSP = (kind === 'synth' || kind === 'perc');
+
+      if (!isSP) { keep.push(n); continue; }
+
+      if (n && n.gain && n.gain.gain) {
+        try {
+          n.gain.gain.cancelScheduledValues(now);
+          n.gain.gain.setValueAtTime(MIN_G, now);
+        } catch (_) {}
+      }
+      if (n && n.osc) {
+        try { n.osc.stop(now); } catch (_) {}
+        try { n.osc.disconnect(); } catch (_) {}
+      }
+      if (n && n.oscs && Array.isArray(n.oscs)) {
+        for (let j = 0; j < n.oscs.length; j++) {
+          const o = n.oscs[j];
+          if (!o) continue;
+          try { o.stop(now); } catch (_) {}
+          try { o.disconnect(); } catch (_) {}
+        }
+      }
+      if (n && n.modOscs && Array.isArray(n.modOscs)) {
+        for (let j = 0; j < n.modOscs.length; j++) {
+          const o = n.modOscs[j];
+          if (!o) continue;
+          try { o.stop(now); } catch (_) {}
+          try { o.disconnect(); } catch (_) {}
+        }
+      }
+      if (n && n.modGains && Array.isArray(n.modGains)) {
+        for (let j = 0; j < n.modGains.length; j++) {
+          const g = n.modGains[j];
+          if (!g) continue;
+          try { g.disconnect(); } catch (_) {}
+        }
+      }
+      if (n && n.src) {
+        try { n.src.stop(now); } catch (_) {}
+        try { n.src.disconnect(); } catch (_) {}
+      }
+      if (n && n.hardSrc) {
+        try { n.hardSrc.stop(now); } catch (_) {}
+        try { n.hardSrc.disconnect(); } catch (_) {}
+      }
+      if (n && n.hardGain) {
+        try { n.hardGain.disconnect(); } catch (_) {}
+      }
+      if (n && n.lpf) {
+        try { n.lpf.disconnect(); } catch (_) {}
+      }
+    }
+
+    scheduledPolyNodes.length = 0;
+    for (let i = 0; i < keep.length; i++) scheduledPolyNodes.push(keep[i]);
+  }
+
 
   // v017_p01_polyrhythm_core: play tick/bell strikes routed into polyMasterGain + registered in scheduledPolyNodes
   function playPolyTickAt(whenMs, gainMul = 1) {
@@ -7006,7 +7142,485 @@ if (reverbImpulseRebuildTimer) {
     bellVoiceGainMulOverride = prevMul;
   }
 
-  // === Bell master volume + Drone (background) ===
+  // v018_p01_poly_synth_core: WebAudio synth + perc voices for polyrhythm layers (no worklets, no libs)
+  const POLY_SYNTH_PRESETS = {
+    tone_sine: {
+      kind: 'tone', label: 'Sine', oscType: 'sine',
+      env: { a: 0.002, d: 0.08, s: 0.0, r: 0.09, hold: 0.00 },
+      level: 0.12,
+      filter: null,
+    },
+    tone_triangle_pluck: {
+      kind: 'tone', label: 'Triangle Pluck', oscType: 'triangle',
+      env: { a: 0.002, d: 0.14, s: 0.0, r: 0.06, hold: 0.00 },
+      level: 0.14,
+      filter: { type: 'lowpass', cutoffHz: 2600, Q: 0.7 },
+    },
+    tone_saw_pad: {
+      kind: 'tone', label: 'Saw Pad', oscType: 'sawtooth',
+      env: { a: 0.02, d: 0.18, s: 0.55, r: 0.25, hold: 0.08 },
+      level: 0.10,
+      filter: { type: 'lowpass', cutoffHz: 1400, Q: 0.8 },
+    },
+    fm_bell: {
+      kind: 'fm', label: 'FM Bell', carrierType: 'sine', modType: 'sine',
+      modRatio: 2.0, modIndexHz: 120, modDecay: 0.10,
+      env: { a: 0.002, d: 0.24, s: 0.0, r: 0.18, hold: 0.00 },
+      level: 0.11,
+      filter: { type: 'lowpass', cutoffHz: 6000, Q: 0.6 },
+    },
+    tone_square_lead: {
+      kind: 'tone', label: 'Square Lead', oscType: 'square',
+      env: { a: 0.002, d: 0.09, s: 0.12, r: 0.10, hold: 0.00 },
+      level: 0.11,
+      filter: { type: 'lowpass', cutoffHz: 3200, Q: 0.8 },
+    },
+    tone_soft_pad: {
+      kind: 'tone', label: 'Soft Pad', oscType: 'triangle',
+      env: { a: 0.06, d: 0.40, s: 0.65, r: 0.90, hold: 0.10 },
+      level: 0.09,
+      filter: { type: 'lowpass', cutoffHz: 1200, Q: 0.7 },
+    },
+    fm_marimba: {
+      kind: 'fm', label: 'FM Marimba', carrierType: 'sine', modType: 'sine',
+      modRatio: 3.0, modIndexHz: 220, modDecay: 0.06,
+      env: { a: 0.002, d: 0.13, s: 0.0, r: 0.10, hold: 0.00 },
+      level: 0.11,
+      filter: { type: 'lowpass', cutoffHz: 6500, Q: 0.7 },
+    },
+  };
+  const POLY_PERC_PRESETS = {
+    noise_hat: {
+      label: 'Noise Hat',
+      env: { a: 0.0005, d: 0.030, s: 0.0, r: 0.020, hold: 0.00 },
+      level: 0.12,
+      filter: { type: 'highpass', cutoffHz: 6500, Q: 0.9 },
+    },
+    click_block: {
+      label: 'Click/Block',
+      env: { a: 0.0005, d: 0.010, s: 0.0, r: 0.010, hold: 0.00 },
+      level: 0.10,
+      filter: { type: 'bandpass', cutoffHz: 2400, Q: 4.0 },
+    },
+    kick_sine: {
+      kind: 'kick', label: 'Kick',
+      env: { a: 0.0005, d: 0.08, s: 0.0, r: 0.10, hold: 0.00 },
+      level: 0.15,
+      oscType: 'sine',
+      fStart: 140,
+      fEnd: 50,
+      dropTime: 0.05,
+    },
+    snare_noise: {
+      kind: 'snare', label: 'Snare',
+      env: { a: 0.0005, d: 0.10, s: 0.0, r: 0.12, hold: 0.00 },
+      level: 0.12,
+      filter: { type: 'bandpass', cutoffHz: 1800, Q: 0.9 },
+      toneHz: 190,
+      toneLevel: 0.35,
+      toneDecay: 0.07,
+    },
+    clap_noise: {
+      kind: 'clap', label: 'Clap',
+      env: { a: 0.0005, d: 0.03, s: 0.0, r: 0.14, hold: 0.00 },
+      level: 0.12,
+      filter: { type: 'highpass', cutoffHz: 1200, Q: 0.8 },
+      tapsMs: [0, 16, 32, 48],
+      tail: 0.25,
+    },
+  };
+
+  function polyGetSynthPreset(id) {
+    const k = String(id || '').trim();
+    return (k && POLY_SYNTH_PRESETS[k]) ? POLY_SYNTH_PRESETS[k] : POLY_SYNTH_PRESETS.tone_sine;
+  }
+
+  function polyGetPercPreset(id) {
+    const k = String(id || '').trim();
+    return (k && POLY_PERC_PRESETS[k]) ? POLY_PERC_PRESETS[k] : POLY_PERC_PRESETS.noise_hat;
+  }
+
+  function polyApplyEnv(gainParam, t, peak, env) {
+    const MIN_G = 0.0001;
+    const e = env || {};
+    const a = clamp(Number(e.a) || 0.002, 0.0001, 1.0);
+    const d = clamp(Number(e.d) || 0.05, 0.0001, 2.0);
+    const s = clamp(Number(e.s) || 0.0, 0.0, 1.0);
+    const r = clamp(Number(e.r) || 0.05, 0.0001, 3.0);
+    const hold = clamp(Number(e.hold) || 0.0, 0.0, 2.0);
+
+    const pk = Math.max(MIN_G * 1.2, Number(peak) || 0.12);
+    const sus = Math.max(MIN_G * 1.1, pk * s);
+
+    try {
+      gainParam.cancelScheduledValues(t);
+      gainParam.setValueAtTime(MIN_G, t);
+      gainParam.exponentialRampToValueAtTime(pk, t + a);
+      gainParam.exponentialRampToValueAtTime(sus, t + a + d);
+      gainParam.setValueAtTime(sus, t + a + d + hold);
+      gainParam.exponentialRampToValueAtTime(MIN_G, t + a + d + hold + r);
+    } catch (_) {}
+
+    return t + a + d + hold + r;
+  }
+  function polyApplyClapEnv(gainParam, t, peak, env, tapsMs, tail01) {
+    const MIN_G = 0.0001;
+    const pk = Math.max(MIN_G * 1.2, Number(peak) || 0.12);
+    const e = env || {};
+    const r = clamp(Number(e.r) || 0.14, 0.01, 1.5);
+    const taps = (Array.isArray(tapsMs) && tapsMs.length) ? tapsMs : [0, 16, 32, 48];
+    const tail = clamp(Number(tail01) || 0.25, 0.05, 0.6);
+
+    let last = t;
+    try {
+      gainParam.cancelScheduledValues(t);
+      gainParam.setValueAtTime(MIN_G, t);
+
+      for (let i = 0; i < taps.length; i++) {
+        const ms = clamp(Number(taps[i]) || 0, 0, 120);
+        const tt = t + ms / 1000;
+        last = Math.max(last, tt);
+
+        gainParam.setValueAtTime(MIN_G, tt);
+        gainParam.exponentialRampToValueAtTime(pk, tt + 0.0015);
+        gainParam.exponentialRampToValueAtTime(MIN_G, tt + 0.011);
+      }
+
+      const tailStart = last + 0.014;
+      const tailPk = Math.max(MIN_G * 1.1, pk * tail);
+      gainParam.exponentialRampToValueAtTime(tailPk, tailStart);
+      gainParam.exponentialRampToValueAtTime(MIN_G, tailStart + r);
+    } catch (_) {}
+
+    return last + 0.014 + r;
+  }
+
+
+  function polySynthTokenToHz(token, layer) {
+    const tok = clamp(parseInt(token, 10) || 1, 1, 12);
+    const l = (layer && typeof layer === 'object') ? layer : {};
+    const ps = String(l.pitchSource || 'bell12');
+
+    if (ps === 'chromatic') {
+      const base = clamp(parseInt(String(l.pitchBase ?? 60), 10) || 60, 0, 127);
+      const midi = clamp(base + (tok - 1), 0, 127);
+      return midiToFreq(midi);
+    }
+    if (ps === 'fixed') {
+      const hzRaw = Number(l.pitchHz);
+      if (Number.isFinite(hzRaw) && hzRaw > 0) return hzRaw;
+      const base = clamp(parseInt(String(l.pitchBase ?? 60), 10) || 60, 0, 127);
+      return midiToFreq(base);
+    }
+
+    // Default: Bell pitch map (as-if stage=12), rendered with synth timbre.
+    try { return getPolyBellFrequency(tok, null); } catch (_) { return 440; }
+  }
+
+  function playPolySynthAt(token, whenMs, gainMul = 1, layer) {
+    ensureAudio();
+    if (!audioCtx) return;
+
+    const t0 = msToAudioTime(whenMs);
+    const dest = polyMasterGain || bellMasterGain || audioCtx.destination;
+
+    const l = (layer && typeof layer === 'object') ? layer : {};
+    const preset = polyGetSynthPreset(l.synthPreset);
+    let baseHz = polySynthTokenToHz(token, l);
+
+
+    // v018_p02_poly_synth_advanced: per-layer advanced params + per-token overrides (synth hits only)
+    const adv = (l.synthParamsAdvanced && typeof l.synthParamsAdvanced === 'object' && !Array.isArray(l.synthParamsAdvanced)) ? l.synthParamsAdvanced : {};
+    const tokMap = (l.tokenOverrides && typeof l.tokenOverrides === 'object' && !Array.isArray(l.tokenOverrides)) ? l.tokenOverrides : null;
+    const tokOvr = (tokMap && tokMap[String(token)] && typeof tokMap[String(token)] === 'object') ? tokMap[String(token)] : null;
+
+    let tokenPitchSemis = 0;
+    let tokenGain = 1.0;
+    let tokenCutoffDeltaHz = 0;
+    let tokenBrightness = 1.0;
+
+    if (tokOvr) {
+      const ps = Number(tokOvr.pitchSemis);
+      if (Number.isFinite(ps)) tokenPitchSemis = clamp(Math.round(ps), -24, 24);
+
+      const g = Number(tokOvr.gain);
+      if (Number.isFinite(g)) tokenGain = clamp(g, 0, 2);
+
+      const cd = Number(tokOvr.cutoffDeltaHz);
+      if (Number.isFinite(cd)) tokenCutoffDeltaHz = clamp(cd, -20000, 20000);
+
+      const br = Number(tokOvr.brightness);
+      if (Number.isFinite(br)) tokenBrightness = clamp(br, 0.1, 4);
+    }
+
+    if (tokenPitchSemis) {
+      baseHz = baseHz * Math.pow(2, tokenPitchSemis / 12);
+    }
+
+    // Optional chords (reuse existing chord config if present)
+    let semis = [0];
+    let offsMs = [0];
+    try {
+      const bs = (l.bellSound && typeof l.bellSound === 'object') ? l.bellSound : null;
+      const ch = (bs && bs.chords && typeof bs.chords === 'object') ? bs.chords : null;
+      if (ch && ch.enabled) {
+        semis = deriveChordSemitonesFromAnyConfig(ch) || [0];
+        offsMs = deriveChordOffsetsMsFromAnyConfig(ch, semis.length) || new Array(semis.length).fill(0);
+      }
+    } catch (_) {}
+    const N = clamp(semis.length, 1, 6);
+
+    let s = clamp(Number(gainMul) || 1, 0, 2);
+    const vel = Number(adv.velocity);
+    if (Number.isFinite(vel)) s *= clamp(vel, 0, 2);
+    s *= tokenGain;
+    s = clamp(s, 0, 2);
+
+    let unison = clamp(parseInt(String(adv.unison ?? 1), 10) || 1, 1, 4);
+    const detuneCents = clamp(Number(adv.detuneCents) || 0, 0, 100);
+    if (detuneCents <= 0.0001) unison = 1;
+    const perVoiceCost = (preset.kind === 'fm') ? 2 : 1;
+    const maxUnison = Math.max(1, Math.floor(12 / Math.max(1, N * perVoiceCost)));
+    unison = Math.min(unison, maxUnison);
+
+    const perPeak = clamp((Number(preset.level) || 0.12) * s / Math.max(1, N * unison), 0.00005, 0.35);
+    const env = (adv.env && typeof adv.env === 'object' && !Array.isArray(adv.env)) ? Object.assign({}, (preset.env || {}), adv.env) : preset.env;
+
+    // Final gain node used for cancellation fade-out
+    const mix = audioCtx.createGain();
+    mix.gain.setValueAtTime(1.0, t0);
+
+    // Optional shared filter (preset + advanced + per-token timbre)
+    let filt = null;
+    const advF = (adv.filter && typeof adv.filter === 'object' && !Array.isArray(adv.filter)) ? adv.filter : null;
+    const presetF = (preset.filter && typeof preset.filter === 'object') ? preset.filter : null;
+    const needFilter = !!(audioCtx.createBiquadFilter && (presetF || advF || tokenCutoffDeltaHz || (tokenBrightness !== 1)));
+    if (needFilter) {
+      try {
+        filt = audioCtx.createBiquadFilter();
+        const type = String((advF && advF.type) || (presetF && presetF.type) || 'lowpass');
+        filt.type = type;
+
+        let hz = Number(presetF && presetF.cutoffHz);
+        if (!Number.isFinite(hz)) hz = 12000;
+        const advHz = Number(advF && advF.cutoffHz);
+        if (Number.isFinite(advHz)) hz = advHz;
+
+        hz = clamp(Number(hz) || 12000, 20, 20000);
+        if (tokenCutoffDeltaHz) hz = clamp(hz + tokenCutoffDeltaHz, 20, 20000);
+        if (tokenBrightness !== 1) hz = clamp(hz * tokenBrightness, 20, 20000);
+
+        let q = Number(presetF && presetF.Q);
+        if (!Number.isFinite(q)) q = 0.707;
+        const advQ = Number(advF && advF.Q);
+        if (Number.isFinite(advQ)) q = advQ;
+        q = clamp(q, 0.1, 20);
+
+        filt.frequency.setValueAtTime(hz, t0);
+        filt.Q.setValueAtTime(q, t0);
+      } catch (_) { filt = null; }
+    }
+
+
+
+    if (filt) {
+      try { filt.connect(mix); } catch (_) {}
+    }
+    try { mix.connect(dest); } catch (_) { try { mix.connect(audioCtx.destination); } catch (_) {} }
+
+    const oscs = [];
+    const modOscs = [];
+    const modGains = [];
+    let tEndMax = t0 + 0.12;
+
+    for (let i = 0; i < N; i++) {
+      const semi = Number(semis[i]) || 0;
+      const hz = baseHz * Math.pow(2, semi / 12);
+      const off = (offsMs && offsMs[i] != null) ? Number(offsMs[i]) : 0;
+      const t = t0 + (Number.isFinite(off) ? clamp(off, 0, 30) / 1000 : 0);
+
+      const vGain = audioCtx.createGain();
+      vGain.gain.setValueAtTime(0.0001, t);
+
+      let tEnd = polyApplyEnv(vGain.gain, t, perPeak, env);
+      tEndMax = Math.max(tEndMax, tEnd);
+
+      try { vGain.connect(filt || mix); } catch (_) {}
+
+      if (preset.kind === 'fm') {
+        // Simple FM: mod oscillator -> mod gain -> carrier.frequency
+        const ratio = Number(preset.modRatio) || 2;
+        for (let u = 0; u < unison; u++) {
+          const cents = (unison === 1) ? 0 : (u - (unison - 1) / 2) * detuneCents;
+          const hzU = (Number.isFinite(hz) && hz > 0) ? (hz * Math.pow(2, cents / 1200)) : 440;
+
+          const carrier = audioCtx.createOscillator();
+          carrier.type = String(preset.carrierType || 'sine');
+          carrier.frequency.setValueAtTime(hzU, t);
+
+          const modOsc = audioCtx.createOscillator();
+          modOsc.type = String(preset.modType || 'sine');
+          modOsc.frequency.setValueAtTime(Math.max(0.1, hzU * ratio), t);
+
+          const modGain = audioCtx.createGain();
+          const idxHz = clamp(Number(preset.modIndexHz) || 120, 0, 1200);
+          const depth = idxHz * Math.sqrt(Math.max(0.01, hzU / 440));
+          modGain.gain.setValueAtTime(depth, t);
+          // Fast decay for bell-ish attack
+          const md = clamp(Number(preset.modDecay) || 0.10, 0.01, 1.0);
+          modGain.gain.exponentialRampToValueAtTime(0.0001, t + md);
+
+          try { modOsc.connect(modGain); modGain.connect(carrier.frequency); } catch (_) {}
+
+          try { carrier.connect(vGain); } catch (_) {}
+
+          const stopAt = tEnd + 0.02;
+          try { modOsc.start(t); modOsc.stop(stopAt); } catch (_) {}
+          try { carrier.start(t); carrier.stop(stopAt); } catch (_) {}
+
+          oscs.push(carrier);
+          modOscs.push(modOsc);
+          modGains.push(modGain);
+        }
+      } else {
+        for (let u = 0; u < unison; u++) {
+          const cents = (unison === 1) ? 0 : (u - (unison - 1) / 2) * detuneCents;
+          const hzU = (Number.isFinite(hz) && hz > 0) ? (hz * Math.pow(2, cents / 1200)) : 440;
+
+          const osc = audioCtx.createOscillator();
+          osc.type = String(preset.oscType || 'sine');
+          osc.frequency.setValueAtTime(hzU, t);
+          try { osc.connect(vGain); } catch (_) {}
+          const stopAt = tEnd + 0.02;
+          try { osc.start(t); osc.stop(stopAt); } catch (_) {}
+          oscs.push(osc);
+        }
+      }
+    }
+
+    // Keep registry small (avoid node explosion on extreme configs)
+    if (oscs.length > 12) oscs.length = 12;
+
+    scheduledPolyNodes.push({ kind: 'synth', gain: mix, oscs, modOscs, modGains, lpf: filt, startAt: t0, stopAt: tEndMax });
+  }
+
+  function playPolyPercAt(token, whenMs, gainMul = 1, layer) {
+    ensureAudio();
+    if (!audioCtx) return;
+
+    const t0 = msToAudioTime(whenMs);
+    const dest = polyMasterGain || bellMasterGain || audioCtx.destination;
+
+    const l = (layer && typeof layer === 'object') ? layer : {};
+    const preset = polyGetPercPreset(l.percPreset);
+
+    const adv = (l.synthParamsAdvanced && typeof l.synthParamsAdvanced === 'object' && !Array.isArray(l.synthParamsAdvanced)) ? l.synthParamsAdvanced : {};
+
+    let s = clamp(Number(gainMul) || 1, 0, 2);
+    const vel = Number(adv.velocity);
+    if (Number.isFinite(vel)) s *= clamp(vel, 0, 2);
+    s = clamp(s, 0, 2);
+    const peak = clamp((Number(preset.level) || 0.12) * s, 0.00005, 0.35);
+
+    const kind = String(preset.kind || '').trim();
+
+    let src = null;
+    let osc = null;
+    let pre = null;
+
+    if (kind === 'kick') {
+      const o = audioCtx.createOscillator();
+      o.type = String(preset.oscType || 'sine');
+      const f0 = clamp(Number(preset.fStart) || 140, 30, 400);
+      const f1 = clamp(Number(preset.fEnd) || 50, 20, 300);
+      const dt = clamp(Number(preset.dropTime) || 0.05, 0.005, 0.25);
+      o.frequency.setValueAtTime(f0, t0);
+      try { o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t0 + dt); } catch (_) { try { o.frequency.linearRampToValueAtTime(f1, t0 + dt); } catch (_) {} }
+      src = o;
+      pre = o;
+    } else {
+      const n = audioCtx.createBufferSource();
+      try { n.buffer = getNoiseBuffer(); } catch (_) {}
+      n.loop = true;
+      src = n;
+      pre = n;
+    }
+
+    // Optional snare tone mixed into the noise burst (still shaped by the same envelope)
+    if (kind === 'snare') {
+      const mix = audioCtx.createGain();
+      mix.gain.setValueAtTime(1.0, t0);
+      try { pre.connect(mix); } catch (_) {}
+      pre = mix;
+
+      osc = audioCtx.createOscillator();
+      osc.type = 'sine';
+      const thz = clamp(Number(preset.toneHz) || 190, 60, 800);
+      osc.frequency.setValueAtTime(thz, t0);
+
+      const tonePre = audioCtx.createGain();
+      const tl = clamp(Number(preset.toneLevel) || 0.35, 0, 1);
+      const td = clamp(Number(preset.toneDecay) || 0.07, 0.01, 0.30);
+      tonePre.gain.setValueAtTime(Math.max(0.0001, tl), t0);
+      try { tonePre.gain.exponentialRampToValueAtTime(0.0001, t0 + td); } catch (_) {}
+
+      try { osc.connect(tonePre); tonePre.connect(mix); } catch (_) {}
+    }
+
+    let filt = null;
+    const advF = (adv.filter && typeof adv.filter === 'object' && !Array.isArray(adv.filter)) ? adv.filter : null;
+    const presetF = (preset.filter && typeof preset.filter === 'object') ? preset.filter : null;
+    const needFilter = !!(audioCtx.createBiquadFilter && (presetF || advF));
+    if (needFilter) {
+      try {
+        filt = audioCtx.createBiquadFilter();
+        filt.type = String((advF && advF.type) || (presetF && presetF.type) || 'highpass');
+
+        let hz = Number(presetF && presetF.cutoffHz);
+        if (!Number.isFinite(hz)) hz = 6500;
+        const advHz = Number(advF && advF.cutoffHz);
+        if (Number.isFinite(advHz)) hz = advHz;
+
+        hz = clamp(Number(hz) || 6500, 20, 20000);
+        // Optional light "pitch" influence: token 1..12 nudges cutoff upward
+        const tok = clamp(parseInt(token, 10) || 1, 1, 12);
+        hz = clamp(hz * Math.pow(2, (tok - 1) / 48), 20, 20000);
+
+        let q = Number(presetF && presetF.Q);
+        if (!Number.isFinite(q)) q = 0.7;
+        const advQ = Number(advF && advF.Q);
+        if (Number.isFinite(advQ)) q = advQ;
+        q = clamp(q, 0.1, 20);
+
+        filt.frequency.setValueAtTime(hz, t0);
+        filt.Q.setValueAtTime(q, t0);
+      } catch (_) { filt = null; }
+    }
+
+
+
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(0.0001, t0);
+    const env = (adv.env && typeof adv.env === 'object' && !Array.isArray(adv.env)) ? Object.assign({}, (preset.env || {}), adv.env) : preset.env;
+    const taps = (preset && Array.isArray(preset.tapsMs)) ? preset.tapsMs : null;
+    const tail = (preset && preset.tail != null) ? preset.tail : null;
+    const tEnd = (kind === 'clap') ? polyApplyClapEnv(gain.gain, t0, peak, env, taps, tail) : polyApplyEnv(gain.gain, t0, peak, env);
+
+    try {
+      if (filt) pre.connect(filt).connect(gain).connect(dest);
+      else pre.connect(gain).connect(dest);
+    } catch (_) {
+      try { src.connect(gain).connect(audioCtx.destination); } catch (_) {}
+    }
+
+    const stopAt = tEnd + 0.02;
+    try { src.start(t0); src.stop(stopAt); } catch (_) {}
+    if (osc) { try { osc.start(t0); osc.stop(stopAt); } catch (_) {} }
+
+    scheduledPolyNodes.push({ kind: 'perc', gain, src, osc, lpf: filt, startAt: t0, stopAt: stopAt });
+  }
+
+    // === Bell master volume + Drone (background) ===
   const DRONE_FADE_SEC = 0.12;
   const DRONE_TONAL_LEVEL = 0.10;
   const DRONE_NOISE_LEVEL = 0.06;
@@ -7352,22 +7966,116 @@ function syncMasterFxUI() {
       id: rid('pl_'),
       enabled: true,
       type: 'pulse', // 'pulse' | 'phrase' | 'method_current'
-      sound: 'bell', // 'bell' | 'tick'
+      sound: 'bell', // 'bell' | 'tick' | 'synth' | 'perc'
       interval: '1',
       offset: '0',
       volume: 80,
       token: 1,      // 1..12 (pulse)
       phrase: '',    // (phrase)
       bellSound: polyBellSoundDefaults(),
+      // v018_p01_poly_synth_core
+      synthPreset: 'tone_sine',
+      pitchSource: 'bell12', // 'bell12' | 'chromatic' | 'fixed'
+      pitchBase: 60,         // MIDI base (C4=60)
+      pitchHz: null,         // optional fixed Hz override
+      synthParams: {},
+      synthParamsAdvanced: {},
+      tokenOverrides: {},
+      percPreset: 'noise_hat',
+      percParams: {},
     };
   }
 
-  function coercePolyLayer(raw, fallbackIdx = 0) {
+  
+
+  // v018_p02_poly_synth_advanced: layer-level advanced params + per-token overrides (fail-open)
+  function sanitizePolySynthParamsAdvanced(raw) {
+    const r = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : null;
+    const out = {};
+    if (!r) return out;
+
+    // ADSR
+    if (r.env && typeof r.env === 'object' && !Array.isArray(r.env)) {
+      const e = r.env;
+      const oe = {};
+      const a = Number(e.a); if (Number.isFinite(a)) oe.a = clamp(a, 0.0001, 1.0);
+      const d = Number(e.d); if (Number.isFinite(d)) oe.d = clamp(d, 0.0001, 2.0);
+      const s = Number(e.s); if (Number.isFinite(s)) oe.s = clamp(s, 0.0, 1.0);
+      const rr = Number(e.r); if (Number.isFinite(rr)) oe.r = clamp(rr, 0.0001, 3.0);
+      if (Object.keys(oe).length) out.env = oe;
+    }
+
+    // Filter
+    if (r.filter && typeof r.filter === 'object' && !Array.isArray(r.filter)) {
+      const f = r.filter;
+      const of = {};
+      const t = String(f.type || '').trim();
+      if (t) {
+        const ok = (t === 'lowpass' || t === 'highpass' || t === 'bandpass' || t === 'notch'
+          || t === 'allpass' || t === 'lowshelf' || t === 'highshelf' || t === 'peaking');
+        if (ok) of.type = t;
+      }
+      const hz = Number(f.cutoffHz); if (Number.isFinite(hz)) of.cutoffHz = clamp(hz, 20, 20000);
+      const q = Number(f.Q); if (Number.isFinite(q)) of.Q = clamp(q, 0.1, 20);
+      if (Object.keys(of).length) out.filter = of;
+    }
+
+    // Detune/unison (synth only, but safe to store)
+    const det = Number(r.detuneCents); if (Number.isFinite(det)) out.detuneCents = clamp(det, 0, 100);
+    const uni = parseInt(String(r.unison ?? ''), 10);
+    if (Number.isFinite(uni)) out.unison = clamp(uni, 1, 4);
+
+    // Velocity scalar
+    const vel = Number(r.velocity); if (Number.isFinite(vel)) out.velocity = clamp(vel, 0, 2);
+
+    return out;
+  }
+
+  function sanitizePolyTokenOverrides(raw) {
+    const r = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : null;
+    const out = {};
+    if (!r) return out;
+
+    for (const k in r) {
+      if (!Object.prototype.hasOwnProperty.call(r, k)) continue;
+      const tok = parseInt(String(k), 10);
+      if (!Number.isFinite(tok) || tok < 1 || tok > 12) continue;
+
+      const v = r[k];
+      if (!v || typeof v !== 'object' || Array.isArray(v)) continue;
+
+      const o = {};
+      const ps = Number(v.pitchSemis);
+      if (Number.isFinite(ps)) {
+        const n = clamp(Math.round(ps), -24, 24);
+        if (n !== 0) o.pitchSemis = n;
+      }
+      const g = Number(v.gain);
+      if (Number.isFinite(g)) {
+        const gg = clamp(g, 0, 2);
+        if (Math.abs(gg - 1) > 1e-6) o.gain = gg;
+      }
+      const cd = Number(v.cutoffDeltaHz);
+      if (Number.isFinite(cd)) {
+        const cdd = clamp(cd, -20000, 20000);
+        if (Math.abs(cdd) > 0.5) o.cutoffDeltaHz = cdd;
+      }
+      const br = Number(v.brightness);
+      if (Number.isFinite(br)) {
+        const bb = clamp(br, 0.1, 4);
+        if (Math.abs(bb - 1) > 1e-6) o.brightness = bb;
+      }
+
+      if (Object.keys(o).length) out[String(tok)] = o;
+    }
+    return out;
+  }
+function coercePolyLayer(raw, fallbackIdx = 0) {
     const r = (raw && typeof raw === 'object') ? raw : {};
     const id = (typeof r.id === 'string' && r.id.trim()) ? r.id.trim() : rid('pl_');
 
     const type = (r.type === 'pulse' || r.type === 'phrase' || r.type === 'method_current') ? r.type : 'pulse';
-    const sound = (r.sound === 'bell' || r.sound === 'tick') ? r.sound : 'bell';
+    const sound = (r.sound === 'bell' || r.sound === 'tick' || r.sound === 'synth' || r.sound === 'perc') ? r.sound : 'bell';
 
     const interval = (r.interval === '2' || r.interval === '1' || r.interval === '1/2' || r.interval === '1/3' || r.interval === '1/4') ? r.interval : '1';
 
@@ -7380,8 +8088,21 @@ function syncMasterFxUI() {
     const token = clamp(parseInt(r.token ?? (fallbackIdx + 1), 10) || 1, 1, 12);
     const phrase = (r.phrase == null) ? '' : String(r.phrase);
 
+
+    // v018_p01_poly_synth_core: per-layer synth/perc config (fail-open)
+    const synthPreset = (typeof r.synthPreset === 'string' && r.synthPreset.trim()) ? r.synthPreset.trim() : 'tone_sine';
+    const pitchSource = (r.pitchSource === 'bell12' || r.pitchSource === 'chromatic' || r.pitchSource === 'fixed') ? r.pitchSource : 'bell12';
+    const pitchBase = clamp(parseInt(String(r.pitchBase ?? 60), 10) || 60, 0, 127);
+    const hzRaw = Number(r.pitchHz);
+    const pitchHz = (Number.isFinite(hzRaw) && hzRaw > 0) ? hzRaw : null;
+    const synthParams = (r.synthParams && typeof r.synthParams === 'object' && !Array.isArray(r.synthParams)) ? r.synthParams : {};
+    const percPreset = (typeof r.percPreset === 'string' && r.percPreset.trim()) ? r.percPreset.trim() : 'noise_hat';
+    const percParams = (r.percParams && typeof r.percParams === 'object' && !Array.isArray(r.percParams)) ? r.percParams : {};
+
+    const synthParamsAdvanced = sanitizePolySynthParamsAdvanced(r.synthParamsAdvanced);
+    const tokenOverrides = sanitizePolyTokenOverrides(r.tokenOverrides);
     const bellSound = sanitizePolyBellSound(r.bellSound);
-    return { id, enabled: r.enabled !== false, type, sound, interval, offset, volume, token, phrase, bellSound };
+    return { id, enabled: r.enabled !== false, type, sound, interval, offset, volume, token, phrase, bellSound, synthPreset, pitchSource, pitchBase, pitchHz, synthParams, synthParamsAdvanced, tokenOverrides, percPreset, percParams };
   }
 
   function loadPolyrhythmFromLS() {
@@ -7422,6 +8143,14 @@ function syncMasterFxUI() {
             token: clamp(parseInt(layer.token, 10) || 1, 1, 12),
             phrase: String(layer.phrase || ''),
             bellSound: polyBellSoundToJSON(layer.bellSound),
+            // v018_p01_poly_synth_core
+            synthPreset: String(layer.synthPreset || ''),
+            pitchSource: String(layer.pitchSource || ''),
+            pitchBase: clamp(parseInt(String(layer.pitchBase ?? 60), 10) || 60, 0, 127),
+            pitchHz: (Number.isFinite(Number(layer.pitchHz)) && Number(layer.pitchHz) > 0) ? Number(layer.pitchHz) : null,
+            synthParams: (layer.synthParams && typeof layer.synthParams === 'object' && !Array.isArray(layer.synthParams)) ? layer.synthParams : {},
+            percPreset: String(layer.percPreset || ''),
+            percParams: (layer.percParams && typeof layer.percParams === 'object' && !Array.isArray(layer.percParams)) ? layer.percParams : {},
           };
         }),
       };
@@ -7525,8 +8254,12 @@ function syncMasterFxUI() {
     enabledBtn.type = 'button';
     enabledBtn.className = 'pill';
     enabledBtn.addEventListener('click', () => {
+      const was = !!state.polyEnabledForRuns;
       state.polyEnabledForRuns = !state.polyEnabledForRuns;
       savePolyrhythmToLS();
+      if (was && !state.polyEnabledForRuns) {
+        try { cancelScheduledPolySynthAudioNow(); } catch (_) {}
+      }
       polyResyncActiveNow();
       syncPolyrhythmUI();
     });
@@ -7641,6 +8374,28 @@ function syncMasterFxUI() {
       });
       actions.appendChild(enabled);
 
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'pill';
+      removeBtn.textContent = 'Remove';
+      removeBtn.addEventListener('click', () => {
+        // Cancel only polyrhythm scheduled audio (not base bells)
+        try { cancelScheduledPolyAudioNow(); } catch (_) {}
+
+        if (Array.isArray(state.polyLayers)) {
+          const idx = state.polyLayers.findIndex(l => l && l.id === layer.id);
+          if (idx >= 0) state.polyLayers.splice(idx, 1);
+          else if (i >= 0 && i < state.polyLayers.length) state.polyLayers.splice(i, 1);
+        }
+
+        try { delete polySchedNextById[layer.id]; } catch (_) {}
+
+        savePolyrhythmToLS();
+        rebuildPolyrhythmUI();
+        polyResyncActiveNow();
+      });
+      actions.appendChild(removeBtn);
+
       const controls = document.createElement('div');
       controls.className = 'rg-poly-layer-controls';
       card.appendChild(controls);
@@ -7663,6 +8418,8 @@ function syncMasterFxUI() {
       const soundSel = mkSelect([
         { value: 'bell', label: 'Bell' },
         { value: 'tick', label: 'Tick' },
+        { value: 'synth', label: 'Synth' },
+        { value: 'perc', label: 'Perc' },
       ]);
       soundSel.addEventListener('change', () => {
         layer.sound = soundSel.value;
@@ -7716,6 +8473,150 @@ function syncMasterFxUI() {
         polyResyncActiveNow();
       });
       controls.appendChild(mkControl('Volume', volRange));
+
+      // Test (one-shot audition; does not affect run/scoring)
+      const testArea = document.createElement('div');
+      testArea.className = 'rg-poly-test-area';
+
+      const polyAuditionGainMul = () => clamp((Number(layer.volume) || 0) / 100, 0, 1);
+      const polyAuditionPickToken = () => {
+        const t = clamp(parseInt(layer.token, 10) || 1, 1, 12);
+        if (layer.type === 'phrase') {
+          try {
+            const steps = parsePolyPhraseSteps(layer.phrase);
+            for (let si = 0; si < steps.length; si++) {
+              const v = clamp(parseInt(steps[si], 10) || 0, 0, 12);
+              if (v > 0) return v;
+            }
+          } catch (_) {}
+        }
+        return t;
+      };
+
+      const polyAuditionLayerTokenNow = (tok) => {
+        const token = clamp(parseInt(tok, 10) || 1, 1, 12);
+        const nowMs = perfNow();
+        try {
+          ensureAudio();
+          try { applyPolyMasterGain(); } catch (_) {}
+
+          const g = polyAuditionGainMul();
+          const s = String(layer.sound || 'bell');
+
+          if (s === 'tick') {
+            playPolyTickAt(nowMs, g);
+            return;
+          }
+          if (s === 'perc') {
+            playPolyPercAt(token, nowMs, g, layer);
+            return;
+          }
+          if (s === 'synth') {
+            try {
+              playPolySynthAt(token, nowMs, g, layer);
+              return;
+            } catch (e1) {
+              // Fail-open: ignore overrides and try again.
+              try {
+                const safeLayer = Object.assign({}, layer);
+                safeLayer.tokenOverrides = null;
+                playPolySynthAt(token, nowMs, g, safeLayer);
+                return;
+              } catch (_) {}
+            }
+            // Last resort: a tick so the button never "does nothing"
+            try { playPolyTickAt(nowMs, (g > 0 ? g : 1)); } catch (_) {}
+            return;
+          }
+
+          // Default: Bell
+          try {
+            const sc = polyBuildBellSoundCtx(layer);
+            playPolyBellAt(token, nowMs, g, sc);
+          } catch (_) {
+            try { playPolyTickAt(nowMs, (g > 0 ? g : 1)); } catch (_) {}
+          }
+        } catch (_) {
+          try { playPolyTickAt(perfNow(), 1); } catch (_) {}
+        }
+      };
+
+      const polyAuditionOverrideTokenNow = (tok) => {
+        const token = clamp(parseInt(tok, 10) || 1, 1, 12);
+        const nowMs = perfNow();
+        try {
+          ensureAudio();
+          try { applyPolyMasterGain(); } catch (_) {}
+
+          const g = polyAuditionGainMul();
+          const synthLike = Object.assign({}, layer);
+          if (synthLike.pitchSource == null) synthLike.pitchSource = 'bell12';
+          if (synthLike.pitchBase == null) synthLike.pitchBase = 60;
+          if (synthLike.synthPreset == null) synthLike.synthPreset = 'tone_sine';
+
+          try {
+            playPolySynthAt(token, nowMs, g, synthLike);
+            return;
+          } catch (e1) {
+            // Fail-open: ignore overrides and try again.
+            try {
+              const safeLayer = Object.assign({}, synthLike);
+              safeLayer.tokenOverrides = null;
+              playPolySynthAt(token, nowMs, g, safeLayer);
+              return;
+            } catch (_) {}
+          }
+
+          // Fallback: play something using the layer's current sound
+          try { polyAuditionLayerTokenNow(token); } catch (_) {}
+        } catch (_) {
+          try { playPolyTickAt(perfNow(), 1); } catch (_) {}
+        }
+      };
+
+      const testTickBtn = document.createElement('button');
+      testTickBtn.type = 'button';
+      testTickBtn.className = 'pill rg-mini';
+      testTickBtn.textContent = 'Test Tick';
+      testTickBtn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        polyAuditionLayerTokenNow(polyAuditionPickToken());
+      });
+      testArea.appendChild(testTickBtn);
+
+      const testPercBtn = document.createElement('button');
+      testPercBtn.type = 'button';
+      testPercBtn.className = 'pill rg-mini';
+      testPercBtn.textContent = 'Test Perc';
+      testPercBtn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        polyAuditionLayerTokenNow(polyAuditionPickToken());
+      });
+      testArea.appendChild(testPercBtn);
+
+      // 12-token sampling keyboard (1–9,0,E,T) for Bell/Synth
+      const testKbWrap = document.createElement('div');
+      testKbWrap.className = 'rg-poly-test-kb';
+      const testKbBtns = [];
+      const testKbLabels = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'E', 'T'];
+      for (let k = 0; k < testKbLabels.length; k++) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'rg-quick-bell-btn';
+        b.textContent = testKbLabels[k];
+        b.dataset.token = String(k + 1);
+        b.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          const tok = clamp(parseInt(String(b.dataset.token || ''), 10) || (k + 1), 1, 12);
+          polyAuditionLayerTokenNow(tok);
+        });
+        testKbWrap.appendChild(b);
+        testKbBtns.push(b);
+      }
+      testArea.appendChild(testKbWrap);
+
+      const testCtl = mkControl('Test', testArea);
+      controls.appendChild(testCtl);
 
       // Token (Pulse)
       const tokenSel = mkSelect([
@@ -7776,7 +8677,454 @@ function syncMasterFxUI() {
         { value: 'mirror', label: 'Mirror Base' },
         { value: 'custom', label: 'Custom' },
       ]);
-      soundControls.appendChild(mkControl('Profile', soundProfileSel));
+      const soundProfileCtl = mkControl('Profile', soundProfileSel);
+      soundControls.appendChild(soundProfileCtl);
+
+      // v018_p01_poly_synth_core: synth controls (Synth layers)
+      const soundSynthControls = document.createElement('div');
+      soundSynthControls.className = 'rg-poly-sound-controls';
+      soundBody.appendChild(soundSynthControls);
+
+      const synthPresetSel = mkSelect([
+        { value: 'tone_sine', label: 'Sine' },
+        { value: 'tone_triangle_pluck', label: 'Triangle Pluck' },
+        { value: 'tone_square_lead', label: 'Square Lead' },
+        { value: 'tone_saw_pad', label: 'Saw Pad' },
+        { value: 'tone_soft_pad', label: 'Soft Pad' },
+        { value: 'fm_bell', label: 'FM Bell' },
+        { value: 'fm_marimba', label: 'FM Marimba' },
+      ]);
+      soundSynthControls.appendChild(mkControl('Preset', synthPresetSel));
+
+      const pitchSourceSel = mkSelect([
+        { value: 'bell12', label: 'Bell map (12)' },
+        { value: 'chromatic', label: 'Chromatic' },
+        { value: 'fixed', label: 'Fixed' },
+      ]);
+      soundSynthControls.appendChild(mkControl('Pitch source', pitchSourceSel));
+
+      const pitchBaseInput = document.createElement('input');
+      pitchBaseInput.type = 'number';
+      pitchBaseInput.min = '0';
+      pitchBaseInput.max = '127';
+      pitchBaseInput.step = '1';
+      pitchBaseInput.placeholder = '60';
+      pitchBaseInput.title = 'MIDI note number (C4=60)';
+      const pitchBaseCtl = mkControl('Base MIDI', pitchBaseInput);
+      soundSynthControls.appendChild(pitchBaseCtl);
+
+      const pitchHzInput = document.createElement('input');
+      pitchHzInput.type = 'number';
+      pitchHzInput.min = '1';
+      pitchHzInput.max = '20000';
+      pitchHzInput.step = '1';
+      pitchHzInput.placeholder = '440';
+      const pitchHzCtl = mkControl('Fixed Hz', pitchHzInput);
+      soundSynthControls.appendChild(pitchHzCtl);
+
+      // v018_p01_poly_synth_core: perc controls (Perc layers)
+      const soundPercControls = document.createElement('div');
+      soundPercControls.className = 'rg-poly-sound-controls';
+      soundBody.appendChild(soundPercControls);
+
+      const percPresetSel = mkSelect([
+        { value: 'noise_hat', label: 'Noise Hat' },
+        { value: 'kick_sine', label: 'Kick' },
+        { value: 'snare_noise', label: 'Snare' },
+        { value: 'clap_noise', label: 'Clap' },
+        { value: 'click_block', label: 'Click/Block' },
+      ]);
+      soundPercControls.appendChild(mkControl('Preset', percPresetSel));
+
+
+      // v018_p02_poly_synth_advanced: advanced synth settings (Synth/Perc layers)
+      const advDetails = document.createElement('details');
+      advDetails.className = 'rg-poly-adv-details';
+      const advSummary = document.createElement('summary');
+      advSummary.textContent = 'Advanced synth settings';
+      advDetails.appendChild(advSummary);
+
+      const advBody = document.createElement('div');
+      advBody.className = 'rg-poly-adv-body';
+      advDetails.appendChild(advBody);
+
+      const advHint = document.createElement('div');
+      advHint.className = 'rg-poly-inline-note';
+      advHint.textContent = 'Leave fields blank to use preset.';
+      advBody.appendChild(advHint);
+
+      // ADSR
+      const advAdsrControls = document.createElement('div');
+      advAdsrControls.className = 'rg-poly-sound-controls';
+      advBody.appendChild(advAdsrControls);
+
+      const advAInput = document.createElement('input');
+      advAInput.type = 'number';
+      advAInput.min = '0.0001';
+      advAInput.max = '1';
+      advAInput.step = '0.001';
+      advAdsrControls.appendChild(mkControl('A', advAInput));
+
+      const advDInput = document.createElement('input');
+      advDInput.type = 'number';
+      advDInput.min = '0.0001';
+      advDInput.max = '2';
+      advDInput.step = '0.001';
+      advAdsrControls.appendChild(mkControl('D', advDInput));
+
+      const advSInput = document.createElement('input');
+      advSInput.type = 'number';
+      advSInput.min = '0';
+      advSInput.max = '1';
+      advSInput.step = '0.01';
+      advAdsrControls.appendChild(mkControl('S', advSInput));
+
+      const advRInput = document.createElement('input');
+      advRInput.type = 'number';
+      advRInput.min = '0.0001';
+      advRInput.max = '3';
+      advRInput.step = '0.001';
+      advAdsrControls.appendChild(mkControl('R', advRInput));
+
+      // Filter
+      const advFilterControls = document.createElement('div');
+      advFilterControls.className = 'rg-poly-sound-controls';
+      advBody.appendChild(advFilterControls);
+
+      const advFilterTypeSel = mkSelect([
+        { value: '', label: '(Preset)' },
+        { value: 'lowpass', label: 'Lowpass' },
+        { value: 'highpass', label: 'Highpass' },
+        { value: 'bandpass', label: 'Bandpass' },
+        { value: 'notch', label: 'Notch' },
+        { value: 'allpass', label: 'Allpass' },
+        { value: 'lowshelf', label: 'Low-shelf' },
+        { value: 'highshelf', label: 'High-shelf' },
+        { value: 'peaking', label: 'Peaking' },
+      ]);
+      advFilterControls.appendChild(mkControl('Filter', advFilterTypeSel));
+
+      const advFilterCutoffInput = document.createElement('input');
+      advFilterCutoffInput.type = 'number';
+      advFilterCutoffInput.min = '20';
+      advFilterCutoffInput.max = '20000';
+      advFilterCutoffInput.step = '1';
+      advFilterControls.appendChild(mkControl('Cutoff', advFilterCutoffInput));
+
+      const advFilterQInput = document.createElement('input');
+      advFilterQInput.type = 'number';
+      advFilterQInput.min = '0.1';
+      advFilterQInput.max = '20';
+      advFilterQInput.step = '0.1';
+      advFilterControls.appendChild(mkControl('Q', advFilterQInput));
+
+      // Detune / Unison / Velocity
+      const advMiscControls = document.createElement('div');
+      advMiscControls.className = 'rg-poly-sound-controls';
+      advBody.appendChild(advMiscControls);
+
+      const advUnisonInput = document.createElement('input');
+      advUnisonInput.type = 'number';
+      advUnisonInput.min = '1';
+      advUnisonInput.max = '4';
+      advUnisonInput.step = '1';
+      const advUnisonCtl = mkControl('Unison', advUnisonInput);
+      advMiscControls.appendChild(advUnisonCtl);
+
+      const advDetuneInput = document.createElement('input');
+      advDetuneInput.type = 'number';
+      advDetuneInput.min = '0';
+      advDetuneInput.max = '100';
+      advDetuneInput.step = '0.1';
+      const advDetuneCtl = mkControl('Detune (c)', advDetuneInput);
+      advMiscControls.appendChild(advDetuneCtl);
+
+      const advVelocityInput = document.createElement('input');
+      advVelocityInput.type = 'number';
+      advVelocityInput.min = '0';
+      advVelocityInput.max = '2';
+      advVelocityInput.step = '0.01';
+      advMiscControls.appendChild(mkControl('Velocity', advVelocityInput));
+
+      // Per-token overrides (synth hits only)
+      const tokenOvrDetails = document.createElement('details');
+      tokenOvrDetails.className = 'rg-poly-tokenovr-details';
+      const tokenOvrSummary = document.createElement('summary');
+      tokenOvrSummary.textContent = 'Per-token overrides (1..12)';
+      tokenOvrDetails.appendChild(tokenOvrSummary);
+
+      const tokenOvrBody = document.createElement('div');
+      tokenOvrBody.className = 'rg-poly-tokenovr-body';
+      tokenOvrDetails.appendChild(tokenOvrBody);
+
+      const tokenOvrNote = document.createElement('div');
+      tokenOvrNote.className = 'rg-poly-inline-note';
+      tokenOvrNote.textContent = 'Applies to Synth hits only.';
+      tokenOvrBody.appendChild(tokenOvrNote);
+
+      const tokenOvrGrid = document.createElement('div');
+      tokenOvrGrid.className = 'rg-poly-token-grid';
+      tokenOvrBody.appendChild(tokenOvrGrid);
+
+      const tokenOvrUi = [];
+      for (let tt = 1; tt <= 12; tt++) {
+        const row = document.createElement('div');
+        row.className = 'rg-poly-token-row';
+        tokenOvrGrid.appendChild(row);
+
+        const lab = document.createElement('div');
+        lab.className = 'rg-poly-token-label';
+        lab.textContent = 'Token ' + tt;
+        row.appendChild(lab);
+
+        const en = document.createElement('input');
+        en.type = 'checkbox';
+        const enWrap = document.createElement('label');
+        enWrap.className = 'rg-poly-check';
+        enWrap.appendChild(en);
+        enWrap.appendChild(document.createTextNode('Enable'));
+        row.appendChild(enWrap);
+
+        const testTokBtn = document.createElement('button');
+        testTokBtn.type = 'button';
+        testTokBtn.className = 'pill rg-mini';
+        testTokBtn.textContent = 'Test ' + tt;
+        testTokBtn.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          polyAuditionOverrideTokenNow(tt);
+        });
+        row.appendChild(testTokBtn);
+
+        const pitchInput = document.createElement('input');
+        pitchInput.type = 'number';
+        pitchInput.min = '-24';
+        pitchInput.max = '24';
+        pitchInput.step = '1';
+        row.appendChild(mkControl('Pitch', pitchInput));
+
+        const gainInput = document.createElement('input');
+        gainInput.type = 'number';
+        gainInput.min = '0';
+        gainInput.max = '2';
+        gainInput.step = '0.01';
+        row.appendChild(mkControl('Gain', gainInput));
+
+        const cutoffDeltaInput = document.createElement('input');
+        cutoffDeltaInput.type = 'number';
+        cutoffDeltaInput.min = '-20000';
+        cutoffDeltaInput.max = '20000';
+        cutoffDeltaInput.step = '1';
+        row.appendChild(mkControl('Cutoff Δ', cutoffDeltaInput));
+
+        const brightInput = document.createElement('input');
+        brightInput.type = 'number';
+        brightInput.min = '0.1';
+        brightInput.max = '4';
+        brightInput.step = '0.01';
+        row.appendChild(mkControl('Bright', brightInput));
+
+        tokenOvrUi.push({ en, pitchInput, gainInput, cutoffDeltaInput, brightInput });
+      }
+
+      soundBody.appendChild(advDetails);
+      advBody.appendChild(tokenOvrDetails);
+
+      function ensureAdvObj() {
+        if (!layer.synthParamsAdvanced || typeof layer.synthParamsAdvanced !== 'object' || Array.isArray(layer.synthParamsAdvanced)) {
+          layer.synthParamsAdvanced = {};
+        }
+        return layer.synthParamsAdvanced;
+      }
+      function ensureAdvEnv() {
+        const adv = ensureAdvObj();
+        if (!adv.env || typeof adv.env !== 'object' || Array.isArray(adv.env)) adv.env = {};
+        return adv.env;
+      }
+      function ensureAdvFilter() {
+        const adv = ensureAdvObj();
+        if (!adv.filter || typeof adv.filter !== 'object' || Array.isArray(adv.filter)) adv.filter = {};
+        return adv.filter;
+      }
+      function pruneAdv() {
+        const adv = ensureAdvObj();
+        if (adv.env && typeof adv.env === 'object' && !Array.isArray(adv.env) && !Object.keys(adv.env).length) delete adv.env;
+        if (adv.filter && typeof adv.filter === 'object' && !Array.isArray(adv.filter) && !Object.keys(adv.filter).length) delete adv.filter;
+      }
+      function ensureTokenMap() {
+        if (!layer.tokenOverrides || typeof layer.tokenOverrides !== 'object' || Array.isArray(layer.tokenOverrides)) {
+          layer.tokenOverrides = {};
+        }
+        return layer.tokenOverrides;
+      }
+      function setTokenEnabled(tt, on) {
+        const m = ensureTokenMap();
+        const k = String(tt);
+        if (!on) {
+          delete m[k];
+          return;
+        }
+        if (!m[k] || typeof m[k] !== 'object' || Array.isArray(m[k])) m[k] = {};
+      }
+      function pruneToken(tt) {
+        const m = ensureTokenMap();
+        const k = String(tt);
+        const o = m[k];
+        if (o && typeof o === 'object' && !Array.isArray(o) && !Object.keys(o).length) delete m[k];
+      }
+
+      function bindAdvNum(inputEl, kind, key, minV, maxV, isInt) {
+        function apply() {
+          const vStr = String(inputEl.value || '').trim();
+          if (!vStr) {
+            const adv = ensureAdvObj();
+            if (kind === 'env') {
+              const e = ensureAdvEnv();
+              delete e[key];
+              pruneAdv();
+            } else if (kind === 'filter') {
+              const f = ensureAdvFilter();
+              delete f[key];
+              pruneAdv();
+            } else {
+              delete adv[key];
+            }
+            return;
+          }
+          const num = Number(vStr);
+          if (!Number.isFinite(num)) return;
+          const adv = ensureAdvObj();
+          if (kind === 'env') {
+            const e = ensureAdvEnv();
+            e[key] = clamp(isInt ? Math.round(num) : num, minV, maxV);
+            pruneAdv();
+          } else if (kind === 'filter') {
+            const f = ensureAdvFilter();
+            f[key] = clamp(isInt ? Math.round(num) : num, minV, maxV);
+            pruneAdv();
+          } else {
+            adv[key] = clamp(isInt ? Math.round(num) : num, minV, maxV);
+          }
+        }
+        inputEl.addEventListener('input', () => {
+          apply();
+          savePolyrhythmToLS();
+        });
+        inputEl.addEventListener('change', () => {
+          apply();
+          savePolyrhythmToLS();
+          polyResyncActiveNow();
+          syncPolyrhythmUI();
+        });
+      }
+
+      // Bind ADSR
+      bindAdvNum(advAInput, 'env', 'a', 0.0001, 1.0, false);
+      bindAdvNum(advDInput, 'env', 'd', 0.0001, 2.0, false);
+      bindAdvNum(advSInput, 'env', 's', 0.0, 1.0, false);
+      bindAdvNum(advRInput, 'env', 'r', 0.0001, 3.0, false);
+
+      // Bind filter params (type handled separately)
+      bindAdvNum(advFilterCutoffInput, 'filter', 'cutoffHz', 20, 20000, false);
+      bindAdvNum(advFilterQInput, 'filter', 'Q', 0.1, 20, false);
+
+      advFilterTypeSel.addEventListener('change', () => {
+        const v = String(advFilterTypeSel.value || '').trim();
+        const adv = ensureAdvObj();
+        if (!v) {
+          if (adv.filter && typeof adv.filter === 'object' && !Array.isArray(adv.filter)) {
+            delete adv.filter.type;
+            pruneAdv();
+          }
+        } else {
+          const f = ensureAdvFilter();
+          f.type = v;
+          pruneAdv();
+        }
+        savePolyrhythmToLS();
+        polyResyncActiveNow();
+        syncPolyrhythmUI();
+      });
+
+      // Bind misc
+      bindAdvNum(advUnisonInput, 'misc', 'unison', 1, 4, true);
+      bindAdvNum(advDetuneInput, 'misc', 'detuneCents', 0, 100, false);
+      bindAdvNum(advVelocityInput, 'misc', 'velocity', 0, 2, false);
+
+      // Token override bindings
+      for (let ti = 0; ti < tokenOvrUi.length; ti++) {
+        const tt = ti + 1;
+        const uiT = tokenOvrUi[ti];
+
+        function setDisabled(on) {
+          const dis = !on;
+          uiT.pitchInput.disabled = dis;
+          uiT.gainInput.disabled = dis;
+          uiT.cutoffDeltaInput.disabled = dis;
+          uiT.brightInput.disabled = dis;
+        }
+
+        uiT.en.addEventListener('change', () => {
+          const on = !!uiT.en.checked;
+          setTokenEnabled(tt, on);
+          if (!on) {
+            uiT.pitchInput.value = '';
+            uiT.gainInput.value = '';
+            uiT.cutoffDeltaInput.value = '';
+            uiT.brightInput.value = '';
+          }
+          setDisabled(on);
+          savePolyrhythmToLS();
+          polyResyncActiveNow();
+          syncPolyrhythmUI();
+        });
+
+        function bindTokNum(inputEl, key, minV, maxV, isInt, omitDefault1) {
+          function apply() {
+            if (!uiT.en.checked) return;
+            const vStr = String(inputEl.value || '').trim();
+            const m = ensureTokenMap();
+            const kTok = String(tt);
+            if (!m[kTok] || typeof m[kTok] !== 'object' || Array.isArray(m[kTok])) m[kTok] = {};
+            const o = m[kTok];
+
+            if (!vStr) {
+              delete o[key];
+              pruneToken(tt);
+              return;
+            }
+            const num = Number(vStr);
+            if (!Number.isFinite(num)) return;
+            const vv = clamp(isInt ? Math.round(num) : num, minV, maxV);
+            if (omitDefault1 && Math.abs(vv - 1) < 1e-6) {
+              delete o[key];
+              pruneToken(tt);
+              return;
+            }
+            o[key] = vv;
+            pruneToken(tt);
+          }
+
+          inputEl.addEventListener('input', () => {
+            apply();
+            savePolyrhythmToLS();
+          });
+          inputEl.addEventListener('change', () => {
+            apply();
+            savePolyrhythmToLS();
+            polyResyncActiveNow();
+            syncPolyrhythmUI();
+          });
+        }
+
+        bindTokNum(uiT.pitchInput, 'pitchSemis', -24, 24, true, false);
+        bindTokNum(uiT.gainInput, 'gain', 0, 2, false, true);
+        bindTokNum(uiT.cutoffDeltaInput, 'cutoffDeltaHz', -20000, 20000, false, false);
+        bindTokNum(uiT.brightInput, 'brightness', 0.1, 4, false, true);
+
+        // initial disabled (sync will set checked)
+        setDisabled(false);
+      }
 
       const soundCustomWrap = document.createElement('div');
       soundCustomWrap.className = 'rg-poly-sound-custom';
@@ -8168,6 +9516,43 @@ function syncMasterFxUI() {
         syncPolyrhythmUI();
       });
 
+      // v018_p01_poly_synth_core: synth/perc controls
+      synthPresetSel.addEventListener('change', () => {
+        layer.synthPreset = String(synthPresetSel.value || 'tone_sine');
+        savePolyrhythmToLS();
+        polyResyncActiveNow();
+        syncPolyrhythmUI();
+      });
+
+      pitchSourceSel.addEventListener('change', () => {
+        layer.pitchSource = String(pitchSourceSel.value || 'bell12');
+        savePolyrhythmToLS();
+        polyResyncActiveNow();
+        syncPolyrhythmUI();
+      });
+
+      pitchBaseInput.addEventListener('change', () => {
+        layer.pitchBase = clamp(parseInt(String(pitchBaseInput.value ?? 60), 10) || 60, 0, 127);
+        savePolyrhythmToLS();
+        polyResyncActiveNow();
+        syncPolyrhythmUI();
+      });
+
+      pitchHzInput.addEventListener('change', () => {
+        const v = String(pitchHzInput.value || '').trim();
+        layer.pitchHz = v ? ((Number.isFinite(Number(v)) && Number(v) > 0) ? Number(v) : null) : null;
+        savePolyrhythmToLS();
+        polyResyncActiveNow();
+        syncPolyrhythmUI();
+      });
+
+      percPresetSel.addEventListener('change', () => {
+        layer.percPreset = String(percPresetSel.value || 'noise_hat');
+        savePolyrhythmToLS();
+        polyResyncActiveNow();
+        syncPolyrhythmUI();
+      });
+
       soundTransposeInput.addEventListener('input', () => {
         ensureLayerBellSound();
         layer.bellSound.pitch.layerTransposeSemis = clamp(parseInt(soundTransposeInput.value, 10) || 0, -24, 24);
@@ -8236,9 +9621,13 @@ function syncMasterFxUI() {
       card.appendChild(methodNote);
 
       P.layerUiById[layer.id] = {
-        card, enabled, typeSel, soundSel, intervalSel, offsetSel, volRange,
+        card, enabled, typeSel, soundSel, intervalSel, offsetSel, volRange, testCtl, testArea, testTickBtn, testPercBtn, testKbWrap, testKbBtns,
         tokenSel, phraseInput, tokenCtl, phraseCtl, methodNote,
         soundDetails, soundProfileSel, soundBadge, soundCustomWrap,
+        // v018_p01_poly_synth_core
+        soundBellControls: soundControls, soundProfileCtl,
+        soundSynthControls, synthPresetSel, pitchSourceSel, pitchBaseCtl, pitchBaseInput, pitchHzCtl, pitchHzInput,
+        soundPercControls, percPresetSel,
         soundTransposeInput,
         soundRingLengthRange: rlCtl.range, soundRingLengthValue: rlCtl.val,
         soundBrightnessRange: brCtl.range, soundBrightnessValue: brCtl.val,
@@ -8284,7 +9673,7 @@ function syncMasterFxUI() {
       if (!lu) continue;
 
       const enabled = layer.enabled !== false;
-      lu.enabled.textContent = enabled ? 'On' : 'Muted';
+      lu.enabled.textContent = enabled ? 'Mute' : 'Muted';
       lu.enabled.setAttribute('aria-pressed', enabled ? 'true' : 'false');
 
       lu.typeSel.value = layer.type;
@@ -8307,9 +9696,116 @@ function syncMasterFxUI() {
       setVisible(lu.tokenCtl, isPulse);
       setVisible(lu.phraseCtl, isPhrase);
       setVisible(lu.methodNote, isMethod);
-      // v017_p02_polyrhythm_layer_sound: per-layer bell sound UI (Bell layers only)
+      // v017_p02_polyrhythm_layer_sound: per-layer sound UI (Bell/Synth/Perc)
       const isBell = (layer.sound === 'bell');
-      setVisible(lu.soundDetails, isBell);
+      const isSynth = (layer.sound === 'synth');
+      const isPerc = (layer.sound === 'perc');
+      const isTick = (layer.sound === 'tick');
+      setVisible(lu.testTickBtn, isTick);
+      setVisible(lu.testPercBtn, isPerc);
+      setVisible(lu.testKbWrap, (isBell || isSynth));
+      const hasSoundDetails = (isBell || isSynth || isPerc);
+      setVisible(lu.soundDetails, hasSoundDetails);
+      setVisible(lu.soundBellControls, isBell);
+      setVisible(lu.soundSynthControls, isSynth);
+      setVisible(lu.soundPercControls, isPerc);
+      setVisible(lu.advDetails, (isSynth || isPerc));
+      setVisible(lu.advDetuneCtl, isSynth);
+      setVisible(lu.advUnisonCtl, isSynth);
+      setVisible(lu.tokenOvrDetails, isSynth);
+      if (!isBell) setVisible(lu.soundCustomWrap, false);
+
+      if (isSynth) {
+        // Defaults (do not auto-start)
+        if (layer.pitchSource == null) layer.pitchSource = 'bell12';
+        if (layer.pitchBase == null) layer.pitchBase = 60;
+        if (layer.synthPreset == null) layer.synthPreset = 'tone_sine';
+
+        if (lu.synthPresetSel) {
+          try { lu.synthPresetSel.value = String(layer.synthPreset || 'tone_sine'); } catch (_) {}
+        }
+        if (lu.pitchSourceSel) {
+          try { lu.pitchSourceSel.value = String(layer.pitchSource || 'bell12'); } catch (_) {}
+        }
+        if (lu.pitchBaseInput) {
+          lu.pitchBaseInput.value = String(clamp(parseInt(String(layer.pitchBase ?? 60), 10) || 60, 0, 127));
+        }
+        if (lu.pitchHzInput) {
+          lu.pitchHzInput.value = (layer.pitchHz != null) ? String(layer.pitchHz) : '';
+        }
+
+        const ps = String(layer.pitchSource || 'bell12');
+        setVisible(lu.pitchBaseCtl, ps !== 'bell12');
+        setVisible(lu.pitchHzCtl, ps === 'fixed');
+
+        if (lu.soundBadge) {
+          const lab = (lu.synthPresetSel && lu.synthPresetSel.selectedOptions && lu.synthPresetSel.selectedOptions[0]) ? String(lu.synthPresetSel.selectedOptions[0].textContent || '').trim() : '';
+          lu.soundBadge.textContent = lab ? ('Synth: ' + lab) : 'Synth';
+        }
+      } else if (isPerc) {
+        if (layer.percPreset == null) layer.percPreset = 'noise_hat';
+        if (lu.percPresetSel) {
+          try { lu.percPresetSel.value = String(layer.percPreset || 'noise_hat'); } catch (_) {}
+        }
+        if (lu.soundBadge) {
+          const lab = (lu.percPresetSel && lu.percPresetSel.selectedOptions && lu.percPresetSel.selectedOptions[0]) ? String(lu.percPresetSel.selectedOptions[0].textContent || '').trim() : '';
+          lu.soundBadge.textContent = lab ? ('Perc: ' + lab) : 'Perc';
+        }
+
+
+      // v018_p02_poly_synth_advanced: sync UI values for advanced synth settings
+      if (isSynth || isPerc) {
+        if (!layer.synthParamsAdvanced || typeof layer.synthParamsAdvanced !== 'object' || Array.isArray(layer.synthParamsAdvanced)) {
+          layer.synthParamsAdvanced = {};
+        }
+        const adv = layer.synthParamsAdvanced;
+        const env = (adv.env && typeof adv.env === 'object' && !Array.isArray(adv.env)) ? adv.env : {};
+        const filt = (adv.filter && typeof adv.filter === 'object' && !Array.isArray(adv.filter)) ? adv.filter : {};
+
+        if (lu.advAInput) lu.advAInput.value = (env.a != null) ? String(env.a) : '';
+        if (lu.advDInput) lu.advDInput.value = (env.d != null) ? String(env.d) : '';
+        if (lu.advSInput) lu.advSInput.value = (env.s != null) ? String(env.s) : '';
+        if (lu.advRInput) lu.advRInput.value = (env.r != null) ? String(env.r) : '';
+
+        if (lu.advFilterTypeSel) {
+          const t = (filt.type != null) ? String(filt.type || '').trim() : '';
+          lu.advFilterTypeSel.value = t || '';
+        }
+        if (lu.advFilterCutoffInput) lu.advFilterCutoffInput.value = (filt.cutoffHz != null) ? String(filt.cutoffHz) : '';
+        if (lu.advFilterQInput) lu.advFilterQInput.value = (filt.Q != null) ? String(filt.Q) : '';
+
+        if (lu.advUnisonInput) lu.advUnisonInput.value = (adv.unison != null) ? String(adv.unison) : '';
+        if (lu.advDetuneInput) lu.advDetuneInput.value = (adv.detuneCents != null) ? String(adv.detuneCents) : '';
+        if (lu.advVelocityInput) lu.advVelocityInput.value = (adv.velocity != null) ? String(adv.velocity) : '';
+
+        // Per-token overrides (synth hits only)
+        if (isSynth && lu.tokenOvrUi && Array.isArray(lu.tokenOvrUi)) {
+          if (!layer.tokenOverrides || typeof layer.tokenOverrides !== 'object' || Array.isArray(layer.tokenOverrides)) {
+            layer.tokenOverrides = {};
+          }
+          const m = layer.tokenOverrides;
+          for (let tt = 1; tt <= 12 && tt <= lu.tokenOvrUi.length; tt++) {
+            const uiT = lu.tokenOvrUi[tt - 1];
+            if (!uiT) continue;
+
+            const o = (m[String(tt)] && typeof m[String(tt)] === 'object') ? m[String(tt)] : null;
+            const on = !!o;
+
+            uiT.en.checked = on;
+            uiT.pitchInput.disabled = !on;
+            uiT.gainInput.disabled = !on;
+            uiT.cutoffDeltaInput.disabled = !on;
+            uiT.brightInput.disabled = !on;
+
+            uiT.pitchInput.value = (o && o.pitchSemis != null) ? String(o.pitchSemis) : '';
+            uiT.gainInput.value = (o && o.gain != null) ? String(o.gain) : '';
+            uiT.cutoffDeltaInput.value = (o && o.cutoffDeltaHz != null) ? String(o.cutoffDeltaHz) : '';
+            uiT.brightInput.value = (o && o.brightness != null) ? String(o.brightness) : '';
+          }
+        }
+      }
+
+      }
 
       if (isBell && lu.soundProfileSel) {
         layer.bellSound = sanitizePolyBellSound(layer.bellSound);
@@ -8812,6 +10308,36 @@ function coerceDroneLayerVariants(raw, type) {
   };
 }
 
+function parseCustomDroneIntervalsText(raw, cap) {
+  const tokens = String(raw || '').split(/[\s,]+/);
+  const vals = [];
+  const seen = Object.create(null);
+  let hadInvalid = false;
+  let didClamp = false;
+  let didDedupe = false;
+
+  for (let i = 0; i < tokens.length; i++) {
+    const t = String(tokens[i] || '').trim();
+    if (!t) continue;
+    const n0 = parseInt(t, 10);
+    if (!Number.isFinite(n0)) { hadInvalid = true; continue; }
+    const n = clamp(n0, -36, 36);
+    if (n !== n0) didClamp = true;
+    if (seen[n]) { didDedupe = true; continue; }
+    seen[n] = 1;
+    vals.push(n);
+  }
+
+  if (vals.length === 0) {
+    return { ok: false, vals: [0], autoAddedZero: true, hadInvalid: true, didClamp, didDedupe };
+  }
+
+  let autoAddedZero = false;
+  if (!seen[0]) { vals.unshift(0); autoAddedZero = true; }
+  const out = (typeof cap === 'number' && cap > 0) ? vals.slice(0, cap) : vals;
+  return { ok: out.length > 0, vals: out, autoAddedZero, hadInvalid, didClamp, didDedupe };
+}
+
 function buildLayer1FromLegacyDroneState() {
   const type = state.droneType;
   const layer = {
@@ -8822,9 +10348,14 @@ function buildLayer1FromLegacyDroneState() {
     register: clamp(Number(state.droneOctaveC) || 3, 1, 6),
     customHzEnabled: state.droneScaleKey === 'custom_hz',
     customHz: coerceCustomHz(state.droneCustomHz, 440),
+    customIntervals: '0',
     volume: 1,  // keep legacy sound (master volume controls overall level)
     pan: 0,
     depth: 0,
+    // v018_p03_drone_synth
+    soundType: 'drone',
+    synthPreset: 'tone_sine',
+    synthParamsAdvanced: {},
     variants: {
       normalize: !!state.droneNormalize,
       density: clampDroneDensityForType(type, state.droneDensity),
@@ -8856,6 +10387,7 @@ function coerceDroneLayer(raw, fallback) {
   const base = fallback || buildLayer1FromLegacyDroneState();
   const v = (raw && typeof raw === 'object') ? raw : {};
   const type = (typeof v.type === 'string' && v.type) ? v.type : base.type;
+  const soundType = (String(v.soundType || base.soundType || '') === 'synth') ? 'synth' : 'drone';
 
   const out = {
     muted: !!v.muted,
@@ -8868,6 +10400,10 @@ function coerceDroneLayer(raw, fallback) {
     volume: clamp(Number.isFinite(Number(v.volume)) ? Number(v.volume) : (Number.isFinite(Number(base.volume)) ? Number(base.volume) : 1), 0, 1),
     pan: clamp(Number(v.pan) || base.pan || 0, -1, 1),
     depth: clamp(Number(v.depth) || base.depth || 0, 0, 1),
+    // v018_p03_drone_synth
+    soundType,
+    synthPreset: (typeof v.synthPreset === 'string' && v.synthPreset.trim()) ? v.synthPreset.trim() : ((typeof base.synthPreset === 'string' && base.synthPreset.trim()) ? base.synthPreset.trim() : 'tone_sine'),
+    synthParamsAdvanced: sanitizePolySynthParamsAdvanced(v.synthParamsAdvanced ?? base.synthParamsAdvanced),
     variants: coerceDroneLayerVariants(v.variants, type)
   };
 
@@ -9032,9 +10568,14 @@ function makeNewDroneLayerTemplate() {
     register: clamp(Number(base.register) || 3, 1, 6),
     customHzEnabled: false,
     customHz: 440,
+    customIntervals: String(base.customIntervals || '0'),
     volume: 0.5, // moderate by default
     pan: 0,
     depth: 0,
+    // v018_p03_drone_synth
+    soundType: (base && base.soundType === 'synth') ? 'synth' : 'drone',
+    synthPreset: (typeof base.synthPreset === 'string' && base.synthPreset.trim()) ? base.synthPreset.trim() : 'tone_sine',
+    synthParamsAdvanced: sanitizePolySynthParamsAdvanced(base && base.synthParamsAdvanced),
     variants: defaultDroneLayerVariantsForType(type)
   };
 }
@@ -9094,7 +10635,9 @@ function computeDroneLayerEffectiveConfigs() {
       density: eff[i].density,
       clusterWidth: layer.variants && layer.variants.clusterWidth,
       noiseTilt: layer.variants && layer.variants.noiseTilt,
-      noiseQ: layer.variants && layer.variants.noiseQ
+      noiseQ: layer.variants && layer.variants.noiseQ,
+
+      customIntervals: layer.customIntervals
     };
     const spec = computeDroneSpec(layer.type, f, nyquist, vars);
     const n = (spec.voices ? spec.voices.length : 0) + (spec.noise ? 1 : 0);
@@ -9120,7 +10663,9 @@ function computeDroneLayerEffectiveConfigs() {
           density: d,
           clusterWidth: layer.variants && layer.variants.clusterWidth,
           noiseTilt: layer.variants && layer.variants.noiseTilt,
-          noiseQ: layer.variants && layer.variants.noiseQ
+          noiseQ: layer.variants && layer.variants.noiseQ,
+
+          customIntervals: layer.customIntervals
         };
         const spec = computeDroneSpec(layer.type, f, nyquist, vars);
         const n = (spec.voices ? spec.voices.length : 0) + (spec.noise ? 1 : 0);
@@ -9237,7 +10782,9 @@ function startDroneLayer(layerIndex, effCfg) {
     density: (eff.density != null) ? eff.density : (layer.variants && layer.variants.density),
     clusterWidth: layer.variants && layer.variants.clusterWidth,
     noiseTilt: layer.variants && layer.variants.noiseTilt,
-    noiseQ: layer.variants && layer.variants.noiseQ
+    noiseQ: layer.variants && layer.variants.noiseQ,
+
+    customIntervals: layer.customIntervals
   };
 
   let spec = computeDroneSpec(layer.type, f, nyquist, vars);
@@ -9287,30 +10834,109 @@ function startDroneLayer(layerIndex, effCfg) {
     try { layerGain.connect(droneMasterGain); } catch (_) {}
   }
 
-// Tonal voices
-  for (const v of (spec.voices || [])) {
-    const osc = audioCtx.createOscillator();
-    osc.type = v.wave || 'sine';
-    osc.frequency.setValueAtTime(v.f, now);
-    if (Number.isFinite(v.detune)) osc.detune.setValueAtTime(v.detune, now);
+  const soundType = (layer.soundType === 'synth') ? 'synth' : 'drone';
+  const synthAdv = (soundType === 'synth' && layer.synthParamsAdvanced && typeof layer.synthParamsAdvanced === 'object' && !Array.isArray(layer.synthParamsAdvanced)) ? layer.synthParamsAdvanced : {};
+  const synthVel = (soundType === 'synth' && Number.isFinite(Number(synthAdv.velocity))) ? clamp(Number(synthAdv.velocity), 0, 2) : 1.0;
+  const synthPresetId = (soundType === 'synth') ? String(layer.synthPreset || '') : '';
+  const synthPreset = (soundType === 'synth') ? polyGetSynthPreset(synthPresetId) : null;
 
-    const g = audioCtx.createGain();
-    g.gain.setValueAtTime(clamp(Number(v.g) || 0, 0, 1), now);
+  // Tonal voices
+  if (soundType === 'synth') {
+    const synthKind = (synthPreset && synthPreset.kind) ? synthPreset.kind : 'tone';
+    const carrierType = (synthPreset && synthPreset.kind === 'fm') ? (synthPreset.carrierType || 'sine') : ((synthPreset && synthPreset.oscType) ? synthPreset.oscType : 'sine');
+    const modType = (synthPreset && synthPreset.modType) ? synthPreset.modType : 'sine';
+    const modRatio = clamp(Number(synthPreset && synthPreset.modRatio) || 2, 0.1, 16);
+    const modIndexHz = clamp(Number(synthPreset && synthPreset.modIndexHz) || 0, 0, 2000);
 
-    osc.connect(g);
-    g.connect(groupGain);
-    nodes.push(osc, g);
+    // Optional filter (preset + advanced overrides)
+    const fBase = (synthPreset && synthPreset.filter && typeof synthPreset.filter === 'object') ? synthPreset.filter : null;
+    const fAdv = (synthAdv && synthAdv.filter && typeof synthAdv.filter === 'object') ? synthAdv.filter : null;
+    const fType = (fAdv && typeof fAdv.type === 'string' && fAdv.type) ? fAdv.type : (fBase && fBase.type);
+    const fCut = (fAdv && Number.isFinite(Number(fAdv.cutoffHz))) ? clamp(Number(fAdv.cutoffHz), 20, nyquist) : (fBase && Number.isFinite(Number(fBase.cutoffHz)) ? clamp(Number(fBase.cutoffHz), 20, nyquist) : null);
+    const fQ = (fAdv && Number.isFinite(Number(fAdv.Q))) ? clamp(Number(fAdv.Q), 0.1, 30) : (fBase && Number.isFinite(Number(fBase.Q)) ? clamp(Number(fBase.Q), 0.1, 30) : null);
 
-    voices.push({
-      osc,
-      gain: g,
-      baseFreq: v.f,
-      baseDetune: Number.isFinite(v.detune) ? v.detune : 0,
-      drift: 0,
-      motion: 0
-    });
+    for (const v of (spec.voices || [])) {
+      const osc = audioCtx.createOscillator();
+      osc.type = carrierType || 'sine';
+      osc.frequency.setValueAtTime(v.f, now);
+      if (Number.isFinite(v.detune)) osc.detune.setValueAtTime(v.detune, now);
 
-    try { osc.start(); } catch (_) {}
+      let modOsc = null;
+      let modGain = null;
+      if (synthKind === 'fm') {
+        modOsc = audioCtx.createOscillator();
+        modOsc.type = modType || 'sine';
+        modOsc.frequency.setValueAtTime(clamp(v.f * modRatio, 20, nyquist * 0.9), now);
+        if (Number.isFinite(v.detune)) modOsc.detune.setValueAtTime(v.detune, now);
+
+        modGain = audioCtx.createGain();
+        modGain.gain.setValueAtTime(0.0001, now);
+        try { modGain.gain.exponentialRampToValueAtTime(Math.max(0.0001, modIndexHz), now + Math.min(0.08, DRONE_FADE_SEC)); } catch (_) {}
+
+        modOsc.connect(modGain);
+        modGain.connect(osc.frequency);
+        nodes.push(modOsc, modGain);
+      }
+
+      let pre = osc;
+      if (fType) {
+        const filter = audioCtx.createBiquadFilter();
+        filter.type = fType;
+        if (fCut != null) filter.frequency.setValueAtTime(fCut, now);
+        if (fQ != null) filter.Q.setValueAtTime(fQ, now);
+        pre.connect(filter);
+        pre = filter;
+        nodes.push(filter);
+      }
+
+      const g = audioCtx.createGain();
+      const target = clamp((Number(v.g) || 0) * synthVel, 0, 1);
+      g.gain.setValueAtTime(0.0, now);
+      try { g.gain.linearRampToValueAtTime(target, now + Math.min(0.06, DRONE_FADE_SEC)); } catch (_) {}
+
+      pre.connect(g);
+      g.connect(groupGain);
+      nodes.push(osc, g);
+
+      voices.push({
+        osc,
+        gain: g,
+        baseFreq: v.f,
+        baseDetune: Number.isFinite(v.detune) ? v.detune : 0,
+        drift: 0,
+        motion: 0,
+        modOsc,
+        modGain
+      });
+
+      try { osc.start(); } catch (_) {}
+      if (modOsc) { try { modOsc.start(); } catch (_) {} }
+    }
+  } else {
+    for (const v of (spec.voices || [])) {
+      const osc = audioCtx.createOscillator();
+      osc.type = v.wave || 'sine';
+      osc.frequency.setValueAtTime(v.f, now);
+      if (Number.isFinite(v.detune)) osc.detune.setValueAtTime(v.detune, now);
+
+      const g = audioCtx.createGain();
+      g.gain.setValueAtTime(clamp(Number(v.g) || 0, 0, 1), now);
+
+      osc.connect(g);
+      g.connect(groupGain);
+      nodes.push(osc, g);
+
+      voices.push({
+        osc,
+        gain: g,
+        baseFreq: v.f,
+        baseDetune: Number.isFinite(v.detune) ? v.detune : 0,
+        drift: 0,
+        motion: 0
+      });
+
+      try { osc.start(); } catch (_) {}
+    }
   }
 
   // Noise
@@ -9360,6 +10986,9 @@ function startDroneLayer(layerIndex, effCfg) {
   const cur = {
     layerIndex,
     type: layer.type,
+    soundType,
+    synthPreset: (soundType === 'synth') ? String(layer.synthPreset || '') : '',
+    synthVel,
     groupGain,
     variantGain,
     layerGain,
@@ -9407,7 +11036,22 @@ function refreshDroneLayer(layerIndex, effCfg) {
     return;
   }
 
+  const soundType = (layer.soundType === 'synth') ? 'synth' : 'drone';
+  if ((cur.soundType || 'drone') !== soundType) {
+    startDroneLayer(layerIndex, effCfg);
+    return;
+  }
+  if (soundType === 'synth' && String(cur.synthPreset || '') !== String(layer.synthPreset || '')) {
+    startDroneLayer(layerIndex, effCfg);
+    return;
+  }
+
   const now = audioCtx.currentTime;
+  const synthPreset = (soundType === 'synth') ? polyGetSynthPreset(layer.synthPreset) : null;
+  const synthAdv = (soundType === 'synth' && layer.synthParamsAdvanced && typeof layer.synthParamsAdvanced === 'object' && !Array.isArray(layer.synthParamsAdvanced)) ? layer.synthParamsAdvanced : {};
+  const synthVel = (soundType === 'synth' && Number.isFinite(Number(synthAdv.velocity))) ? clamp(Number(synthAdv.velocity), 0, 2) : 1.0;
+  if (soundType === 'synth') cur.synthVel = synthVel;
+
   const nyquist = audioCtx.sampleRate * 0.5;
   const f = getDroneLayerRootFrequency(layer);
 
@@ -9416,7 +11060,9 @@ function refreshDroneLayer(layerIndex, effCfg) {
     density: (eff.density != null) ? eff.density : (layer.variants && layer.variants.density),
     clusterWidth: layer.variants && layer.variants.clusterWidth,
     noiseTilt: layer.variants && layer.variants.noiseTilt,
-    noiseQ: layer.variants && layer.variants.noiseQ
+    noiseQ: layer.variants && layer.variants.noiseQ,
+
+    customIntervals: layer.customIntervals
   };
 
   let spec = computeDroneSpec(layer.type, f, nyquist, vars);
@@ -9464,7 +11110,16 @@ function refreshDroneLayer(layerIndex, effCfg) {
     const cv = cur.voices[i];
     if (!cv || !cv.osc) continue;
 
-    if (sv.wave && cv.osc.type !== sv.wave) cv.osc.type = sv.wave;
+    if (soundType === 'synth') {
+      const wantWave = (synthPreset && synthPreset.kind === 'fm') ? (synthPreset.carrierType || 'sine') : ((synthPreset && synthPreset.oscType) ? synthPreset.oscType : 'sine');
+      if (wantWave && cv.osc.type !== wantWave) cv.osc.type = wantWave;
+      if (synthPreset && synthPreset.kind === 'fm' && cv.modOsc) {
+        const wantMod = synthPreset.modType || 'sine';
+        if (wantMod && cv.modOsc.type !== wantMod) cv.modOsc.type = wantMod;
+      }
+    } else {
+      if (sv.wave && cv.osc.type !== sv.wave) cv.osc.type = sv.wave;
+    }
 
     cv.baseFreq = sv.f;
     cv.baseDetune = Number.isFinite(sv.detune) ? sv.detune : 0;
@@ -9475,16 +11130,34 @@ function refreshDroneLayer(layerIndex, effCfg) {
       cv.osc.frequency.linearRampToValueAtTime(sv.f, t);
     } catch (_) {}
 
+    if (soundType === 'synth' && synthPreset && synthPreset.kind === 'fm' && cv.modOsc) {
+      const ratio = clamp(Number(synthPreset.modRatio) || 2, 0.1, 16);
+      const targetHz = clamp(sv.f * ratio, 20, nyquist * 0.9);
+      try {
+        cv.modOsc.frequency.cancelScheduledValues(now);
+        cv.modOsc.frequency.setValueAtTime(cv.modOsc.frequency.value, now);
+        cv.modOsc.frequency.linearRampToValueAtTime(targetHz, t);
+      } catch (_) {}
+    }
+
     try {
       cv.osc.detune.cancelScheduledValues(now);
       cv.osc.detune.setValueAtTime(cv.osc.detune.value, now);
       cv.osc.detune.linearRampToValueAtTime(cv.baseDetune + cv.drift + cv.motion, t);
     } catch (_) {}
 
+    if (soundType === 'synth' && synthPreset && synthPreset.kind === 'fm' && cv.modOsc && cv.modOsc.detune) {
+      try {
+        cv.modOsc.detune.cancelScheduledValues(now);
+        cv.modOsc.detune.setValueAtTime(cv.modOsc.detune.value, now);
+        cv.modOsc.detune.linearRampToValueAtTime(cv.baseDetune + cv.drift + cv.motion, t);
+      } catch (_) {}
+    }
+
     try {
       cv.gain.gain.cancelScheduledValues(now);
       cv.gain.gain.setValueAtTime(cv.gain.gain.value, now);
-      cv.gain.gain.linearRampToValueAtTime(clamp(Number(sv.g) || 0, 0, 1), t);
+      cv.gain.gain.linearRampToValueAtTime(clamp((Number(sv.g) || 0) * ((soundType === 'synth') ? synthVel : 1), 0, 1), t);
     } catch (_) {}
   }
 
@@ -9694,6 +11367,39 @@ function rebuildDroneLayersUI() {
 
   ensureDroneLayersState();
 
+  // v018_p03_drone_synth: build options for the same synth preset IDs as polyrhythm
+  const fillPolySynthPresetSelect = (selEl, currentValue) => {
+    if (!selEl) return;
+    let cur = (currentValue == null) ? '' : String(currentValue || '');
+    cur = String(cur);
+    let keys = null;
+    try { keys = (typeof POLY_SYNTH_PRESETS === 'object' && POLY_SYNTH_PRESETS) ? Object.keys(POLY_SYNTH_PRESETS) : null; } catch (_) { keys = null; }
+    if (!Array.isArray(keys) || !keys.length) keys = ['tone_sine', 'tone_triangle_pluck', 'tone_saw_pad', 'fm_bell'];
+
+    // Preserve unknown preset IDs for forward-compat configs (show as Custom)
+    selEl.innerHTML = '';
+    const hasCur = (cur && keys.indexOf(cur) !== -1);
+    if (cur && !hasCur) {
+      const o0 = document.createElement('option');
+      o0.value = cur;
+      o0.textContent = 'Custom: ' + cur;
+      selEl.appendChild(o0);
+    }
+    for (const k of keys) {
+      const o = document.createElement('option');
+      o.value = k;
+      let label = k;
+      try {
+        const p = (POLY_SYNTH_PRESETS && POLY_SYNTH_PRESETS[k]) ? POLY_SYNTH_PRESETS[k] : null;
+        if (p && p.label) label = String(p.label);
+      } catch (_) {}
+      o.textContent = label;
+      selEl.appendChild(o);
+    }
+    if (!cur) cur = keys[0] || 'tone_sine';
+    selEl.value = cur;
+  };
+
   // Ensure stack shells match layer count
   const desired = (state.droneLayers || []).length;
   while (uiD.cards.length < desired) {
@@ -9738,6 +11444,29 @@ function rebuildDroneLayersUI() {
     followBtn.textContent = 'On';
     followCtl.appendChild(followLab);
     followCtl.appendChild(followBtn);
+
+    // Sound type (classic drone vs synth)
+    const soundCtl = document.createElement('div');
+    soundCtl.className = 'control';
+    const soundLab = document.createElement('label');
+    soundLab.textContent = 'Sound type';
+    const soundSel = document.createElement('select');
+    soundSel.id = 'droneLayerSoundType_L1';
+    soundSel.innerHTML = '<option value="drone">Drone</option><option value="synth">Synth</option>';
+    soundCtl.appendChild(soundLab);
+    soundCtl.appendChild(soundSel);
+
+    const presetCtl = document.createElement('div');
+    presetCtl.className = 'control';
+    presetCtl.id = 'droneLayerSynthPresetControl_L1';
+    const presetLab = document.createElement('label');
+    presetLab.textContent = 'Synth preset';
+    const presetSel = document.createElement('select');
+    presetSel.id = 'droneLayerSynthPreset_L1';
+    presetCtl.appendChild(presetLab);
+    presetCtl.appendChild(presetSel);
+    presetCtl.classList.add('hidden');
+    fillPolySynthPresetSelect(presetSel, 'tone_sine');
 
     const volCtl = document.createElement('div');
     volCtl.className = 'control';
@@ -9792,6 +11521,8 @@ function rebuildDroneLayersUI() {
 
 
     layer1Body.appendChild(followCtl);
+    layer1Body.appendChild(soundCtl);
+    layer1Body.appendChild(presetCtl);
     layer1Body.appendChild(volCtl);
     layer1Body.appendChild(panCtl);
     layer1Body.appendChild(depthCtl);
@@ -9800,6 +11531,25 @@ function rebuildDroneLayersUI() {
       ensureDroneLayersState();
       const l1 = state.droneLayers[0];
       l1.followBellKey = !l1.followBellKey;
+      saveDroneLayersToLS();
+      rebuildDroneLayersUI();
+      if (state.droneOn) refreshAllDroneLayers();
+    });
+
+    soundSel.addEventListener('change', () => {
+      ensureDroneLayersState();
+      const l1 = state.droneLayers[0];
+      l1.soundType = (soundSel.value === 'synth') ? 'synth' : 'drone';
+      if (l1.soundType === 'synth' && !(typeof l1.synthPreset === 'string' && l1.synthPreset.trim())) l1.synthPreset = 'tone_sine';
+      saveDroneLayersToLS();
+      rebuildDroneLayersUI();
+      if (state.droneOn) refreshAllDroneLayers();
+    });
+
+    presetSel.addEventListener('change', () => {
+      ensureDroneLayersState();
+      const l1 = state.droneLayers[0];
+      l1.synthPreset = presetSel.value;
       saveDroneLayersToLS();
       rebuildDroneLayersUI();
       if (state.droneOn) refreshAllDroneLayers();
@@ -9878,6 +11628,9 @@ function rebuildDroneLayersUI() {
       const volIn = document.getElementById('droneLayerVolume_L1');
       const panIn = document.getElementById('droneLayerPan_L1');
       const depthIn = document.getElementById('droneLayerDepth_L1');
+      const soundSel = document.getElementById('droneLayerSoundType_L1');
+      const presetSel = document.getElementById('droneLayerSynthPreset_L1');
+      const presetCtl = document.getElementById('droneLayerSynthPresetControl_L1');
       if (followBtn) {
         if (layer.followBellKey) {
           followBtn.classList.add('active');
@@ -9889,6 +11642,13 @@ function rebuildDroneLayersUI() {
           followBtn.textContent = 'Off';
         }
       }
+
+      // v018_p03_drone_synth: sync Layer 1 sound type controls
+      const st = (layer.soundType === 'synth') ? 'synth' : 'drone';
+      if (soundSel) soundSel.value = st;
+      if (presetCtl) presetCtl.classList.toggle('hidden', st !== 'synth');
+      if (presetSel) fillPolySynthPresetSelect(presetSel, layer.synthPreset || 'tone_sine');
+
       if (volIn) volIn.value = String(Math.round(clamp(Number(layer.volume) || 0, 0, 1) * 100));
       if (panIn) panIn.value = fmtPan1(layer.pan);
       const panValEl = document.getElementById('droneLayerPanVal_L1');
@@ -9902,6 +11662,25 @@ function rebuildDroneLayersUI() {
       const hzCtl = (typeof droneCustomHzInput !== 'undefined' && droneCustomHzInput) ? droneCustomHzInput.closest('.control') : null;
       if (keyCtl) keyCtl.classList.toggle('hidden', !!layer.followBellKey);
       if (hzCtl) hzCtl.classList.toggle('hidden', !!layer.followBellKey || (state.droneScaleKey !== 'custom_hz'));
+      if (droneCustomIntervalsControl) droneCustomIntervalsControl.classList.toggle('hidden', String(layer.type || '') !== 'custom');
+      if (droneCustomIntervalsInput) droneCustomIntervalsInput.value = String(layer.customIntervals || '');
+      if (droneCustomIntervalsWarn) {
+        let msg = '';
+        if (String(layer.type || '') === 'custom') {
+          const p = parseCustomDroneIntervalsText(layer.customIntervals, DRONE_VOICE_CAP || 16);
+          if (!p || !p.ok) msg = 'Invalid intervals. Using [0].';
+          else {
+            const parts = [];
+            if (p.autoAddedZero) parts.push('Added 0');
+            if (p.didClamp) parts.push('Clamped -36..36');
+            if (p.didDedupe) parts.push('De-duped');
+            if (p.hadInvalid) parts.push('Ignored invalid');
+            if (parts.length) msg = parts.join('. ') + '.';
+          }
+        }
+        droneCustomIntervalsWarn.textContent = msg;
+        droneCustomIntervalsWarn.classList.toggle('hidden', !msg);
+      }
     } else {
       // Rebuild Layer 2+ controls each time (small n; easier to keep in sync).
       shell.body.innerHTML = '';
@@ -9911,6 +11690,59 @@ function rebuildDroneLayersUI() {
       if (typeCtl) shell.body.appendChild(typeCtl);
       const typeSel = typeCtl ? typeCtl.querySelector('select') : null;
       if (typeSel) typeSel.value = layer.type;
+
+      // Custom intervals (only when type is Custom)
+      const ciCtl = cloneControlByChildId('droneCustomIntervalsInput', `_L${i + 1}`);
+      if (ciCtl) shell.body.appendChild(ciCtl);
+      const ciInput = ciCtl ? ciCtl.querySelector('input[type="text"]') : null;
+      const ciWarn = ciCtl ? ciCtl.querySelector('.rg-inline-warn') : null;
+      if (ciInput) ciInput.value = String(layer.customIntervals || '');
+      if (ciCtl) ciCtl.classList.toggle('hidden', String(layer.type || '') !== 'custom');
+      if (ciWarn) {
+        let msg = '';
+        if (String(layer.type || '') === 'custom') {
+          const p = parseCustomDroneIntervalsText(layer.customIntervals, DRONE_VOICE_CAP || 16);
+          if (!p || !p.ok) msg = 'Invalid intervals. Using [0].';
+          else {
+            const parts = [];
+            if (p.autoAddedZero) parts.push('Added 0');
+            if (p.didClamp) parts.push('Clamped -36..36');
+            if (p.didDedupe) parts.push('De-duped');
+            if (p.hadInvalid) parts.push('Ignored invalid');
+            if (parts.length) msg = parts.join('. ') + '.';
+          }
+        }
+        ciWarn.textContent = msg;
+        ciWarn.classList.toggle('hidden', !msg);
+      }
+
+      // Sound type
+      const soundCtl = document.createElement('div');
+      soundCtl.className = 'control';
+      const soundLab = document.createElement('label');
+      soundLab.textContent = 'Sound type';
+      const soundSel = document.createElement('select');
+      soundSel.id = `droneLayerSoundType_L${i + 1}`;
+      soundSel.innerHTML = '<option value="drone">Drone</option><option value="synth">Synth</option>';
+      soundCtl.appendChild(soundLab);
+      soundCtl.appendChild(soundSel);
+      shell.body.appendChild(soundCtl);
+
+      const presetCtl = document.createElement('div');
+      presetCtl.className = 'control';
+      presetCtl.id = `droneLayerSynthPresetControl_L${i + 1}`;
+      const presetLab = document.createElement('label');
+      presetLab.textContent = 'Synth preset';
+      const presetSel = document.createElement('select');
+      presetSel.id = `droneLayerSynthPreset_L${i + 1}`;
+      presetCtl.appendChild(presetLab);
+      presetCtl.appendChild(presetSel);
+      shell.body.appendChild(presetCtl);
+
+      const st = (layer.soundType === 'synth') ? 'synth' : 'drone';
+      soundSel.value = st;
+      fillPolySynthPresetSelect(presetSel, layer.synthPreset || 'tone_sine');
+      presetCtl.classList.toggle('hidden', st !== 'synth');
 
       // Follow toggle
       const followCtl = document.createElement('div');
@@ -10018,6 +11850,36 @@ function rebuildDroneLayersUI() {
           // Reset density default for new type (Batch-2 defaults)
           layer.variants = coerceDroneLayerVariants({ ...layer.variants, density: defaultDroneDensityForType(layer.type) }, layer.type);
           layerUpdateAndRefresh();
+        });
+      }
+
+      if (soundSel) {
+        soundSel.addEventListener('change', () => {
+          ensureDroneLayersState();
+          layer.soundType = (soundSel.value === 'synth') ? 'synth' : 'drone';
+          if (layer.soundType === 'synth' && !(typeof layer.synthPreset === 'string' && layer.synthPreset.trim())) layer.synthPreset = 'tone_sine';
+          layerUpdateAndRefresh();
+        });
+      }
+
+      if (presetSel) {
+        presetSel.addEventListener('change', () => {
+          ensureDroneLayersState();
+          layer.synthPreset = presetSel.value;
+          layerUpdateAndRefresh();
+        });
+      }
+
+      if (ciInput) {
+        const onCICommit = () => {
+          ensureDroneLayersState();
+          layer.customIntervals = String(ciInput.value || '');
+          layerUpdateAndRefresh();
+        };
+        ciInput.addEventListener('change', onCICommit);
+        ciInput.addEventListener('blur', onCICommit);
+        ciInput.addEventListener('keydown', (e) => {
+          if (e && e.key === 'Enter') { try { e.preventDefault(); } catch (_) {} onCICommit(); }
         });
       }
 
@@ -10262,6 +12124,9 @@ function droneModTick() {
         try {
           v.osc.detune.setTargetAtTime(target, now, 0.18);
         } catch (_) {}
+        if (v.modOsc && v.modOsc.detune) {
+          try { v.modOsc.detune.setTargetAtTime(target, now, 0.18); } catch (_) {}
+        }
       }
     }
 
@@ -10593,6 +12458,23 @@ function stopDrone() {
 
       case 'seventh':
         return { kind: 'tonal', voices: tonal([1, et(4), et(7), et(11)], [1, 1, 1, 1], [0, -2, 1, 2], 'sine', DRONE_TONAL_LEVEL), noise: null };
+
+      case 'custom': {
+        const raw = (v && v.customIntervals != null) ? v.customIntervals : null;
+        const parsed = parseCustomDroneIntervalsText(raw, DRONE_VOICE_CAP || 16);
+        const semis = (parsed && Array.isArray(parsed.vals) && parsed.vals.length) ? parsed.vals : [0];
+
+        const ratios = [];
+        const weights = [];
+        const detunes = [];
+        for (let i = 0; i < semis.length; i++) {
+          const s = clamp(Number(semis[i]) || 0, -36, 36);
+          ratios.push(et(s));
+          weights.push(1 / (1 + Math.abs(s) / 24));
+          detunes.push(0);
+        }
+        return { kind: 'tonal', voices: tonal(ratios, weights, detunes, 'sine', DRONE_TONAL_LEVEL), noise: null };
+      }
 
       case 'harm4': {
         const d = clamp(density, 1, Math.min(12, DRONE_VOICE_CAP));
@@ -17333,8 +19215,21 @@ function rebuildBellFrequencies() {
           }
 
           if (doSound) {
-            if (sound === 'tick') playPolyTickAt(tMs, layerVol);
-            else playPolyBellAt(bellToken, tMs, layerVol, soundCtx);
+            try {
+              if (Number.isFinite(tMs)) {
+                if (sound === 'tick') playPolyTickAt(tMs, layerVol);
+                else if (sound === 'bell') playPolyBellAt(bellToken, tMs, layerVol, soundCtx);
+                else if (sound === 'synth') {
+                  if (typeof playPolySynthAt === 'function') playPolySynthAt(bellToken, tMs, layerVol, layer);
+                  else playPolyTickAt(tMs, layerVol);
+                } else if (sound === 'perc') {
+                  if (typeof playPolyPercAt === 'function') playPolyPercAt(bellToken, tMs, layerVol, layer);
+                  else playPolyTickAt(tMs, layerVol);
+                } else {
+                  playPolyTickAt(tMs, layerVol);
+                }
+              }
+            } catch (_) {}
             scheduledCount++;
           }
 
@@ -17416,7 +19311,7 @@ function rebuildBellFrequencies() {
 
     scheduleCountdown(nowMs);
     scheduleMethod(nowMs);
-    schedulePolyrhythm(nowMs);
+    try { schedulePolyrhythm(nowMs); } catch (_) {}
     updateMicAnalysis(nowMs);
     if (state.phase === 'running') updateMisses(nowMs);
 

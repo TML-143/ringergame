@@ -4,7 +4,7 @@
 */
 'use strict';
 
-const CACHE_NAME = 'rg-static-v017_p03';
+const CACHE_NAME = 'rg-static-v018_p06';
 const CORE_ASSETS = [
   './',
   './index.html',

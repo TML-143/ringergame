@@ -279,20 +279,27 @@
           <div class="pane-title"><span>Sound</span></div>
           <div class="rg-screen-body">
             <!-- v011_p03_sound_layout_drone_first: DRONE block (moved above pitch + sound) -->
-            <div id="soundDroneBlock" class="rg-sound-block" aria-label="Drone">
-              <div class="rg-sound-block-head">
-                <div class="rg-sound-block-title">DRONE LAYERS</div>
-              </div>
-              <div id="soundDroneControls" class="rg-controls" aria-label="Drone controls"></div>
-            </div>
+            <details id="soundDroneBlock" class="rg-sound-block rg-sound-block--collapsible" aria-label="Drone">
+              <summary class="rg-sound-block-summaryline" aria-controls="soundDroneControls">
+
+                <span class="rg-sound-block-title">DRONE LAYERS</span>
+
+                <span class="rg-sound-block-caret" aria-hidden="true"></span>
+
+              </summary>
+<div id="soundDroneControls" class="rg-controls" aria-label="Drone controls"></div>
+            </details>
 
                         <!-- v011_p03_sound_layout_drone_first: BELL SOUND block (existing sound controls) -->
-            <div id="soundBellSoundBlock" class="rg-sound-block" aria-label="Bell sound">
-              <div class="rg-sound-block-head">
-                <div class="rg-sound-block-title">BELL SOUND</div>
-              </div>
+            <details id="soundBellSoundBlock" class="rg-sound-block rg-sound-block--collapsible" aria-label="Bell sound">
+              <summary class="rg-sound-block-summaryline" aria-controls="soundMenuControls">
 
-              <div id="soundMenuControls" class="rg-controls" aria-label="Sound controls"></div>
+                <span class="rg-sound-block-title">BELL SOUND</span>
+
+                <span class="rg-sound-block-caret" aria-hidden="true"></span>
+
+              </summary>
+<div id="soundMenuControls" class="rg-controls" aria-label="Sound controls"></div>
 
               <!-- v10_p08_sound_global_chords_splitstrike: global chord controls -->
               <div id="soundChordControls" class="rg-controls rg-sound-chords" aria-label="Chord controls">
@@ -394,7 +401,7 @@
                 <div id="bellOverridesList" class="rg-bell-overrides-list" aria-label="Per-bell overrides list"></div>
                 <div class="control-note rg-muted">Overrides layer on top of Bell key/register and Bell volume.</div>
               </div>
-            </div><!-- v011_p02_sound_test_instrument_row: Bell Test Instrument Row (tap + drag-to-ring) -->
+            </details><!-- v011_p02_sound_test_instrument_row: Bell Test Instrument Row (tap + drag-to-ring) -->
             <div id="soundTestInstrumentRow" class="rg-sound-test-row rg-quick-bell-row" aria-label="Bell test instrument"></div>
 
             <!-- v011_p04_bell_pitch_collapsible_blocks: BELL PITCH block (collapsed-by-default) -->
@@ -410,18 +417,26 @@
             
             
 
-<div id="soundPolyrhythmBlock" class="rg-sound-block" aria-label="Polyrhythm">
-  <div class="rg-sound-block-head">
-    <div class="rg-sound-block-title">Polyrhythm</div>
-  </div>
-  <div id="soundPolyrhythmControls" class="rg-controls rg-sound-polyrhythm" aria-label="Polyrhythm controls"></div>
-</div>
+<details id="soundPolyrhythmBlock" class="rg-sound-block rg-sound-block--collapsible" aria-label="Polyrhythm">
+  <summary class="rg-sound-block-summaryline" aria-controls="soundPolyrhythmControls">
 
-<div id="soundMasterFxBlock" class="rg-sound-block" aria-label="Master / Output">
-  <div class="rg-sound-block-head">
-    <div class="rg-sound-block-title">Master / Output</div>
-  </div>
-  <div id="soundMasterFxControls" class="rg-controls rg-sound-masterfx" aria-label="Master FX controls">
+    <span class="rg-sound-block-title">Polyrhythm</span>
+
+    <span class="rg-sound-block-caret" aria-hidden="true"></span>
+
+  </summary>
+<div id="soundPolyrhythmControls" class="rg-controls rg-sound-polyrhythm" aria-label="Polyrhythm controls"></div>
+</details>
+
+<details id="soundMasterFxBlock" class="rg-sound-block rg-sound-block--collapsible" aria-label="Master / Output">
+  <summary class="rg-sound-block-summaryline" aria-controls="soundMasterFxControls">
+
+    <span class="rg-sound-block-title">Master / Output</span>
+
+    <span class="rg-sound-block-caret" aria-hidden="true"></span>
+
+  </summary>
+<div id="soundMasterFxControls" class="rg-controls rg-sound-masterfx" aria-label="Master FX controls">
     <div class="control">
       <label>Limiter</label>
       <button id="masterLimiterToggle" class="pill" type="button" aria-pressed="true">Limiter On</button>
@@ -458,7 +473,7 @@
       <input id="masterReverbHighCut" type="range" min="500" max="20000" step="100" value="6000" />
     </div>
   </div>
-</div>
+</details>
 <div class="rg-nav">
               <button class="pill" type="button" data-go-screen="home">Home</button>
               <button class="pill" type="button" data-go-screen="play">Setup</button>
@@ -669,6 +684,12 @@
               <option value="resnoise">Resonant noise</option>
               <option value="noisetone">Noise + gentle tone</option>
             </select>
+          </div>
+          <div id="droneCustomIntervalsControl" class="control hidden">
+            <label for="droneCustomIntervalsInput">Intervals</label>
+            <input id="droneCustomIntervalsInput" type="text" placeholder="0, 3, 7, 10" />
+            <div class="control-note rg-muted">Semitone offsets from the root note.</div>
+            <div id="droneCustomIntervalsWarn" class="rg-inline-warn hidden"></div>
           </div>
 
           <!-- v014_p02_drone_variant_knobs: Drone Variants -->

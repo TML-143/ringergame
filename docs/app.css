@@ -2592,6 +2592,19 @@ select option { background-color: #0b1026; color: #e8eeff; }
 }
 #screenSound .rg-poly-layer-controls .control{ min-width:140px; }
 #screenSound .rg-poly-layer-controls input[type="text"]{ width:260px; max-width:100%; }
+
+#screenSound .rg-poly-test-area{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px 8px;
+  align-items:center;
+}
+#screenSound .rg-poly-test-kb{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  align-items:center;
+}
 #screenSound .rg-poly-inline-note{
   font-size:12px;
   line-height:1.3;
@@ -2623,6 +2636,62 @@ select option { background-color: #0b1026; color: #e8eeff; }
   opacity:0.75;
   white-space:nowrap;
 }
+
+#screenSound .rg-poly-adv-details{
+  padding:8px 10px;
+  border-radius:12px;
+  border:1px dashed rgba(255,255,255,0.10);
+  background:rgba(0,0,0,0.08);
+}
+#screenSound .rg-poly-adv-details > summary{
+  list-style:none;
+  cursor:pointer;
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  gap:10px;
+  font-weight:750;
+}
+#screenSound .rg-poly-adv-details > summary::-webkit-details-marker{ display:none; }
+#screenSound .rg-poly-adv-details[open] > summary{ margin-bottom:8px; }
+#screenSound .rg-poly-adv-body{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+#screenSound .rg-poly-tokenovr-details > summary::-webkit-details-marker{ display:none; }
+#screenSound .rg-poly-tokenovr-details > summary{
+  list-style:none;
+  cursor:pointer;
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  gap:10px;
+  font-weight:750;
+}
+#screenSound .rg-poly-token-grid{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+#screenSound .rg-poly-token-row{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px 10px;
+  align-items:flex-end;
+  padding:4px 0;
+  border-top:1px solid rgba(255,255,255,0.06);
+}
+#screenSound .rg-poly-token-row:first-child{ border-top:none; }
+#screenSound .rg-poly-token-label{
+  font-weight:750;
+  min-width:64px;
+  opacity:0.85;
+}
+#screenSound .rg-poly-token-row input[type="number"]{
+  width:92px;
+}
+
 #screenSound .rg-poly-sound-body{
   display:flex;
   flex-direction:column;
