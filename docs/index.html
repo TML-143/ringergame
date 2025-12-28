@@ -134,6 +134,11 @@
           <div class="pane-title"><span>Setup</span></div>
           <div class="rg-screen-body">
             <div id="playMenuControls" class="rg-controls" aria-label="Setup controls">
+              <div class="control">
+                <label>Defaults</label>
+                <button id="restoreSetupDefaultsBtn" class="pill" type="button">Restore Setup defaults</button>
+              </div>
+
               <div id="setupBlockLibrary" class="rg-setup-block">
                 <div class="rg-setup-block-head"><div class="rg-setup-block-title">Library</div></div>
                 <div id="setupBlockLibraryBody" class="rg-setup-block-body rg-controls">
@@ -190,6 +195,11 @@
           <div class="pane-title"><span>View</span></div>
           <div class="rg-screen-body">
             <div id="viewMenuControls" class="rg-controls" aria-label="View controls">
+              <div class="control">
+                <label>Defaults</label>
+                <button id="restoreViewDefaultsBtn" class="pill" type="button">Restore View defaults</button>
+              </div>
+
               <div class="control">
                 <label for="layoutPresetSelect">Layout preset</label>
                 <select id="layoutPresetSelect">
@@ -278,6 +288,13 @@
         <section class="pane rg-splash">
           <div class="pane-title"><span>Sound</span></div>
           <div class="rg-screen-body">
+            <div class="rg-controls" aria-label="Sound defaults">
+              <div class="control">
+                <label>Defaults</label>
+                <button id="restoreSoundDefaultsBtn" class="pill" type="button">Restore Sound defaults</button>
+              </div>
+            </div>
+
             <!-- v011_p03_sound_layout_drone_first: DRONE block (moved above pitch + sound) -->
             <details id="soundDroneBlock" class="rg-sound-block rg-sound-block--collapsible" aria-label="Drone">
               <summary class="rg-sound-block-summaryline" aria-controls="soundDroneControls">

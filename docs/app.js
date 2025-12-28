@@ -75,7 +75,7 @@
   // === Analytics (GA4) ===
   const GA_MEASUREMENT_ID = 'G-7TEG531231';
   const GA_ID = GA_MEASUREMENT_ID;
-  const SITE_VERSION = 'v018_p06_more_presets_drone_custom_intervals';
+  const SITE_VERSION = 'v018_p07_restore_defaults_buttons';
 
   function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
   function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
@@ -2452,6 +2452,12 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
 
   const soundBtnEnterGame = document.getElementById('soundBtnEnterGame');
   const soundBtnDemo = document.getElementById('soundBtnDemo');
+
+  // v018_p07_restore_defaults_buttons: per-screen restore defaults buttons
+  const restoreSetupDefaultsBtn = document.getElementById('restoreSetupDefaultsBtn');
+  const restoreViewDefaultsBtn = document.getElementById('restoreViewDefaultsBtn');
+  const restoreSoundDefaultsBtn = document.getElementById('restoreSoundDefaultsBtn');
+
 
   // v015_p01_load_screen_nav_shell: Load screen bottom nav
   const loadBtnEnterGame = document.getElementById('loadBtnEnterGame');
@@ -19750,6 +19756,275 @@ function rebuildBellFrequencies() {
   }
 
 
+
+
+  // v018_p07_restore_defaults_buttons: category-scoped restore to factory defaults (no stats history / saved runs wipe)
+  function restoreSetupDefaults() {
+    // Setup changes can invalidate the active run; follow the same stop-first behavior as normal Setup edits.
+    try { ensureIdleForPlayChange(); } catch (_) {}
+
+    // Clear any capture UI states (best-effort).
+    try { state.keybindCaptureBell = null; } catch (_) {}
+    try { state.glyphCaptureBell = null; } catch (_) {}
+    try { state.glyphPickerBell = null; } catch (_) {}
+
+    // Method / bells / tempo via existing UI handlers when possible.
+    try {
+      if (methodSelect) {
+        methodSelect.value = 'plainhunt';
+        methodSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    } catch (_) {}
+    try {
+      if (bellCountSelect) {
+        bellCountSelect.value = '6';
+        bellCountSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    } catch (_) {}
+    try {
+      if (liveCountSelect) {
+        liveCountSelect.value = '1';
+        liveCountSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    } catch (_) {}
+    try {
+      if (bpmInput) {
+        bpmInput.value = '120';
+        bpmInput.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    } catch (_) {}
+
+    // Keybindings: reset and persist.
+    try {
+      safeDelLS(LS_KEYBINDS);
+      try { resetKeyBindingsToDefaults(); } catch (_) {
+        // Fallback if defaults helper is unavailable.
+        state.keyBindings = {};
+        for (let b = 1; b <= 12; b++) state.keyBindings[b] = defaultBindKeyForBell(b);
+        saveKeyBindings();
+      }
+      // Factory pristine convenience (v10_p01): Space -> bell 1, Enter -> bell 2.
+      state.keyBindings[1] = 'Space';
+      state.keyBindings[2] = 'Enter';
+      saveKeyBindings();
+      try { rebuildKeybindPanel(); } catch (_) {}
+    } catch (_) {}
+
+    // Glyph bindings + style: reset and persist by clearing localStorage.
+    try { safeDelLS(LS_GLYPHBINDS); } catch (_) {}
+    try { safeDelLS(LS_GLYPHSTYLE); } catch (_) {}
+    try { loadGlyphBindings(); } catch (_) {}
+    try { loadGlyphStyle(); } catch (_) {}
+    try { rebuildKeybindPanel(); } catch (_) {}
+
+    // Mic prefs: reset to defaults without breaking UI; stop capture if active.
+    try { setMicEnabled(false); } catch (_) {}
+    try {
+      safeDelLS(LS_MIC_ENABLED);
+      safeDelLS(LS_MIC_THRESHOLD);
+      try { safeDelLS(OLD_LS_MIC_THRESHOLD_DB); } catch (_) {}
+      safeDelLS(LS_MIC_COOLDOWN_MS);
+      safeDelLS(LS_MIC_BELLS);
+    } catch (_) {}
+    try { loadMicPrefs(); } catch (_) {}
+
+    markDirty();
+    kickLoop();
+  }
+
+  function restoreViewDefaults() {
+    // Layout + notation layout (persisted).
+    try { safeDelLS(LS_LAYOUT_PRESET); } catch (_) {}
+    try { safeDelLS(LS_NOTATION_LAYOUT); } catch (_) {}
+
+    // Spotlight + overlay toggles (persisted).
+    try { safeDelLS(LS_SPOTLIGHT_SWAPS_VIEW); } catch (_) {}
+    try { safeDelLS(LS_SPOTLIGHT_SHOW_N); } catch (_) {}
+    try { safeDelLS(LS_SPOTLIGHT_SHOW_N1); } catch (_) {}
+    try { safeDelLS(LS_SPOTLIGHT_SHOW_N2); } catch (_) {}
+    try { safeDelLS(LS_NOTATION_SWAPS_OVERLAY); } catch (_) {}
+
+    // "Display scored bell(s) only" (persisted; special default when missing).
+    try { safeDelLS(LS_DISPLAY_LIVE_BELLS_ONLY); } catch (_) {}
+
+    // Accuracy dots (persisted; pristine default keeps Spotlight dots OFF, so persist that explicitly).
+    try { safeDelLS(LS_ACCURACY_DOTS); } catch (_) {}
+
+    // Reset state to factory defaults.
+    state.spotlightSwapsView = true;
+    state.spotlightShowN = true;
+    state.spotlightShowN1 = true;
+    state.spotlightShowN2 = true;
+    state.notationSwapsOverlay = true;
+    state.displayLiveBellsOnly = true;
+
+    state.accuracyDotsEnabled = true;
+    state.accuracyDotsDisplay = true;
+    state.accuracyDotsNotation = true;
+    state.accuracyDotsSpotlight = false;
+    try { saveAccuracyDotsPrefs(); } catch (_) {}
+
+    // Sync UI checkboxes best-effort.
+    try { if (spotlightSwapsView) spotlightSwapsView.checked = true; } catch (_) {}
+    try { if (spotlightShowN) spotlightShowN.checked = true; } catch (_) {}
+    try { if (spotlightShowN1) spotlightShowN1.checked = true; } catch (_) {}
+    try { if (spotlightShowN2) spotlightShowN2.checked = true; } catch (_) {}
+    try { if (notationSwapsOverlay) notationSwapsOverlay.checked = true; } catch (_) {}
+    try { if (displayLiveOnly) displayLiveOnly.checked = true; } catch (_) {}
+
+    try { syncLayoutPresetUI(); } catch (_) {}
+    try { syncNotationLayoutUI(); } catch (_) {}
+    try { syncSpotlightSwapRowTogglesUI(); } catch (_) {}
+    try { syncAccuracyDotsUI(); } catch (_) {}
+
+    markDirty();
+    kickLoop();
+  }
+
+  function restoreSoundDefaults() {
+    // Safe during an active run: stop/cancel non-base audio only (poly test + drone), leave scoring unchanged.
+    try { stopPolyrhythmTest(); } catch (_) {}
+    try { cancelScheduledPolyAudioNow(); } catch (_) {}
+    try { stopDrone(); } catch (_) {}
+
+    // Clear persisted Sound prefs.
+    try {
+      safeDelLS(LS_BELL_HZ_OVERRIDE);
+      safeDelLS(LS_BELL_VOL_OVERRIDE);
+      safeDelLS(LS_BELL_KEY_OVERRIDE);
+      safeDelLS(LS_BELL_OCT_OVERRIDE);
+      safeDelLS(LS_BELL_TIMBRE_OVERRIDES);
+      safeDelLS(LS_BELL_CHORD_OVERRIDES);
+      safeDelLS(LS_BELL_TIMBRE_GLOBAL);
+      safeDelLS(LS_BELL_PAN);
+      safeDelLS(LS_BELL_DEPTH);
+      safeDelLS(LS_SPATIAL_DEPTH_MODE);
+      safeDelLS(LS_GLOBAL_CHORD);
+      safeDelLS(LS_MASTER_FX);
+      safeDelLS(LS_DRONE_ON);
+      safeDelLS(LS_DRONE_OCTAVE_C);
+      safeDelLS(LS_DRONE_VARIANTS);
+      safeDelLS(LS_DRONE_LAYERS);
+      safeDelLS(LS_POLYRHYTHM);
+      // Legacy drone inference keys (boot migration). Clear so "Off" is truly default.
+      safeDelLS('rg_drone_type_v1');
+      safeDelLS('rg_drone_type');
+    } catch (_) {}
+
+    // Pitch + bell master defaults.
+    try {
+      state.scaleKey = 'Fs_major';
+      state.octaveC = 4;
+      state.bellCustomHz = 440;
+      state.bellPitchFamily = 'diatonic';
+      state.bellPitchSpan = 'compact';
+      state.bellPitchSpanUser = false;
+      state.bellPitchPentVariant = 'major_pent';
+      state.bellPitchChromaticDirection = 'descending';
+      state.bellPitchFifthsType = 'fifths';
+      state.bellPitchFifthsShape = 'folded';
+      state.bellPitchPartialsShape = 'ladder';
+      state.bellVolume = 100;
+
+      // Global bell timbre defaults.
+      state.bellRingLength = 0.5;
+      state.bellBrightness = 0.5;
+      state.bellStrikeHardness = 0.0;
+      try { saveBellTimbreToLS(); } catch (_) {}
+
+      // Spatial defaults.
+      state.spatialDepthMode = 'normal';
+      state.bellPan = new Array(13).fill(0);
+      state.bellDepth = new Array(13).fill(0);
+    } catch (_) {}
+
+    // Per-bell overrides defaults (hz/vol/key/oct + chord + timbre).
+    try { resetAllBellOverrides(); } catch (_) {}
+
+    // Global chords defaults.
+    try {
+      state.globalChord = sanitizeGlobalChordConfig(globalChordDefaults());
+      try { saveGlobalChordToLS(); } catch (_) {}
+      try { syncGlobalChordControlsUI(); } catch (_) {}
+    } catch (_) {}
+
+    // Master FX defaults (also persists via load->save when missing).
+    try { loadMasterFxFromLS(); } catch (_) {}
+    try { syncMasterFxUI(); } catch (_) {}
+
+    // Drone defaults.
+    try {
+      state.droneOn = false;
+      state.droneType = 'single';
+      state.droneScaleKey = 'Fs_major';
+      state.droneOctaveC = 3;
+      state.droneCustomHz = 440;
+      state.droneVolume = 50;
+      state.dronePaused = false;
+
+      state.droneNormalize = true;
+      state.droneDensity = 3;
+      state.droneDensityByType = {};
+      state.droneDriftCents = 0;
+      state.droneMotionRate = 0;
+      state.droneClusterWidth = 3;
+      state.droneNoiseTilt = 0;
+      state.droneNoiseQ = 1;
+
+      state.droneOwner = 'run';
+      state.dronesEnabled = false;
+      state.dronesPaused = false;
+      state.dronesMasterVolume = 50;
+      state.droneLayers = null;
+
+      loadDroneVariantsFromLS();
+      if (!loadDroneLayersFromLS()) {
+        ensureDroneLayersState();
+        saveDroneLayersToLS();
+      }
+
+      syncDroneOnOffUI();
+      syncDroneVariantsUI();
+      rebuildDroneLayersUI();
+      syncDronePauseBtnUI();
+    } catch (_) {}
+
+    // Polyrhythm defaults.
+    try {
+      state.polyEnabledForRuns = false;
+      state.polyMasterVolume = 80;
+      state.polyLayers = [];
+      try { savePolyrhythmToLS(); } catch (_) {}
+      try { rebuildPolyrhythmUI(); } catch (_) {}
+      try { syncPolyrhythmUI(); } catch (_) {}
+    } catch (_) {}
+
+    // Update key UI controls + audio engine (best-effort).
+    try { if (scaleSelect) scaleSelect.value = state.scaleKey; } catch (_) {}
+    try { if (octaveSelect) octaveSelect.value = String(state.octaveC); } catch (_) {}
+    try { syncBellCustomHzUI(); } catch (_) {}
+    try { if (bellVolume) bellVolume.value = String(state.bellVolume); } catch (_) {}
+    try { syncBellTimbreUI(); } catch (_) {}
+    try { syncBellPitchFamilyUI(); } catch (_) {}
+    try { syncBellPitchSummaryUI(); } catch (_) {}
+    try { syncSpatialDepthModeUI(); } catch (_) {}
+
+    try { applyBellMasterGain(); } catch (_) {}
+    try { rebuildBellFrequencies(); } catch (_) {}
+    try { onBellTuningChanged(); } catch (_) {}
+
+    try { rebuildSoundTestInstrumentRow(); } catch (_) {}
+    try { rebuildSoundQuickBellRow(); } catch (_) {}
+
+    markDirty();
+    kickLoop();
+  }
+
+  if (restoreSetupDefaultsBtn) restoreSetupDefaultsBtn.addEventListener('click', () => {
+    markUserTouchedConfig();
+    restoreSetupDefaults();
+  });
+
   methodSelect.addEventListener('change', () => {
     markUserTouchedConfig();
     ensureIdleForPlayChange();
@@ -19929,6 +20204,11 @@ function rebuildBellFrequencies() {
   });
 
   // Layout preset selector (persisted)
+  if (restoreViewDefaultsBtn) restoreViewDefaultsBtn.addEventListener('click', () => {
+    markUserTouchedConfig();
+    restoreViewDefaults();
+  });
+
   if (layoutPresetSelect) {
     layoutPresetSelect.addEventListener('change', () => {
       markUserTouchedConfig();
@@ -21006,6 +21286,12 @@ function rebuildBellFrequencies() {
       ringBellTestPad(b);
     });
   }
+
+
+  if (restoreSoundDefaultsBtn) restoreSoundDefaultsBtn.addEventListener('click', () => {
+    markUserTouchedConfig();
+    restoreSoundDefaults();
+  });
 
   scaleSelect.addEventListener('change', () => {
     markUserTouchedConfig();
