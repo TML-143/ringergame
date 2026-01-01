@@ -539,6 +539,9 @@ select option { background-color: #0b1026; color: #e8eeff; }
 
 .hidden{display:none !important}
 
+.segmented { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+
+
 /* v012_p02_setup_library_block_and_library_header_hamburger */
 .rg-file-input-offscreen{
   position:fixed;
@@ -1633,6 +1636,14 @@ select option { background-color: #0b1026; color: #e8eeff; }
 }
 
 /* v011_p03_sound_layout_drone_first: section blocks (Sound menu) */
+/* v021_p05_sound_layout_phrase_help_drone_key_root_mode: Sound defaults spacing */
+#screenSound .rg-sound-defaults{
+  width:100%;
+  max-width:900px;
+  margin:0 auto 14px auto;
+}
+
+
 #screenSound .rg-sound-block{
   width:100%;
   max-width:900px;
@@ -1644,6 +1655,114 @@ select option { background-color: #0b1026; color: #e8eeff; }
 }
 
 #screenSound .rg-sound-block-head{ margin:0 0 8px 0; }
+
+#screenSound .rg-sound-profiles{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px 14px;
+  align-items:flex-start;
+  margin:6px 0 10px 0;
+}
+
+#screenSound .rg-sound-profiles .control{ margin:0; }
+
+#screenSound .rg-sound-profiles-row{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  align-items:center;
+}
+
+#screenSound .rg-sound-profiles-tabs{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  align-items:center;
+}
+
+
+
+#screenSound .rg-sound-profiles-select{
+  min-width:160px;
+}
+
+#screenSound .rg-sound-profiles-max-note{
+  display:none;
+  font-size:12px;
+  opacity:0.75;
+}
+
+#screenSound .rg-sound-profile-tab{
+  padding:6px 10px;
+  font-size:12px;
+  line-height:1;
+}
+
+#screenSound .rg-sound-profile-tab[aria-selected="true"]{
+  outline:2px solid rgba(255,255,255,0.18);
+  box-shadow:0 0 0 1px rgba(0,0,0,0.35) inset;
+}
+
+#screenSound .rg-sound-profiles-actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  align-items:center;
+}
+
+#screenSound .rg-sound-lead-assignments{
+  margin-top:8px;
+  padding-top:8px;
+  border-top:1px solid rgba(255,255,255,0.10);
+}
+
+#screenSound .rg-sound-lead-assignments > .rg-sound-lead-assignments-label{
+  margin:0;
+  font-size:12px;
+  font-weight:600;
+}
+
+#screenSound #soundLeadAssignmentsNote{
+  margin-top:4px;
+  font-size:12px;
+}
+
+#screenSound .rg-sound-lead-assignments-list{
+  margin-top:6px;
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+
+#screenSound .rg-sound-lead-assignments-row{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  align-items:center;
+}
+
+#screenSound .rg-sound-lead-assignments-row > .rg-sound-lead-assignments-label{
+  margin:0;
+  min-width:64px;
+  font-size:12px;
+  opacity:0.85;
+}
+
+#screenSound .rg-sound-lead-assignments-select{
+  min-width:140px;
+}
+
+
+#screenSound .rg-sound-leadcount-value{
+  display:inline-block;
+  padding:6px 10px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,0.10);
+  background:rgba(255,255,255,0.02);
+  font-weight:800;
+  letter-spacing:0.2px;
+  opacity:0.92;
+}
 
 #screenSound .rg-sound-block-title{
   font-size:12px;
@@ -2354,6 +2473,14 @@ select option { background-color: #0b1026; color: #e8eeff; }
   color:rgba(232,238,255,0.80);
   user-select:none;
 }
+#screenSound .rg-drone-layer-title .rg-override-label{
+  margin-left:8px;
+  font-size:11px;
+  letter-spacing:0.02em;
+  opacity:0.75;
+  text-transform:none;
+}
+
 #screenSound .rg-drone-layer-actions{
   display:flex;
   align-items:center;
@@ -2552,6 +2679,65 @@ select option { background-color: #0b1026; color: #e8eeff; }
   gap:10px 14px;
   align-items:flex-end;
 }
+
+
+/* v021_p06_poly_presets_panel_percussion_and_quick_layers: Presets affordance */
+#screenSound .rg-poly-presets-details{
+  margin:0;
+}
+#screenSound .rg-poly-presets-details > summary{
+  list-style:none;
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  user-select:none;
+}
+#screenSound .rg-poly-presets-details > summary::-webkit-details-marker{ display:none; }
+#screenSound .rg-poly-presets-details[open]{
+  flex-basis:100%;
+}
+#screenSound .rg-poly-presets-panel{
+  margin-top:8px;
+  width:100%;
+  padding:10px 12px;
+  border-radius:14px;
+  border:1px dashed rgba(255,255,255,0.12);
+  background:rgba(0,0,0,0.08);
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px 14px;
+  align-items:flex-end;
+}
+#screenSound .rg-poly-presets-panel .control{
+  min-width:240px;
+}
+#screenSound .rg-poly-presets-panel select{
+  min-width:220px;
+}
+
+#screenSound .rg-poly-hb-builder{
+  flex-basis:100%;
+  width:100%;
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px 14px;
+  align-items:flex-end;
+  margin-top:8px;
+  padding-top:8px;
+  border-top:1px dashed rgba(255,255,255,0.10);
+}
+#screenSound .rg-poly-hb-title{
+  flex-basis:100%;
+  font-weight:700;
+  font-size:13px;
+  opacity:0.88;
+}
+#screenSound .rg-poly-hb-note{
+  flex-basis:100%;
+  font-size:12px;
+  opacity:0.75;
+}
+
 #screenSound .rg-poly-layers{
   display:flex;
   flex-direction:column;
@@ -2797,3 +2983,93 @@ select option { background-color: #0b1026; color: #e8eeff; }
 }
 
 
+
+/* v019_p01_lead_overlay: Lead overlay UI (View) */
+.lead-overlay-colors{
+  margin-top:10px;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+
+.lead-overlay-row{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-wrap: wrap;
+}
+
+.lead-overlay-label{
+  min-width:56px;
+  font-size:13px;
+}
+
+.lead-overlay-hex{
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size:12px;
+  min-width: 0;
+}
+
+.lead-overlay-actions{
+  margin-top:10px;
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+}
+
+/* v019_p08_lead_range_editor: Lead overlay range editor UI */
+.lead-overlay-info{
+  font-size:12px;
+}
+
+.lead-overlay-note{
+  font-size:12px;
+  margin-top:6px;
+}
+
+.lead-overlay-field{
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+
+.lead-overlay-field-label{
+  font-size:12px;
+}
+
+.lead-overlay-num{
+  width:88px;
+}
+
+.lead-overlay-mini{
+  width:auto;
+  padding:6px 10px;
+}
+
+.lead-overlay-mini--danger{
+  width:auto;
+  padding:6px 10px;
+}
+
+
+.control .lead-overlay-colors input[type="color"]{
+  appearance:auto;
+  -webkit-appearance:auto;
+  background:transparent;
+  border:none;
+  padding:0;
+  width:44px;
+  height:28px;
+}
+
+
+/* v021_p04_poly_global_row_gating */
+#screenSound .rg-poly-row-slots{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+}
+#screenSound .rg-poly-row-slots .pill{
+  width:auto;
+  min-width:40px;
+}

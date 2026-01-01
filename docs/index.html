@@ -220,6 +220,21 @@
                 </select>
               </div>
 
+<div class="control">
+  <label>Lead overlay</label>
+  <div class="toggles toggles--mini" role="group" aria-label="Lead overlay toggle">
+    <label class="toggle"><input id="leadOverlayToggle" type="checkbox" /> Lead overlay</label>
+  </div>
+  <div id="leadOverlayColors" class="lead-overlay-colors" aria-label="Lead overlay colors"></div>
+  <div class="lead-overlay-actions">
+    <button id="resetLeadColorsBtn" class="pill" type="button">Reset lead colors</button>
+  
+    <button id="resetLeadsBtn" class="pill" type="button">Reset leads (Auto)</button>
+    <button id="clearLeadsBtn" class="pill" type="button">Clear leads (Manual)</button>
+  </div>
+</div>
+
+
 
             </div>
             <div class="rg-nav">
@@ -288,12 +303,48 @@
         <section class="pane rg-splash">
           <div class="pane-title"><span>Sound</span></div>
           <div class="rg-screen-body">
-            <div class="rg-controls" aria-label="Sound defaults">
+            <div class="rg-controls rg-sound-defaults" aria-label="Sound defaults">
               <div class="control">
                 <label>Defaults</label>
                 <button id="restoreSoundDefaultsBtn" class="pill" type="button">Restore Sound defaults</button>
               </div>
             </div>
+
+            <!-- v019_p02_sound_profiles_tabs: Sound Profiles (editing only; no per-lead assignment here) -->
+                        <details id="soundProfilesBlock" class="rg-sound-block rg-sound-block--collapsible" aria-label="Profiles">
+              <summary class="rg-sound-block-summaryline" aria-controls="soundProfilesBar">
+
+                <span class="rg-sound-block-title">PROFILES</span>
+
+                <span class="rg-sound-block-caret" aria-hidden="true"></span>
+
+              </summary>
+<div id="soundProfilesBar" class="rg-controls rg-sound-profiles" aria-label="Sound profiles">
+              <div class="control rg-sound-profiles-control">
+                <label>Sound Profiles</label>
+                <div class="rg-sound-profiles-row">
+                  <select id="soundProfilesTabs" class="rg-sound-profiles-select" aria-label="Sound profile selector"></select>
+                  <div class="rg-sound-profiles-actions">
+                    <button id="soundProfilesAddBtn" class="pill" type="button">+ Add profile</button>
+                    <button id="soundProfilesDuplicateBtn" class="pill" type="button">Duplicate</button>
+                    <button id="soundProfilesRemoveBtn" class="pill" type="button">Remove profile</button>
+                  </div>
+                  <div id="soundProfilesMaxNote" class="rg-muted rg-sound-profiles-max-note">Max 200 profiles reached.</div>
+                </div>
+
+                <div id="soundLeadAssignments" class="rg-sound-lead-assignments" aria-label="Lead assignments">
+                  <div class="rg-sound-lead-assignments-label">Lead assignments</div>
+                  <div id="soundLeadAssignmentsNote" class="rg-muted">Only 1 lead detected.</div>
+                  <div id="soundLeadAssignmentsList" class="rg-sound-lead-assignments-list"></div>
+                </div>
+              </div>
+
+              <div class="control rg-sound-leadcount-control">
+                <label>Leads detected</label>
+                <div id="soundLeadCountValue" class="rg-sound-leadcount-value">1</div>
+              </div>
+            </div>
+            </details>
 
             <!-- v011_p03_sound_layout_drone_first: DRONE block (moved above pitch + sound) -->
             <details id="soundDroneBlock" class="rg-sound-block rg-sound-block--collapsible" aria-label="Drone">
@@ -655,8 +706,27 @@
               <option value="12">12 (Maximus)</option>
             </select>
           </div>
+<div class="control">
+  <label>Bell tuning</label>
+  <div class="segmented" role="group" aria-label="Bell tuning source">
+    <button id="bellTuningKeyBtn" type="button" class="pill active">Key</button>
+    <button id="bellTuningCustomHzBtn" type="button" class="pill">Custom Hz</button>
+  </div>
+</div>
 
-          <div class="control">
+<div class="control">
+  <label for="bellRootSelect">Root</label>
+  <select id="bellRootSelect"></select>
+</div>
+
+<div class="control">
+  <label for="bellModeSelect">Scale/Mode</label>
+  <select id="bellModeSelect"></select>
+</div>
+
+
+
+          <div class="control hidden">
             <label for="scaleSelect" title="Musical key used to tune bells (or choose Custom (Hz)).">Bell key</label>
             <select id="scaleSelect"></select>
           </div>
@@ -667,6 +737,16 @@
           </div>
 
           <div class="control">
+            <label for="temperamentSelect">Temperament</label>
+            <select id="temperamentSelect">
+              <option value="equal">Equal (12-TET)</option>
+              <option value="pythagorean">Pythagorean (pure 5ths)</option>
+              <option value="just_5limit">Just (5-limit)</option>
+              <option value="meantone_quarter">Meantone (¼-comma)</option>
+            </select>
+            <div class="control-note rg-muted">Affects pitch families and drones; Bell Partials stays harmonic.</div>
+          </div>
+          <div class="control" id="bellCustomHzControl">
             <label for="bellCustomHzInput">Bell root (Hz)</label>
             <input id="bellCustomHzInput" type="number" min="20" max="4000" step="0.01" value="440" />
             <input id="bellCustomHzSlider" type="range" min="20" max="4000" step="1" value="440" aria-label="Bell root Hz slider" />
@@ -758,6 +838,16 @@
 
 
           <div class="control">
+            <label for="droneRootSelect">Root</label>
+            <select id="droneRootSelect"><option value="custom_hz">Custom (Hz)</option></select>
+          </div>
+
+          <div class="control">
+            <label for="droneModeSelect" title="Scale/mode used to tune the drone (or choose Custom (Hz)).">Scale/Mode</label>
+            <select id="droneModeSelect"></select>
+          </div>
+
+          <div class="control hidden">
             <label for="droneScaleSelect" title="Musical key used to tune the drone (or choose Custom (Hz)).">Drone key</label>
             <select id="droneScaleSelect"></select>
           </div>
@@ -846,7 +936,10 @@
           </div>
 
          
-          <div class="control">
+          
+
+
+<div class="control">
             <label>Display</label>
             <div class="toggles toggles--mini" role="group" aria-label="Display toggles">
               <label class="toggle"><input id="displayLiveOnly" type="checkbox" /> Display scored bell(s) only</label>

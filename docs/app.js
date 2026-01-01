@@ -75,7 +75,7 @@
   // === Analytics (GA4) ===
   const GA_MEASUREMENT_ID = 'G-7TEG531231';
   const GA_ID = GA_MEASUREMENT_ID;
-  const SITE_VERSION = 'v018_p07_restore_defaults_buttons';
+  const SITE_VERSION = 'v021_p10_poly_reset_layers_transpose_quick_access';
 
   function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
   function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
@@ -363,6 +363,13 @@ Contact: ringergame143@gmail.com`;
   const bellCountSelect = document.getElementById('bellCount');
   const scaleSelect = document.getElementById('scaleSelect');
   const octaveSelect = document.getElementById('octaveSelect');
+  const temperamentSelect = document.getElementById('temperamentSelect');
+const bellTuningKeyBtn = document.getElementById('bellTuningKeyBtn');
+const bellTuningCustomHzBtn = document.getElementById('bellTuningCustomHzBtn');
+const bellRootSelect = document.getElementById('bellRootSelect');
+const bellModeSelect = document.getElementById('bellModeSelect');
+const bellCustomHzControl = document.getElementById('bellCustomHzControl');
+
   const bellVolume = document.getElementById('bellVolume');
   // v014_p05a_bell_timbre_global (Sound → Bells: global bell timbre)
   const bellRingLength = document.getElementById('bellRingLength');
@@ -412,6 +419,8 @@ Contact: ringergame143@gmail.com`;
   const droneCustomIntervalsInput = document.getElementById('droneCustomIntervalsInput');
   const droneCustomIntervalsWarn = document.getElementById('droneCustomIntervalsWarn');
   const droneScaleSelect = document.getElementById('droneScaleSelect');
+  const droneRootSelect = document.getElementById('droneRootSelect');
+  const droneModeSelect = document.getElementById('droneModeSelect');
   const droneOctaveSelect = document.getElementById('droneOctaveSelect');
   const droneVolume = document.getElementById('droneVolume');
 // v014_p03_master_fx_limiter_reverb: Master / Output controls (Sound → Master FX)
@@ -782,6 +791,7 @@ const spatialDepthModeSelect = document.getElementById('spatialDepthModeSelect')
 
   const ui = {
     screen: 'home',
+    _runtimeAppliedProfileIndex: 0, // v019_p04_runtime_switch_by_lead: runtime cache (non-persisted)
     notationPage: 0,
     notationFollow: true,
     // v06_p15_notation_single_page_mode
@@ -815,6 +825,14 @@ const spatialDepthModeSelect = document.getElementById('spatialDepthModeSelect')
     soundTestRowActiveEl: null,
     soundTestRowIgnoreClickUntilMs: 0,
 
+    // v021_p02_poly_bell_spatial_token_custom_drag_fix: polyrhythm test keyboard drag-to-play
+    polyTestKbDragActive: false,
+    polyTestKbDragPointerId: null,
+    polyTestKbDragLastToken: null,
+    polyTestKbActiveEl: null,
+    polyTestKbOwnerEl: null,
+    polyTestKbIgnoreClickUntilMs: 0,
+
     // v06_p12d_library_browser
     libraryIndex: null,
     librarySelectedIdx: null,
@@ -837,6 +855,10 @@ const spatialDepthModeSelect = document.getElementById('spatialDepthModeSelect')
     loadedCodeScoringSignature: null,
     isBooting: true
   };
+
+  // v019_p10_load_repro_hardening: deferred import blocks applied only after rows exist.
+  let pendingV19ImportBlocks = null;
+
 
   // v08_p04_demo_profile_defaults
   function markUserTouchedConfig() {
@@ -893,6 +915,8 @@ const next = (nn === 'home' || nn === 'play' || nn === 'view' || nn === 'sound' 
       // v011_p02_sound_test_instrument_row: stage-sized test rows update when revisiting Sound.
       try { rebuildSoundTestInstrumentRow(); } catch (_) {}
       try { rebuildSoundQuickBellRow(); } catch (_) {}
+      // v019_p02_sound_profiles_tabs: refresh Sound Profiles tabs + lead count
+      try { syncSoundProfilesUI(); } catch (_) {}
     }
 
     if (next === 'game') {
@@ -1927,6 +1951,27 @@ function coerceBellPitchFamily(raw) {
   return 'diatonic';
 }
 
+
+function coerceBellPitchDiatonicMap(raw) {
+  const v = String(raw || '').trim();
+  if (v === 'degrees' || v === 'smooth') return v;
+  return 'smooth';
+}
+
+function coerceTemperamentKey(raw) {
+  const v = String(raw || '').trim();
+  if (v === 'equal' || v === 'pythagorean' || v === 'just_5limit' || v === 'meantone_quarter') return v;
+  return 'equal';
+}
+
+function coerceTemperamentOverrideKey(raw) {
+  const v = String(raw || '').trim();
+  if (v === 'inherit') return 'inherit';
+  if (v === 'equal' || v === 'pythagorean' || v === 'just_5limit' || v === 'meantone_quarter') return v;
+  return 'inherit';
+}
+
+
 function fmtAccidentals(label) {
   return String(label || '')
     .replace(/([A-G])#/g, '$1♯')
@@ -1945,7 +1990,22 @@ function getBellPitchSummaryText() {
   const spanLabel = (String(state.bellPitchSpan || 'compact') === 'extended') ? 'Extended' : 'Compact';
 
   const keyLabel = (() => {
-    if (state.scaleKey === 'custom_hz') return `Custom (${Math.round(state.bellCustomHz || 440)} Hz)`;
+    if (state.scaleKey === 'custom_hz') {
+      const fallbackKey = (SCALE_LIBRARY.find(s => s.key === 'Fs_major')
+        ? 'Fs_major'
+        : (SCALE_LIBRARY[0] ? SCALE_LIBRARY[0].key : 'Fs_major'));
+      const effKey = (isValidScaleKey(state.bellLastKeyScaleKey) && state.bellLastKeyScaleKey !== 'custom_hz')
+        ? String(state.bellLastKeyScaleKey || '')
+        : fallbackKey;
+      const def = getScaleDefByKey(effKey) || getFallbackScaleDef();
+      let modeOnly = fmtAccidentals(def && def.label ? def.label : '');
+      try {
+        const root = (def && def.root) ? fmtAccidentals(def.root) : '';
+        if (root && modeOnly.indexOf(root + ' ') === 0) modeOnly = modeOnly.slice((root + ' ').length);
+      } catch (_) {}
+      const hz = Math.round(state.bellCustomHz || 440);
+      return modeOnly ? `Custom Hz (${hz} Hz) — ${modeOnly}` : `Custom Hz (${hz} Hz)`;
+    }
     const def = getScaleDefByKey(state.scaleKey) || getScaleDef();
     return fmtAccidentals(def && def.label ? def.label : 'Diatonic');
   })();
@@ -1985,6 +2045,26 @@ function getBellPitchSummaryText() {
   else if (fam === 'fifths_fourths') base = `${fifthsTitle} — ${fifthsShape}`;
   else if (fam === 'partials') base = `Bell Partials — ${partialsShape}`;
 
+
+
+  
+  // Diatonic mapping mode (optional): show only when active to avoid clutter.
+  if (fam === 'diatonic') {
+    const mapMode = coerceBellPitchDiatonicMap(state.bellPitchDiatonicMap);
+    if (mapMode === 'degrees') base = `${base} — Degrees`;
+  }
+
+// Temperament suffix (omit for Equal; Bell Partials stays harmonic).
+  const tKey = coerceTemperamentKey(state.temperamentKey);
+  const tLabel = (tKey === 'pythagorean') ? 'Pythagorean'
+    : (tKey === 'just_5limit') ? 'Just'
+    : (tKey === 'meantone_quarter') ? 'Meantone'
+    : '';
+  if (fam === 'partials') {
+    if (tKey !== 'equal') base = `${base} (Harmonic)`;
+  } else if (tLabel && tKey !== 'equal') {
+    base = `${base} — ${tLabel}`;
+  }
   const wantCustom = (uiFam === 'custom') || (stateFam0 === 'custom');
   return wantCustom ? `Custom — ${base}` : base;
 }
@@ -2018,6 +2098,7 @@ function syncBellPitchFamilyUI() {
     if (card.radio) card.radio.checked = isOn;
     if (card.el) card.el.classList.toggle('is-selected', isOn);
   });
+  try { syncBellPitchDiatonicMapUI(); } catch (_) {}
 }
 
 function syncBellPitchSpanUI() {
@@ -2027,6 +2108,25 @@ function syncBellPitchSpanUI() {
   if (u.spanSelectDiatonic) u.spanSelectDiatonic.value = val;
   if (u.spanSelectPentHex) u.spanSelectPentHex.value = val;
 }
+
+
+function syncBellPitchDiatonicMapUI() {
+  const u = ui._bellPitchUi;
+  if (!u) return;
+  const wrap = u.diatonicMapWrap;
+  const sel = u.diatonicMapSelect;
+  if (!wrap || !sel) return;
+
+  const stateFam = coerceBellPitchFamily(state.bellPitchFamily);
+  const effFam = (stateFam === 'custom') ? 'diatonic' : stateFam;
+  const applicable = (effFam === 'diatonic');
+
+  const val = coerceBellPitchDiatonicMap(state.bellPitchDiatonicMap);
+  sel.value = val;
+  sel.disabled = !applicable;
+  wrap.classList.toggle('hidden', !applicable);
+}
+
 
 function maybeApplyDefaultBellPitchSpanForStage(stage) {
   const s = clamp(parseInt(stage, 10) || 0, 4, 12);
@@ -2212,6 +2312,14 @@ function ensureBellPitchPatternBlocks(destEl) {
   ]);
   cards.diatonic.controls.appendChild(spanD.wrap);
 
+  // Diatonic: Mapping mode
+  const mapD = makeSelectControl('bellPitchDiatonicMapSelect', 'Mapping', [
+    ['smooth', 'Smooth (legacy)'],
+    ['degrees', 'Degrees (modal)']
+  ]);
+  cards.diatonic.controls.appendChild(mapD.wrap);
+
+
   // Pent/Hex: variant + pitch span
   const pentV = makeSelectControl('bellPitchPentVariantSelect', 'Scale', [
     ['major_pent', 'Major Pentatonic'],
@@ -2261,6 +2369,8 @@ function ensureBellPitchPatternBlocks(destEl) {
     cards,
     selectedFamily: coerceBellPitchFamily(state.bellPitchFamily),
     spanSelectDiatonic: spanD.sel,
+    diatonicMapWrap: mapD.wrap,
+    diatonicMapSelect: mapD.sel,
     spanSelectPentHex: spanP.sel,
     pentVariantSelect: pentV.sel,
     chromDirSelect: chromDir.sel,
@@ -2277,6 +2387,17 @@ function ensureBellPitchPatternBlocks(destEl) {
     syncBellPitchSpanUI();
     setBellPitchFamily('diatonic', true);
   });
+
+  mapD.sel.addEventListener('change', () => {
+    markUserTouchedConfig();
+    state.bellPitchDiatonicMap = coerceBellPitchDiatonicMap(mapD.sel.value);
+    try { saveBellPitchDiatonicMapToLS(); } catch (_) {}
+    syncBellPitchDiatonicMapUI();
+    syncBellPitchSummaryUI();
+    rebuildBellFrequencies();
+    onBellTuningChanged();
+  });
+
 
   pentV.sel.addEventListener('change', () => {
     markUserTouchedConfig();
@@ -2423,11 +2544,17 @@ function ensureBellPitchPatternBlocks(destEl) {
     moveControlByChildId('droneTypeSelect', droneLayer1Body);
     moveControlByChildId('droneCustomIntervalsInput', droneLayer1Body);
     moveControlByChildId('droneVariantsAnchor', droneLayer1Body);
+    moveControlByChildId('droneRootSelect', droneLayer1Body);
+    moveControlByChildId('droneModeSelect', droneLayer1Body);
     moveControlByChildId('droneScaleSelect', droneLayer1Body);
     moveControlByChildId('droneOctaveSelect', droneLayer1Body);
     moveControlByChildId('droneCustomHzInput', droneLayer1Body);
+    moveControlByChildId('bellTuningKeyBtn', soundPitchRootDest);
+    moveControlByChildId('bellRootSelect', soundPitchRootDest);
+    moveControlByChildId('bellModeSelect', soundPitchRootDest);
 moveControlByChildId('scaleSelect', soundPitchRootDest);
     moveControlByChildId('octaveSelect', soundPitchRootDest);
+    moveControlByChildId('temperamentSelect', soundPitchRootDest);
     moveControlByChildId('bellCustomHzInput', soundPitchRootDest);
     moveControlByChildId('bellOverridesControl', soundPitchCustomDest);
 
@@ -2457,6 +2584,20 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
   const restoreSetupDefaultsBtn = document.getElementById('restoreSetupDefaultsBtn');
   const restoreViewDefaultsBtn = document.getElementById('restoreViewDefaultsBtn');
   const restoreSoundDefaultsBtn = document.getElementById('restoreSoundDefaultsBtn');
+
+  // v019_p02_sound_profiles_tabs: Sound Profiles UI (editing only; no per-lead assignment here)
+  const MAX_SAFE_PROFILES = 200; // safety cap to prevent UI/memory blowups
+  const soundProfilesBar = document.getElementById('soundProfilesBar');
+  const soundProfilesTabs = document.getElementById('soundProfilesTabs');
+  const soundProfilesAddBtn = document.getElementById('soundProfilesAddBtn');
+  const soundProfilesRemoveBtn = document.getElementById('soundProfilesRemoveBtn');
+  const soundProfilesDuplicateBtn = document.getElementById('soundProfilesDuplicateBtn');
+  const soundProfilesMaxNote = document.getElementById('soundProfilesMaxNote');
+  const soundLeadCountValue = document.getElementById('soundLeadCountValue');
+  const soundLeadAssignments = document.getElementById('soundLeadAssignments');
+  const soundLeadAssignmentsNote = document.getElementById('soundLeadAssignmentsNote');
+  const soundLeadAssignmentsList = document.getElementById('soundLeadAssignmentsList');
+
 
 
   // v015_p01_load_screen_nav_shell: Load screen bottom nav
@@ -2579,6 +2720,9 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
 
   function startDemoFromUi() {
     if (state.phase !== 'idle') return;
+
+    // v019_p04_runtime_switch_by_lead: reset runtime-applied profile cache at run start.
+    ui._runtimeAppliedProfileIndex = 0;
 
     if (!ui.userTouchedConfig && !ui.hasRunStartedThisSession && state.phase === 'idle') {
       applyDemoProfileDefaults();
@@ -2786,8 +2930,14 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
         display: !!state.accuracyDotsDisplay,
         notation: !!state.accuracyDotsNotation,
         spotlight: !!state.accuracyDotsSpotlight,
-      }
-    };
+      },
+      leadsV1: (state && isPlainObject(state.leadsV1)) ? deepCloneJsonable(state.leadsV1) : { mode: 'auto', ranges: [] },
+
+      leadOverlay: {
+      enabled: !!state.leadOverlayEnabled,
+      colors: Array.isArray(state.leadOverlayColors) ? state.leadOverlayColors.slice() : []
+    }
+};
 
     // Input / glyphs / bindings
     const input = {
@@ -2801,11 +2951,14 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
     const sound = {
       pitch: {
         scaleKey: String(state.scaleKey || ''),
+        bellLastKeyScaleKey: String(state.bellLastKeyScaleKey || ''),
         octaveC: clampInt(state.octaveC, 1, 6, 4),
+        temperamentKey: coerceTemperamentKey(state.temperamentKey),
         customHz: Number.isFinite(Number(state.bellCustomHz)) ? Number(state.bellCustomHz) : 440,
         bellPitchFamily: String(state.bellPitchFamily || 'diatonic'),
         bellPitchSpan: String(state.bellPitchSpan || 'compact'),
         bellPitchSpanUser: !!state.bellPitchSpanUser,
+        bellPitchDiatonicMap: coerceBellPitchDiatonicMap(state.bellPitchDiatonicMap),
         bellPitchPentVariant: String(state.bellPitchPentVariant || 'major_pent'),
         bellPitchChromaticDirection: String(state.bellPitchChromaticDirection || 'descending'),
         bellPitchFifthsType: String(state.bellPitchFifthsType || 'fifths'),
@@ -2868,6 +3021,7 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
           v: 1,
           enabledForRuns: !!state.polyEnabledForRuns,
           masterVolume: clamp(Number(state.polyMasterVolume) || 0, 0, 100),
+          rowCycleLen: clampInt(state.polyRowCycleLen, 1, 32, 1),
           layers: layers.map((l, i) => {
             const layer = coercePolyLayer(l, i);
             return {
@@ -2877,6 +3031,7 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
               sound: layer.sound,
               interval: layer.interval,
               offset: layer.offset,
+              rowsActive: Array.isArray(layer.rowsActive) ? layer.rowsActive.slice() : null,
               volume: clamp(Number(layer.volume) || 0, 0, 100),
               token: clamp(parseInt(layer.token, 10) || 1, 1, 12),
               phrase: String(layer.phrase || ''),
@@ -2907,6 +3062,7 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
           paused: !!state.dronePaused,
           type: String(state.droneType || ''),
           scaleKey: String(state.droneScaleKey || ''),
+          droneLastKeyScaleKey: String(state.droneLastKeyScaleKey || ''),
           octaveC: clampInt(state.droneOctaveC, 1, 6, 3),
           customHz: Number.isFinite(Number(state.droneCustomHz)) ? Number(state.droneCustomHz) : 440,
           volume: clampInt(state.droneVolume, 0, 100, 50),
@@ -2943,6 +3099,56 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
       }
     };
 
+    // v019_p02_sound_profiles_tabs: embed lead sound profiles for editing (no runtime switching in this version)
+    try {
+      const sp = (state && isPlainObject(state.soundProfilesV1)) ? state.soundProfilesV1 : null;
+      const rawProfiles = sp && Array.isArray(sp.profiles) ? sp.profiles : [];
+
+      const cleanProfile = (p) => {
+        const out = isPlainObject(p) ? deepCloneJsonable(p) : null;
+        if (out && typeof out === 'object') {
+          try { delete out.leadProfilesV1; } catch (_) {}
+        }
+        return out;
+      };
+
+      // Snapshot of the currently-active Sound state (export-time truth).
+      const liveSnap = (() => {
+        const s = deepCloneJsonable(sound);
+        try { delete s.leadProfilesV1; } catch (_) {}
+        return s;
+      })();
+
+      let profiles = rawProfiles.map(cleanProfile)
+        .filter((p) => p && typeof p === 'object' && !Array.isArray(p))
+        .slice(0, MAX_SAFE_PROFILES);
+
+      if (profiles.length < 1) profiles = [liveSnap];
+
+      let selectedProfileIndex = clampInt(sp ? sp.selectedProfileIndex : 1, 1, profiles.length, 1);
+
+      // Ensure the exported selected snapshot reflects the live Sound settings.
+      if (coercePolyScope(state.polyScope) === 'global') {
+        try {
+          const prev = profiles[selectedProfileIndex - 1];
+          const prevPoly = (prev && Object.prototype.hasOwnProperty.call(prev, 'polyrhythm')) ? deepCloneJsonable(prev.polyrhythm) : undefined;
+          if (typeof prevPoly !== 'undefined') liveSnap.polyrhythm = prevPoly;
+          else { try { delete liveSnap.polyrhythm; } catch (_) {} }
+        } catch (_) {}
+      }
+      profiles[selectedProfileIndex - 1] = liveSnap;
+
+      let leadAssignments = (sp && Array.isArray(sp.leadAssignments)) ? sp.leadAssignments.slice() : [];
+      try { leadAssignments = normalizeSoundLeadAssignmentsArray(leadAssignments, getLeadCount(), profiles.length); } catch (_) {}
+
+      sound.leadProfilesV1 = {
+        profiles,
+        selectedProfileIndex,
+        leadAssignments,
+      };
+    } catch (_) {}
+
+
     const mic = {
       enabled: !!state.micEnabled,
       cooldownMs: clampInt(state.micCooldownMs, 100, 400, 200),
@@ -2971,6 +3177,7 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
         view,
         input,
         sound,
+        polyScope: coercePolyScope(state.polyScope),
         mic,
         library,
         privacy,
@@ -3946,6 +4153,94 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
     const importedConfig = (o && isPlainObject(o.importedConfig)) ? o.importedConfig : null;
     const srcCfg = importedConfig || cfg;
 
+    // v021_p03_polyrhythm_scope: optionally apply scope from imported config (imports only)
+    try {
+      if (o.applyPolyScope) {
+        const hasScope = srcCfg && Object.prototype.hasOwnProperty.call(srcCfg, 'polyScope');
+        const wantedScope = hasScope ? srcCfg.polyScope : 'profile';
+        state.polyScope = coercePolyScope(wantedScope);
+        savePolyScopeToLS();
+        try { syncPolyrhythmUI(); } catch (_) {}
+      }
+    } catch (_) {}
+
+
+
+    // v019_p10_load_repro_hardening: defer applying leads/overlay/profiles until AFTER rows exist.
+    // Prevents pre-row normalization glitches (wrong lead count, mismatched arrays) on load/import.
+    try {
+      pendingV19ImportBlocks = null;
+
+      const _view = isPlainObject(cfg.view) ? cfg.view : {};
+      const _sound = isPlainObject(cfg.sound) ? cfg.sound : {};
+
+      // leadsV1 (store raw; apply after rows exist)
+      let _leadsV1 = null;
+      try {
+        if (isPlainObject(_view.leadsV1)) {
+          const m = (_view.leadsV1 && _view.leadsV1.mode === 'manual') ? 'manual' : 'auto';
+          const rr = (m === 'manual' && Array.isArray(_view.leadsV1.ranges)) ? _view.leadsV1.ranges.slice() : [];
+          _leadsV1 = { mode: m, ranges: rr };
+        } else {
+          _leadsV1 = { mode: 'auto', ranges: [] };
+        }
+      } catch (_) { _leadsV1 = { mode: 'auto', ranges: [] }; }
+
+      // leadOverlay (enabled + colors)
+      let _leadOverlay = null;
+      try {
+        if (isPlainObject(_view.leadOverlay)) {
+          _leadOverlay = {};
+          if (typeof _view.leadOverlay.enabled !== 'undefined') _leadOverlay.enabled = !!_view.leadOverlay.enabled;
+          if (Array.isArray(_view.leadOverlay.colors)) _leadOverlay.colors = _view.leadOverlay.colors.slice();
+        }
+      } catch (_) { _leadOverlay = null; }
+
+      // leadProfilesV1 (profiles + selected + assignments)
+      let _soundProfilesV1 = null;
+      try {
+        const lp = isPlainObject(_sound.leadProfilesV1) ? _sound.leadProfilesV1 : null;
+
+        const importedSnap = (() => {
+          // Prefer the imported Sound config; if missing/empty, fall back to current state snapshot.
+          let s = isPlainObject(_sound) ? deepCloneJsonable(_sound) : {};
+          try { delete s.leadProfilesV1; } catch (_) {}
+          if (s && typeof s === 'object' && !Array.isArray(s) && Object.keys(s).length) return s;
+          try { return captureCurrentSoundConfigSnapshot(); } catch (_) { return {}; }
+        })();
+
+        let profiles = [];
+        let selectedProfileIndex = 1;
+
+        if (lp && Array.isArray(lp.profiles)) {
+          profiles = lp.profiles.map((p) => {
+            const out = isPlainObject(p) ? deepCloneJsonable(p) : null;
+            if (out && typeof out === 'object') {
+              try { delete out.leadProfilesV1; } catch (_) {}
+            }
+            return out;
+          }).filter((p) => p && typeof p === 'object' && !Array.isArray(p)).slice(0, MAX_SAFE_PROFILES);
+
+          if (profiles.length < 1) profiles = [importedSnap];
+          selectedProfileIndex = clampInt(lp.selectedProfileIndex, 1, profiles.length, 1);
+        } else {
+          profiles = [importedSnap];
+          selectedProfileIndex = 1;
+        }
+
+        let leadAssignments = [];
+        try { leadAssignments = (lp && Array.isArray(lp.leadAssignments)) ? lp.leadAssignments.slice() : []; } catch (_) {}
+
+        _soundProfilesV1 = { profiles, selectedProfileIndex, leadAssignments };
+      } catch (_) {
+        try {
+          const s = captureCurrentSoundConfigSnapshot();
+          _soundProfilesV1 = { profiles: [s], selectedProfileIndex: 1, leadAssignments: [] };
+        } catch (_) {}
+      }
+
+      pendingV19ImportBlocks = { leadsV1: _leadsV1, leadOverlay: _leadOverlay, soundProfilesV1: _soundProfilesV1 };
+    } catch (_) {}
 
     // v015_p03a_load_hotfix_glyphs_typing_ui: fail-open optional ensure* helpers during import apply.
     const safeEnsure = (label, fn) => {
@@ -3988,6 +4283,8 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
     let stage = state.stage;
     let sound = {};
 
+    let _didComputeRows = false;
+
     try {
 // --- Method + stage ---
     const method = isPlainObject(cfg.method) ? cfg.method : {};
@@ -4011,9 +4308,16 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
 
     computeRows();
 
+    _didComputeRows = true;
+
     
     } catch (e) {
       recordImportSkip('method', e, true);
+    }
+
+    // v019_p10_load_repro_hardening: ensure rows exist before applying deferred lead/profile state.
+    if (!_didComputeRows) {
+      try { computeRows(); _didComputeRows = true; } catch (_) {}
     }
 
     try {
@@ -4104,6 +4408,10 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
       syncAccuracyDotsPrefsFromUI();
     }
 
+
+
+// v019_p10_load_repro_hardening: leadsV1 + leadOverlay are applied in a deferred choke point after rows exist.
+// (See normalizeV19LeadAndProfileStateAfterRows() called from computeRows.)
     syncViewLayout();
 
     
@@ -4198,17 +4506,42 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
 // --- Sound ---
     sound = isPlainObject(cfg.sound) ? cfg.sound : {};
 
+    
+    // v019_p10_load_repro_hardening: leadProfilesV1 is applied in a deferred choke point after rows exist.
+    // (See normalizeV19LeadAndProfileStateAfterRows() called from computeRows.)
+
     // Pitch / scale
     const pitch = isPlainObject(sound.pitch) ? sound.pitch : {};
     if (typeof pitch.scaleKey !== 'undefined') {
       const nextScaleKey = String(pitch.scaleKey || '');
       if (isValidScaleKey(nextScaleKey)) state.scaleKey = nextScaleKey;
     }
-    if (typeof pitch.octaveC !== 'undefined') state.octaveC = clampInt(Number(pitch.octaveC), 1, 6, 4);
+    // v020_p02_bell_tuning_segmented_root_mode: preserve last Key-mode scaleKey when using Custom Hz.
+if (typeof pitch.bellLastKeyScaleKey !== 'undefined') {
+  const lk = String(pitch.bellLastKeyScaleKey || '').trim();
+  if (lk && lk !== 'custom_hz' && isValidScaleKey(lk)) state.bellLastKeyScaleKey = lk;
+}
+if (!isValidScaleKey(state.bellLastKeyScaleKey) || state.bellLastKeyScaleKey === 'custom_hz') {
+  state.bellLastKeyScaleKey = (SCALE_LIBRARY.find(s => s.key === 'Fs_major')
+    ? 'Fs_major'
+    : (SCALE_LIBRARY[0] ? SCALE_LIBRARY[0].key : 'Fs_major'));
+}
+if (state.scaleKey !== 'custom_hz' && isValidScaleKey(state.scaleKey)) state.bellLastKeyScaleKey = state.scaleKey;
+
+if (typeof pitch.octaveC !== 'undefined') state.octaveC = clampInt(Number(pitch.octaveC), 1, 6, 4);
+    if (typeof pitch.temperamentKey !== 'undefined') {
+      state.temperamentKey = coerceTemperamentKey(pitch.temperamentKey);
+      try { saveTemperamentKeyToLS(); } catch (_) {}
+    }
     if (typeof pitch.customHz !== 'undefined') state.bellCustomHz = clamp(Number(pitch.customHz) || 440, 20, 20000);
     if (typeof pitch.bellPitchFamily !== 'undefined') state.bellPitchFamily = coerceBellPitchFamily(String(pitch.bellPitchFamily || 'diatonic'));
     if (typeof pitch.bellPitchSpan !== 'undefined') state.bellPitchSpan = (String(pitch.bellPitchSpan) === 'extended') ? 'extended' : 'compact';
     if (typeof pitch.bellPitchSpanUser !== 'undefined') state.bellPitchSpanUser = !!pitch.bellPitchSpanUser;
+
+    if (typeof pitch.bellPitchDiatonicMap !== 'undefined') {
+      state.bellPitchDiatonicMap = coerceBellPitchDiatonicMap(pitch.bellPitchDiatonicMap);
+      try { saveBellPitchDiatonicMapToLS(); } catch (_) {}
+    }
 
     if (typeof pitch.bellPitchPentVariant !== 'undefined') state.bellPitchPentVariant = coerceEnum(pitch.bellPitchPentVariant, ['major_pent', 'minor_pent', 'whole_tone', 'blues_hex'], 'major_pent');
     if (typeof pitch.bellPitchChromaticDirection !== 'undefined') state.bellPitchChromaticDirection = coerceEnum(pitch.bellPitchChromaticDirection, ['ascending', 'descending'], 'ascending');
@@ -4218,8 +4551,10 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
 
     if (scaleSelect) scaleSelect.value = String(state.scaleKey || '');
     if (octaveSelect) octaveSelect.value = String(state.octaveC || 4);
+    if (temperamentSelect) temperamentSelect.value = String(state.temperamentKey || 'equal');
     if (bellCustomHzInput) bellCustomHzInput.value = String(Number.isFinite(Number(state.bellCustomHz)) ? state.bellCustomHz : 440);
     syncBellCustomHzUI();
+    try { syncBellRootModeAndToggleUIFromState(); } catch (_) {}
     syncBellPitchFamilyUI();
     syncBellPitchSpanUI();
     syncBellPitchSummaryUI();
@@ -4312,10 +4647,13 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
       // v017_p03_polyrhythm_load_save: reset to defaults first so sparse imports can't leak prior state.
       state.polyEnabledForRuns = false;
       state.polyMasterVolume = 80;
+      state.polyRowCycleLen = 1;
       state.polyLayers = [];
 
       if (typeof polyCfg.enabledForRuns !== 'undefined') state.polyEnabledForRuns = !!polyCfg.enabledForRuns;
       if (typeof polyCfg.masterVolume !== 'undefined') state.polyMasterVolume = clamp(Number(polyCfg.masterVolume) || 0, 0, 100);
+
+      if (typeof polyCfg.rowCycleLen !== 'undefined') state.polyRowCycleLen = clampInt(polyCfg.rowCycleLen, 1, 32, 1);
 
       if (Array.isArray(polyCfg.layers)) {
         state.polyLayers = polyCfg.layers.map((l, i) => coercePolyLayer(l, i)).filter(Boolean);
@@ -4366,6 +4704,9 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
 
     state.droneType = 'single';
     state.droneScaleKey = 'Fs_major';
+    state.droneLastKeyScaleKey = (SCALE_LIBRARY.find(s => s.key === 'Fs_major')
+      ? 'Fs_major'
+      : (SCALE_LIBRARY[0] ? SCALE_LIBRARY[0].key : 'Fs_major'));
     state.droneOctaveC = 3;
     state.droneCustomHz = 440;
     state.droneVolume = 50;
@@ -4394,13 +4735,27 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
         state.droneOwner = (o === 'meditation') ? 'meditation' : 'run';
       }
       const legacy = isPlainObject(drones.legacy) ? drones.legacy : {};
+      if (typeof legacy.droneLastKeyScaleKey !== 'undefined') {
+        const lk = String(legacy.droneLastKeyScaleKey || '');
+        if (isValidScaleKey(lk) && lk !== 'custom_hz') state.droneLastKeyScaleKey = lk;
+      }
       const layers = isPlainObject(drones.layers) ? drones.layers : {};
 
       // Legacy fields (also drive layer 1)
       if (typeof legacy.type !== 'undefined') state.droneType = String(legacy.type || 'sine');
       if (typeof legacy.scaleKey !== 'undefined') {
         const nextDroneScaleKey = String(legacy.scaleKey || '');
-        if (isValidScaleKey(nextDroneScaleKey)) state.droneScaleKey = nextDroneScaleKey;
+        if (isValidScaleKey(nextDroneScaleKey)) {
+          state.droneScaleKey = nextDroneScaleKey;
+          if (nextDroneScaleKey !== 'custom_hz') {
+            state.droneLastKeyScaleKey = nextDroneScaleKey;
+          } else {
+            const fallbackKey = (SCALE_LIBRARY.find(s => s.key === 'Fs_major')
+              ? 'Fs_major'
+              : (SCALE_LIBRARY[0] ? SCALE_LIBRARY[0].key : 'Fs_major'));
+            if (!isValidScaleKey(state.droneLastKeyScaleKey) || state.droneLastKeyScaleKey === 'custom_hz') state.droneLastKeyScaleKey = fallbackKey;
+          }
+        }
       }
       if (typeof legacy.octaveC !== 'undefined') state.droneOctaveC = clampInt(Number(legacy.octaveC), 1, 6, 4);
       if (typeof legacy.customHz !== 'undefined') state.droneCustomHz = clamp(Number(legacy.customHz) || 55, 20, 20000);
@@ -4471,6 +4826,7 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
   }
 
 if (droneScaleSelect) droneScaleSelect.value = String(state.droneScaleKey || '');
+      try { syncDroneRootModeUIFromState(); } catch (_) {}
       if (droneOctaveSelect) droneOctaveSelect.value = String(state.droneOctaveC || 4);
       if (droneVolume) droneVolume.value = String(clampInt(Math.round(Number(state.droneVolume) || 0), 0, 100, 50));
       if (droneCustomHzInput) droneCustomHzInput.value = String(Number.isFinite(Number(state.droneCustomHz)) ? state.droneCustomHz : 55);
@@ -4669,10 +5025,10 @@ if (droneScaleSelect) droneScaleSelect.value = String(state.droneScaleKey || '')
     // Apply atomically (best effort)
     let applyInfo = null;
     try {
-      applyInfo = applyImportedSettingsConfig(merged, { importedConfig: norm.config, applyPrivacy: privacySpecified, privacyValue: wantedConsent, dronesHint });
+      applyInfo = applyImportedSettingsConfig(merged, { importedConfig: norm.config, applyPrivacy: privacySpecified, privacyValue: wantedConsent, dronesHint, applyPolyScope: true });
     } catch (e) {
       // Rollback attempt
-      try { applyImportedSettingsConfig(beforeConfig, { applyPrivacy: true, privacyValue: beforeConsent }); } catch (_) {}
+      try { applyImportedSettingsConfig(beforeConfig, { applyPrivacy: true, privacyValue: beforeConsent, applyPolyScope: true }); } catch (_) {}
 
       const msg = (e && e.message) ? String(e.message) : String(e || 'Apply failed.');
       const lines = ['Failed to apply settings: ' + msg];
@@ -4972,9 +5328,17 @@ if (droneScaleSelect) droneScaleSelect.value = String(state.droneScaleKey || '')
   const spotlightShowN1 = document.getElementById('spotlightShowN1');
   const spotlightShowN2 = document.getElementById('spotlightShowN2');
   const notationSwapsOverlay = document.getElementById('notationSwapsOverlay');
+// v019_p01_lead_overlay: View → Lead overlay controls
+const leadOverlayToggle = document.getElementById('leadOverlayToggle');
+const leadOverlayColors = document.getElementById('leadOverlayColors');
+const resetLeadColorsBtn = document.getElementById('resetLeadColorsBtn');
 
 
-  const pathNoneBtn = document.getElementById('pathNoneBtn');
+
+  const resetLeadsBtn = document.getElementById('resetLeadsBtn');
+const clearLeadsBtn = document.getElementById('clearLeadsBtn');
+
+const pathNoneBtn = document.getElementById('pathNoneBtn');
   const pathAllBtn = document.getElementById('pathAllBtn');
   const pathPicker = document.getElementById('pathPicker');
 
@@ -5009,10 +5373,41 @@ if (droneScaleSelect) droneScaleSelect.value = String(state.droneScaleKey || '')
   const LS_BELL_KEY_OVERRIDE = 'rg_bell_key_override_v1';
   const LS_BELL_OCT_OVERRIDE = 'rg_bell_oct_override_v1';
 
+  // v020_p01b_temperament_engine: Sound → Bells temperament preference
+  const LS_TEMPERAMENT_KEY = 'rg_temperament_key_v1';
+
+  // v020_p01_musical_expansion_modes_temperament: Sound → Bells diatonic mapping mode
+  const LS_BELL_PITCH_DIATONIC_MAP = 'rg_bell_pitch_diatonic_map_v1';
+
   // v10_p08_sound_global_chords_splitstrike localStorage key
   const LS_GLOBAL_CHORD = 'rg_global_chord_v1';
   // v014_p05a_bell_timbre_global localStorage key
   const LS_BELL_TIMBRE_GLOBAL = 'rg_bell_timbre_global_v1';
+
+
+  function saveTemperamentKeyToLS() {
+    try { safeSetLS(LS_TEMPERAMENT_KEY, String(coerceTemperamentKey(state.temperamentKey))); } catch (_) {}
+  }
+
+  function loadTemperamentKeyFromLS() {
+    try {
+      const raw = safeGetLS(LS_TEMPERAMENT_KEY);
+      if (raw != null) state.temperamentKey = coerceTemperamentKey(raw);
+    } catch (_) {}
+  }
+
+
+  function saveBellPitchDiatonicMapToLS() {
+    try { safeSetLS(LS_BELL_PITCH_DIATONIC_MAP, String(coerceBellPitchDiatonicMap(state.bellPitchDiatonicMap))); } catch (_) {}
+  }
+
+  function loadBellPitchDiatonicMapFromLS() {
+    try {
+      const raw = safeGetLS(LS_BELL_PITCH_DIATONIC_MAP);
+      if (raw != null) state.bellPitchDiatonicMap = coerceBellPitchDiatonicMap(raw);
+    } catch (_) {}
+  }
+
 
 
   function saveBellDepthToLS() {
@@ -5068,6 +5463,10 @@ const LS_MASTER_FX = 'rg_master_fx_v1';
 
 // v017_p01_polyrhythm_core localStorage key
 const LS_POLYRHYTHM = 'rg_polyrhythm_v1';
+// v021_p03_polyrhythm_scope: separate global polyrhythm + scope persistence
+const LS_POLYRHYTHM_GLOBAL = 'rg_polyrhythm_global_v1';
+const LS_POLY_SCOPE = 'rg_polyrhythm_scope_v1';
+
 
 
 
@@ -5090,32 +5489,72 @@ const LS_POLYRHYTHM = 'rg_polyrhythm_v1';
 
   // === Musical scales (8 tones incl octave) ===
   // Intervals are semitones ascending from root to octave.
-  const SCALE_LIBRARY = [
-    { key: 'C_major', label: 'C major', root: 'C', intervals: [0,2,4,5,7,9,11,12] },
-    { key: 'Cs_major', label: 'C# major', root: 'C#', intervals: [0,2,4,5,7,9,11,12] },
-    { key: 'D_major', label: 'D major', root: 'D', intervals: [0,2,4,5,7,9,11,12] },
-    { key: 'Ef_major', label: 'Eb major', root: 'Eb', intervals: [0,2,4,5,7,9,11,12] },
-    { key: 'E_major', label: 'E major', root: 'E', intervals: [0,2,4,5,7,9,11,12] },
-    { key: 'F_major', label: 'F major', root: 'F', intervals: [0,2,4,5,7,9,11,12] },
-    { key: 'Fs_major', label: 'F# major', root: 'F#', intervals: [0,2,4,5,7,9,11,12] },
-    { key: 'G_major', label: 'G major', root: 'G', intervals: [0,2,4,5,7,9,11,12] },
-    { key: 'Af_major', label: 'Ab major', root: 'Ab', intervals: [0,2,4,5,7,9,11,12] },
-    { key: 'A_major', label: 'A major', root: 'A', intervals: [0,2,4,5,7,9,11,12] },
-    { key: 'Bf_major', label: 'Bb major', root: 'Bb', intervals: [0,2,4,5,7,9,11,12] },
-    { key: 'B_major', label: 'B major', root: 'B', intervals: [0,2,4,5,7,9,11,12] },
-    { key: 'C_minor', label: 'C minor', root: 'C', intervals: [0,2,3,5,7,8,10,12] },
-    { key: 'Cs_minor', label: 'C# minor', root: 'C#', intervals: [0,2,3,5,7,8,10,12] },
-    { key: 'D_minor', label: 'D minor', root: 'D', intervals: [0,2,3,5,7,8,10,12] },
-    { key: 'Ef_minor', label: 'Eb minor', root: 'Eb', intervals: [0,2,3,5,7,8,10,12] },
-    { key: 'E_minor', label: 'E minor', root: 'E', intervals: [0,2,3,5,7,8,10,12] },
-    { key: 'F_minor', label: 'F minor', root: 'F', intervals: [0,2,3,5,7,8,10,12] },
-    { key: 'Fs_minor', label: 'F# minor', root: 'F#', intervals: [0,2,3,5,7,8,10,12] },
-    { key: 'G_minor', label: 'G minor', root: 'G', intervals: [0,2,3,5,7,8,10,12] },
-    { key: 'Af_minor', label: 'Ab minor', root: 'Ab', intervals: [0,2,3,5,7,8,10,12] },
-    { key: 'A_minor', label: 'A minor', root: 'A', intervals: [0,2,3,5,7,8,10,12] },
-    { key: 'Bf_minor', label: 'Bb minor', root: 'Bb', intervals: [0,2,3,5,7,8,10,12] },
-    { key: 'B_minor', label: 'B minor', root: 'B', intervals: [0,2,3,5,7,8,10,12] }
-  ];
+  const SCALE_LIBRARY = (() => {
+    const ROOTS = [
+      { prefix: 'C',  root: 'C' },
+      { prefix: 'Cs', root: 'C#' },
+      { prefix: 'D',  root: 'D' },
+      { prefix: 'Ef', root: 'Eb' },
+      { prefix: 'E',  root: 'E' },
+      { prefix: 'F',  root: 'F' },
+      { prefix: 'Fs', root: 'F#' },
+      { prefix: 'G',  root: 'G' },
+      { prefix: 'Af', root: 'Ab' },
+      { prefix: 'A',  root: 'A' },
+      { prefix: 'Bf', root: 'Bb' },
+      { prefix: 'B',  root: 'B' }
+    ];
+
+    const INTERVALS = {
+      // Major (Ionian) + Natural Minor (Aeolian)
+      major: [0,2,4,5,7,9,11,12],
+      minor: [0,2,3,5,7,8,10,12],
+
+      // Modes
+      dorian: [0,2,3,5,7,9,10,12],
+      phrygian: [0,1,3,5,7,8,10,12],
+      lydian: [0,2,4,6,7,9,11,12],
+      mixolydian: [0,2,4,5,7,9,10,12],
+      locrian: [0,1,3,5,6,8,10,12],
+
+      // Minor variants
+      harmonic_minor: [0,2,3,5,7,8,11,12],
+      melodic_minor: [0,2,3,5,7,9,11,12]
+    };
+
+    const SUFFIX_LABEL = {
+      major: 'major (Ionian)',
+      minor: 'minor (Aeolian)',
+      dorian: 'Dorian',
+      phrygian: 'Phrygian',
+      lydian: 'Lydian',
+      mixolydian: 'Mixolydian',
+      locrian: 'Locrian',
+      harmonic_minor: 'Harmonic Minor',
+      melodic_minor: 'Melodic Minor'
+    };
+
+    const out = [];
+
+    // Major / Minor (keep existing ordering stable)
+    for (const r of ROOTS) out.push({ key: r.prefix + '_major', label: r.root + ' ' + SUFFIX_LABEL.major, root: r.root, intervals: INTERVALS.major });
+    for (const r of ROOTS) out.push({ key: r.prefix + '_minor', label: r.root + ' ' + SUFFIX_LABEL.minor, root: r.root, intervals: INTERVALS.minor });
+
+    // Modes
+    const MODE_SUFFIXES = ['dorian','phrygian','lydian','mixolydian','locrian'];
+    for (const suf of MODE_SUFFIXES) {
+      for (const r of ROOTS) out.push({ key: r.prefix + '_' + suf, label: r.root + ' ' + SUFFIX_LABEL[suf], root: r.root, intervals: INTERVALS[suf] });
+    }
+
+    // Minor variants
+    const MINVAR_SUFFIXES = ['harmonic_minor','melodic_minor'];
+    for (const suf of MINVAR_SUFFIXES) {
+      for (const r of ROOTS) out.push({ key: r.prefix + '_' + suf, label: r.root + ' ' + SUFFIX_LABEL[suf], root: r.root, intervals: INTERVALS[suf] });
+    }
+
+    return out;
+  })();
+
 
   const NOTE_TO_SEMI = { 'C':0,'C#':1,'Db':1,'D':2,'D#':3,'Eb':3,'E':4,'F':5,'F#':6,'Gb':6,'G':7,'G#':8,'Ab':8,'A':9,'A#':10,'Bb':10,'B':11 };
 
@@ -5125,8 +5564,32 @@ const LS_POLYRHYTHM = 'rg_polyrhythm_v1';
     return (octave + 1) * 12 + semi;
   }
   function midiToFreq(midi) {
-    return 440 * Math.pow(2, (midi - 69) / 12);
+    return 440 * tunedRatioFromSemis((midi - 69), 'equal', false);
   }
+
+  // v020_p01b_temperament_engine: temperament cents tables (pitch classes 0..11 relative to root).
+  const TEMPERAMENT_CENTS_TABLES = {
+    equal: [0.000000, 100.000000, 200.000000, 300.000000, 400.000000, 500.000000, 600.000000, 700.000000, 800.000000, 900.000000, 1000.000000, 1100.000000],
+    pythagorean: [0.000000, 113.685006, 203.910002, 294.134997, 407.820003, 498.044999, 611.730005, 701.955001, 792.179997, 905.865003, 996.089998, 1109.775004],
+    just_5limit: [0.000000, 111.731285, 203.910002, 315.641287, 386.313714, 498.044999, 590.223716, 701.955001, 813.686286, 884.358713, 1017.596288, 1088.268715],
+    meantone_quarter: [0.000000, 76.048999, 193.156857, 310.264715, 386.313714, 503.421572, 579.470571, 696.578428, 813.686286, 889.735285, 1006.843143, 1082.892142],
+  };
+
+  function tunedRatioFromSemis(semis, temperamentKey, allowUnequal = true) {
+    const tKey = coerceTemperamentKey(temperamentKey);
+    const s = Number(semis) || 0;
+    if (tKey === 'equal' || allowUnequal === false) return Math.pow(2, s / 12);
+
+    const oct = Math.floor(s / 12);
+    const x = s - 12 * oct; // [0,12)
+    const pc = Math.floor(x); // 0..11
+    const frac = x - pc;
+
+    const centsTable = TEMPERAMENT_CENTS_TABLES[tKey] || TEMPERAMENT_CENTS_TABLES.equal;
+    const c = (Number(centsTable[pc]) || 0) + 100 * frac;
+    return Math.pow(2, oct) * Math.pow(2, c / 1200);
+  }
+
 
   // === Game state ===
   const state = {
@@ -5140,13 +5603,16 @@ const LS_POLYRHYTHM = 'rg_polyrhythm_v1';
 
     // musical settings
     scaleKey: 'Fs_major',
+    bellLastKeyScaleKey: 'Fs_major',
     octaveC: 4,
+    temperamentKey: 'equal',
     bellCustomHz: 440, // used when scaleKey === 'custom_hz' // UI shows C1..C6
 
     // v011_p04_bell_pitch_collapsible_blocks: bell pitch pattern selection
     bellPitchFamily: 'diatonic', // 'diatonic' | 'pent_hex' | 'chromatic' | 'fifths_fourths' | 'partials' | 'custom'
     bellPitchSpan: 'compact', // 'compact' | 'extended' (stages 9–12 default to extended)
     bellPitchSpanUser: false,
+    bellPitchDiatonicMap: 'smooth', // 'smooth' | 'degrees'
     bellPitchPentVariant: 'major_pent',
     bellPitchChromaticDirection: 'descending', // 'descending' (treble-high) | 'ascending' (treble-low)
     bellPitchFifthsType: 'fifths', // 'fifths' | 'fourths'
@@ -5164,6 +5630,7 @@ const LS_POLYRHYTHM = 'rg_polyrhythm_v1';
     droneOn: false,
     droneType: 'single',
     droneScaleKey: 'Fs_major',
+    droneLastKeyScaleKey: 'Fs_major',
     droneOctaveC: 3,
     droneCustomHz: 440, // used when droneScaleKey === 'custom_hz'
     droneVolume: 50, // 0..100
@@ -5198,8 +5665,12 @@ fxReverbHighCutHz: 6000, // Hz
     dronesMasterVolume: 50, // 0..100 (applied after summing layers)
     droneLayers: null,
     // v017_p01_polyrhythm_core
+    // v021_p03_polyrhythm_scope: 'profile' (default) or 'global'
+    polyScope: 'profile',
     polyEnabledForRuns: false,
     polyMasterVolume: 80,
+    // v021_p04_poly_global_row_gating: global-only row-cycle gating (1=off)
+    polyRowCycleLen: 1,
     polyLayers: [],
 
 
@@ -5295,6 +5766,11 @@ fxReverbHighCutHz: 6000, // Hz
     notationPageSize: 16,
     displayLiveBellsOnly: false,
 
+
+    // v019_p01_lead_overlay: per-lead tint overlay (view)
+    leadOverlayEnabled: false,
+    leadOverlayColors: [],
+
     // v09_p07b_notation_spotlight_accuracy_dots: accuracy dot overlays (master + per-pane)
     accuracyDotsEnabled: true,
     accuracyDotsDisplay: true,
@@ -5332,6 +5808,10 @@ fxReverbHighCutHz: 6000, // Hz
 
   // v014_p045b_spatial_depth_and_send: per-bell depth stages (post-pan split)
   let bellDepthStages = null;
+
+  // v021_p02_poly_bell_spatial_token_custom_drag_fix: per-layer per-bell spatial stages for polyrhythm bell strikes
+  let polyBellPanStagesByLayer = null;
+  let polyBellDepthStagesByLayer = null;
 
 // v014_p03_master_fx_limiter_reverb: Master FX rack nodes
 let masterPreFX = null;
@@ -5815,6 +6295,102 @@ function applyBellDepthToAudio(bell, instant) {
 }
 
 
+// v021_p02_poly_bell_spatial_token_custom_drag_fix: polyrhythm bell spatial stages (per-layer, per-bell)
+function ensurePolyBellSpatialLayerKey(layerId) {
+  const k = String(layerId != null ? layerId : '').trim();
+  if (!k) return null;
+  if (!polyBellPanStagesByLayer) polyBellPanStagesByLayer = Object.create(null);
+  if (!polyBellDepthStagesByLayer) polyBellDepthStagesByLayer = Object.create(null);
+  if (!polyBellPanStagesByLayer[k]) polyBellPanStagesByLayer[k] = new Array(13).fill(null);
+  if (!polyBellDepthStagesByLayer[k]) polyBellDepthStagesByLayer[k] = new Array(13).fill(null);
+  return k;
+}
+
+function ensurePolyBellDepthStage(layerId, bell) {
+  const k = ensurePolyBellSpatialLayerKey(layerId);
+  if (!k) return null;
+  const b = clamp(parseInt(String(bell), 10) || 0, 1, 12);
+  if (!audioCtx || !polyMasterGain) return null;
+
+  const arr = polyBellDepthStagesByLayer[k];
+  let st = arr ? arr[b] : null;
+  if (st && st.input) return st;
+
+  const sendBus = masterReverbSend || reverbSendGain || null;
+  st = createDepthStage(audioCtx, polyMasterGain, sendBus, null);
+  if (!st) return null;
+  arr[b] = st;
+  try { applyDepthOnStage(st, 0, state.spatialDepthMode, true); } catch (_) {}
+  return st;
+}
+
+function ensurePolyBellPanStage(layerId, bell) {
+  const k = ensurePolyBellSpatialLayerKey(layerId);
+  if (!k) return null;
+  const b = clamp(parseInt(String(bell), 10) || 0, 1, 12);
+  if (!audioCtx || !polyMasterGain) return null;
+
+  const arr = polyBellPanStagesByLayer[k];
+  let st = arr ? arr[b] : null;
+  if (st && st.input) return st;
+
+  let depthSt = null;
+  try { depthSt = ensurePolyBellDepthStage(layerId, b); } catch (_) { depthSt = null; }
+  const dest = (depthSt && depthSt.input) ? depthSt.input : polyMasterGain;
+
+  st = createPanStage(audioCtx, 0, dest, null);
+  if (!st) return null;
+  arr[b] = st;
+  return st;
+}
+
+function getPolyBellPanInput(layerId, bell) {
+  const st = ensurePolyBellPanStage(layerId, bell);
+  if (st && st.input) return st.input;
+  return polyMasterGain || null;
+}
+
+function dropPolyBellSpatialStagesForLayer(layerId) {
+  const k = String(layerId != null ? layerId : '').trim();
+  if (!k) return;
+
+  function dropPanStage(st) {
+    if (!st) return;
+    try { st.output && st.output.disconnect(); } catch (_) {}
+    try { st.input && st.input.disconnect(); } catch (_) {}
+    try { st.leftGain && st.leftGain.disconnect(); } catch (_) {}
+    try { st.rightGain && st.rightGain.disconnect(); } catch (_) {}
+    try { st.merger && st.merger.disconnect(); } catch (_) {}
+    try { st.panner && st.panner.disconnect(); } catch (_) {}
+  }
+
+  function dropDepthStage(st) {
+    if (!st) return;
+    try { st.input && st.input.disconnect(); } catch (_) {}
+    try { st.output && st.output.disconnect(); } catch (_) {}
+    try { st.lpf && st.lpf.disconnect(); } catch (_) {}
+    try { st.dryGain && st.dryGain.disconnect(); } catch (_) {}
+    try { st.wetSendGain && st.wetSendGain.disconnect(); } catch (_) {}
+  }
+
+  try {
+    if (polyBellPanStagesByLayer && polyBellPanStagesByLayer[k]) {
+      const a = polyBellPanStagesByLayer[k];
+      for (let b = 1; b <= 12; b++) dropPanStage(a[b]);
+      try { delete polyBellPanStagesByLayer[k]; } catch (_) { polyBellPanStagesByLayer[k] = null; }
+    }
+  } catch (_) {}
+
+  try {
+    if (polyBellDepthStagesByLayer && polyBellDepthStagesByLayer[k]) {
+      const a = polyBellDepthStagesByLayer[k];
+      for (let b = 1; b <= 12; b++) dropDepthStage(a[b]);
+      try { delete polyBellDepthStagesByLayer[k]; } catch (_) { polyBellDepthStagesByLayer[k] = null; }
+    }
+  } catch (_) {}
+}
+
+
 function ensureAudio() {
     if (!audioCtx) {
       const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -5898,6 +6474,9 @@ function closeAudio() {
       droneMasterGain = null;
       bellPanStages = null;
       bellDepthStages = null;
+      // v021_p02_poly_bell_spatial_token_custom_drag_fix: clear polyrhythm spatial caches
+      polyBellPanStagesByLayer = null;
+      polyBellDepthStagesByLayer = null;
       droneCurrent = null;
       noiseBuffer = null;
       noiseBufferSampleRate = 0;
@@ -5943,7 +6522,13 @@ if (reverbImpulseRebuildTimer) {
     let def;
     let rootFreq;
     if (key === 'custom_hz') {
-      def = getScaleDef();
+      const fallbackKey = (SCALE_LIBRARY.find(s => s.key === 'Fs_major')
+        ? 'Fs_major'
+        : (SCALE_LIBRARY[0] ? SCALE_LIBRARY[0].key : 'Fs_major'));
+      const effKey = (isValidScaleKey(state.bellLastKeyScaleKey) && state.bellLastKeyScaleKey !== 'custom_hz')
+        ? String(state.bellLastKeyScaleKey || '')
+        : fallbackKey;
+      def = getScaleDefByKey(effKey);
       rootFreq = coerceCustomHz(state.bellCustomHz, 440);
       const o = clamp(parseInt(octaveC, 10) || state.octaveC, 1, 6);
       const o0 = clamp(parseInt(state.octaveC, 10) || 4, 1, 6);
@@ -5957,7 +6542,8 @@ if (reverbImpulseRebuildTimer) {
 
     const intervals = downsampleIntervals(def.intervals, stage);
     const off = intervals[stage - bb];
-    return rootFreq * Math.pow(2, off / 12);
+    const allowUnequal = (coerceBellPitchFamily(state.bellPitchFamily) !== 'partials');
+    return rootFreq * tunedRatioFromSemis(off, state.temperamentKey, allowUnequal);
   }
 
   // v017_p01_polyrhythm_core: stage-independent frequency helpers (treat as stage=12 for default pitches)
@@ -5970,7 +6556,13 @@ if (reverbImpulseRebuildTimer) {
     let def;
     let rootFreq;
     if (key === 'custom_hz') {
-      def = getScaleDef();
+      const fallbackKey = (SCALE_LIBRARY.find(s => s.key === 'Fs_major')
+        ? 'Fs_major'
+        : (SCALE_LIBRARY[0] ? SCALE_LIBRARY[0].key : 'Fs_major'));
+      const effKey = (isValidScaleKey(state.bellLastKeyScaleKey) && state.bellLastKeyScaleKey !== 'custom_hz')
+        ? String(state.bellLastKeyScaleKey || '')
+        : fallbackKey;
+      def = getScaleDefByKey(effKey);
       rootFreq = coerceCustomHz(state.bellCustomHz, 440);
       const o = clamp(parseInt(octaveC, 10) || state.octaveC, 1, 6);
       const o0 = clamp(parseInt(state.octaveC, 10) || 4, 1, 6);
@@ -5984,7 +6576,8 @@ if (reverbImpulseRebuildTimer) {
 
     const intervals = downsampleIntervals(def.intervals, stage);
     const off = intervals[stage - bb];
-    return rootFreq * Math.pow(2, off / 12);
+    const allowUnequal = (coerceBellPitchFamily(state.bellPitchFamily) !== 'partials');
+    return rootFreq * tunedRatioFromSemis(off, state.temperamentKey, allowUnequal);
   }
 
   function getPolyBellFrequencyDefault(bell) {
@@ -5992,7 +6585,8 @@ if (reverbImpulseRebuildTimer) {
     const rootFreq = getBellRootFrequency();
     const offsets = getBellPitchOffsets(12) || [];
     const off = (offsets[b - 1] != null) ? Number(offsets[b - 1]) : 0;
-    return rootFreq * Math.pow(2, off / 12);
+    const allowUnequal = (coerceBellPitchFamily(state.bellPitchFamily) !== 'partials');
+    return rootFreq * tunedRatioFromSemis(off, state.temperamentKey, allowUnequal);
   }
 
   function getPolyBellHz(bell, soundCtx) {
@@ -6016,13 +6610,31 @@ if (reverbImpulseRebuildTimer) {
         semis += clamp(parseInt(pb.pitch.transposeSemis, 10) || 0, -24, 24);
       }
 
-      if (semis !== 0) hz = hz * Math.pow(2, semis / 12);
+      if (semis !== 0) {
+        const allowUnequal = (coerceBellPitchFamily(state.bellPitchFamily) !== 'partials');
+        hz = hz * tunedRatioFromSemis(semis, state.temperamentKey, allowUnequal);
+      }
       return hz;
     }
 
 
+    const applyLayerTranspose = (hzIn) => {
+      let hz = hzIn;
+      try {
+        const bs = (ctx && ctx.bs && typeof ctx.bs === 'object') ? ctx.bs : null;
+        const s = (bs && bs.pitch && bs.pitch.layerTransposeSemis != null)
+          ? clamp(parseInt(bs.pitch.layerTransposeSemis, 10) || 0, -24, 24)
+          : 0;
+        if (s) {
+          const allowUnequal = (coerceBellPitchFamily(state.bellPitchFamily) !== 'partials');
+          hz = hz * tunedRatioFromSemis(s, state.temperamentKey, allowUnequal);
+        }
+      } catch (_) {}
+      return hz;
+    };
+
     const ov = (state.bellHzOverride && state.bellHzOverride[b] != null) ? Number(state.bellHzOverride[b]) : NaN;
-    if (Number.isFinite(ov) && ov > 0) return ov;
+    if (Number.isFinite(ov) && ov > 0) return applyLayerTranspose(ov);
 
     const hasKeyOv = (state.bellKeyOverride && state.bellKeyOverride[b] != null) && String(state.bellKeyOverride[b] || '').trim();
     const hasOctOv = (state.bellOctaveOverride && state.bellOctaveOverride[b] != null) && Number.isFinite(Number(state.bellOctaveOverride[b]));
@@ -6030,10 +6642,10 @@ if (reverbImpulseRebuildTimer) {
     if (hasKeyOv || hasOctOv) {
       const key = hasKeyOv ? String(state.bellKeyOverride[b] || '').trim() : String(state.scaleKey || '');
       const oct = hasOctOv ? Number(state.bellOctaveOverride[b]) : Number(state.octaveC);
-      return getBellFrequencyFromKeyOctStage(b, key, oct, 12);
+      return applyLayerTranspose(getBellFrequencyFromKeyOctStage(b, key, oct, 12));
     }
 
-    return getPolyBellFrequencyDefault(b);
+    return applyLayerTranspose(getPolyBellFrequencyDefault(b));
   }
 
   function getPolyBellFrequency(bell, soundCtx) { return getPolyBellHz(bell, soundCtx); }
@@ -6042,7 +6654,7 @@ if (reverbImpulseRebuildTimer) {
   function getBellHz(bell) {
     const b = parseInt(bell, 10) || 0;
     const ov = (state.bellHzOverride && state.bellHzOverride[b] != null) ? Number(state.bellHzOverride[b]) : NaN;
-    if (Number.isFinite(ov) && ov > 0) return ov;
+    if (Number.isFinite(ov) && ov > 0) return applyLayerTranspose(ov);
 
     const hasKeyOv = (state.bellKeyOverride && state.bellKeyOverride[b] != null) && String(state.bellKeyOverride[b] || '').trim();
     const hasOctOv = (state.bellOctaveOverride && state.bellOctaveOverride[b] != null) && Number.isFinite(Number(state.bellOctaveOverride[b]));
@@ -6680,6 +7292,7 @@ if (reverbImpulseRebuildTimer) {
   function playBellStrikeAtHz(bell, baseHz, whenMs, minGain, soundCtx) {
     const b = clamp(parseInt(bell, 10) || 0, 1, 12);
     const ignoreGlobalAdv = !!(soundCtx && soundCtx.ignoreGlobalChordAdvanced);
+    const allowUnequal = (coerceBellPitchFamily(state.bellPitchFamily) !== 'partials');
     // v014_p01_global_custom_chords_advanced: global Advanced modifiers (apply to all chord strikes)
     const gcfg = (!ignoreGlobalAdv && state.globalChord) ? sanitizeGlobalChordConfig(state.globalChord) : globalChordDefaults();
     const gDetuneCents = clamp(Number(gcfg.globalDetuneCents) || 0, -20, 20);
@@ -6718,7 +7331,7 @@ if (reverbImpulseRebuildTimer) {
       const perToneBase = 1 / Math.sqrt(N);
       for (let i = 0; i < N; i++) {
         const semi = Number(semis[i]) || 0;
-        let hz = base * Math.pow(2, semi / 12);
+        let hz = base * tunedRatioFromSemis(semi, state.temperamentKey, allowUnequal);
         if (ov.detune && i < ov.detune.length) {
           const cents = clamp(Number(ov.detune[i]) || 0, -50, 50);
           hz = hz * Math.pow(2, cents / 1200);
@@ -6761,7 +7374,7 @@ if (reverbImpulseRebuildTimer) {
 
     for (let i = 0; i < N; i++) {
       const semi = Number(semis[i]) || 0;
-      let hz = base * Math.pow(2, semi / 12);
+      let hz = base * tunedRatioFromSemis(semi, state.temperamentKey, allowUnequal);
       if (gDetuneMul !== 1) hz *= gDetuneMul;
       const atMs = (Number(whenMs) || 0) + (Number(offsets[i]) || 0);
       const gw = gGains ? (Number(gGains[i]) || 1) : 1;
@@ -7130,14 +7743,58 @@ if (reverbImpulseRebuildTimer) {
     const b = clamp(parseInt(bell, 10) || 0, 1, 12);
     const hz = getPolyBellFrequency(b, soundCtx);
 
-    const dest = polyMasterGain || bellMasterGain || audioCtx.destination;
+    const baseDest = polyMasterGain || bellMasterGain || audioCtx.destination;
+
+    // v021_p02_poly_bell_spatial_token_custom_drag_fix: per-token spatial + volume overrides (custom bell profile only)
+    let layerId = null;
+    let pan = 0;
+    let depth = 0;
+    let volMul = 100;
+    try {
+      const ctx = soundCtx || null;
+      if (ctx && ctx.profile === 'custom' && ctx.bs) {
+        layerId = (ctx.layerId != null) ? ctx.layerId : null;
+        const pb = (ctx.bs.perBell && ctx.bs.perBell[b]) ? ctx.bs.perBell[b] : null;
+        if (pb && typeof pb === 'object') {
+          if (pb.pan != null) pan = clamp(Number(pb.pan) || 0, -1, 1);
+          if (pb.depth != null) depth = clamp(Number(pb.depth) || 0, 0, 1);
+          if (pb.volMul != null) volMul = clamp(Number(pb.volMul) || 0, 0, 100);
+        }
+      }
+    } catch (_) {}
+
+    const gm = Number.isFinite(Number(gainMul)) ? Number(gainMul) : 1;
+    const vm = clamp(Number(volMul) || 100, 0, 100) / 100;
+    const finalMul = gm * vm;
+
+    // Only route through poly spatial stages when pan/depth are non-neutral.
+    let dest = baseDest;
+    const useSpatial = (layerId != null) && ((Math.abs(pan) > 0.000001) || (Math.abs(depth) > 0.000001));
+    if (useSpatial) {
+      try {
+        const inNode = getPolyBellPanInput(layerId, b);
+        if (inNode) dest = inNode;
+
+        // Ensure stages exist and apply per-token params.
+        try {
+          const panSt = ensurePolyBellPanStage(layerId, b);
+          if (panSt) setPanOnStage(panSt, pan, audioCtx.currentTime);
+        } catch (_) {}
+        try {
+          const depthSt = ensurePolyBellDepthStage(layerId, b);
+          if (depthSt) applyDepthOnStage(depthSt, depth, state.spatialDepthMode, false);
+        } catch (_) {}
+      } catch (_) {
+        dest = baseDest;
+      }
+    }
 
     const prevDest = bellVoiceDestOverride;
     const prevReg = bellVoiceRegistryOverride;
     const prevMul = bellVoiceGainMulOverride;
     bellVoiceDestOverride = dest;
     bellVoiceRegistryOverride = scheduledPolyNodes;
-    bellVoiceGainMulOverride = Number.isFinite(Number(gainMul)) ? Number(gainMul) : 1;
+    bellVoiceGainMulOverride = finalMul;
 
     try {
       playBellStrikeAtHz(b, hz, whenMs, 0.000001, soundCtx);
@@ -7147,6 +7804,8 @@ if (reverbImpulseRebuildTimer) {
     bellVoiceRegistryOverride = prevReg;
     bellVoiceGainMulOverride = prevMul;
   }
+
+
 
   // v018_p01_poly_synth_core: WebAudio synth + perc voices for polyrhythm layers (no worklets, no libs)
   const POLY_SYNTH_PRESETS = {
@@ -7307,20 +7966,35 @@ if (reverbImpulseRebuildTimer) {
     const l = (layer && typeof layer === 'object') ? layer : {};
     const ps = String(l.pitchSource || 'bell12');
 
+    const applyLayerTranspose = (hzIn) => {
+      let hz = hzIn;
+      try {
+        const bs = (l.bellSound && typeof l.bellSound === 'object') ? l.bellSound : null;
+        const s = (bs && bs.pitch && bs.pitch.layerTransposeSemis != null)
+          ? clamp(parseInt(bs.pitch.layerTransposeSemis, 10) || 0, -24, 24)
+          : 0;
+        if (s) {
+          const allowUnequal = (coerceBellPitchFamily(state.bellPitchFamily) !== 'partials');
+          hz = hz * tunedRatioFromSemis(s, state.temperamentKey, allowUnequal);
+        }
+      } catch (_) {}
+      return hz;
+    };
+
     if (ps === 'chromatic') {
       const base = clamp(parseInt(String(l.pitchBase ?? 60), 10) || 60, 0, 127);
       const midi = clamp(base + (tok - 1), 0, 127);
-      return midiToFreq(midi);
+      return applyLayerTranspose(midiToFreq(midi));
     }
     if (ps === 'fixed') {
       const hzRaw = Number(l.pitchHz);
-      if (Number.isFinite(hzRaw) && hzRaw > 0) return hzRaw;
+      if (Number.isFinite(hzRaw) && hzRaw > 0) return applyLayerTranspose(hzRaw);
       const base = clamp(parseInt(String(l.pitchBase ?? 60), 10) || 60, 0, 127);
-      return midiToFreq(base);
+      return applyLayerTranspose(midiToFreq(base));
     }
 
     // Default: Bell pitch map (as-if stage=12), rendered with synth timbre.
-    try { return getPolyBellFrequency(tok, null); } catch (_) { return 440; }
+    try { return applyLayerTranspose(getPolyBellFrequency(tok, null)); } catch (_) { return applyLayerTranspose(440); }
   }
 
   function playPolySynthAt(token, whenMs, gainMul = 1, layer) {
@@ -7333,6 +8007,7 @@ if (reverbImpulseRebuildTimer) {
     const l = (layer && typeof layer === 'object') ? layer : {};
     const preset = polyGetSynthPreset(l.synthPreset);
     let baseHz = polySynthTokenToHz(token, l);
+    const allowUnequal = (coerceBellPitchFamily(state.bellPitchFamily) !== 'partials');
 
 
     // v018_p02_poly_synth_advanced: per-layer advanced params + per-token overrides (synth hits only)
@@ -7360,7 +8035,7 @@ if (reverbImpulseRebuildTimer) {
     }
 
     if (tokenPitchSemis) {
-      baseHz = baseHz * Math.pow(2, tokenPitchSemis / 12);
+      baseHz = baseHz * tunedRatioFromSemis(tokenPitchSemis, state.temperamentKey, allowUnequal);
     }
 
     // Optional chords (reuse existing chord config if present)
@@ -7441,7 +8116,7 @@ if (reverbImpulseRebuildTimer) {
 
     for (let i = 0; i < N; i++) {
       const semi = Number(semis[i]) || 0;
-      const hz = baseHz * Math.pow(2, semi / 12);
+      const hz = baseHz * tunedRatioFromSemis(semi, state.temperamentKey, allowUnequal);
       const off = (offsMs && offsMs[i] != null) ? Number(offsMs[i]) : 0;
       const t = t0 + (Number.isFinite(off) ? clamp(off, 0, 30) / 1000 : 0);
 
@@ -7884,9 +8559,18 @@ function syncMasterFxUI() {
           ent.chords = co;
         }
 
-        if (ent.pitch || ent.timbre || ent.chords) {
-          out.perBell[String(b)] = ent;
-        }
+// Spatial override (pan/depth/vol) - additive, optional
+const pn = Number(entRaw.pan);
+if (entRaw.pan != null && Number.isFinite(pn)) ent.pan = clamp(pn, -1, 1);
+const dp = Number(entRaw.depth);
+if (entRaw.depth != null && Number.isFinite(dp)) ent.depth = clamp(dp, 0, 1);
+const vm = Number(entRaw.volMul);
+if (entRaw.volMul != null && Number.isFinite(vm)) ent.volMul = clamp(vm, 0, 100);
+
+const hasSpatial = ('pan' in ent) || ('depth' in ent) || ('volMul' in ent);
+if (ent.pitch || ent.timbre || ent.chords || hasSpatial) {
+  out.perBell[String(b)] = ent;
+}
       }
     }
 
@@ -7939,9 +8623,14 @@ function syncMasterFxUI() {
             customIntervals: String(e.chords.customIntervals || ''),
           };
         }
-        if (oe.pitch || oe.timbre || oe.chords) {
-          outPb[String(b)] = oe;
-        }
+if (e.pan != null && Number.isFinite(Number(e.pan))) oe.pan = clamp(Number(e.pan), -1, 1);
+if (e.depth != null && Number.isFinite(Number(e.depth))) oe.depth = clamp(Number(e.depth), 0, 1);
+if (e.volMul != null && Number.isFinite(Number(e.volMul))) oe.volMul = clamp(Number(e.volMul), 0, 100);
+
+const hasSpatial = (oe.pan != null) || (oe.depth != null) || (oe.volMul != null);
+if (oe.pitch || oe.timbre || oe.chords || hasSpatial) {
+  outPb[String(b)] = oe;
+}
       }
       if (Object.keys(outPb).length) out.perBell = outPb;
     }
@@ -7964,8 +8653,8 @@ function syncMasterFxUI() {
     const s = looksOk ? bsRaw : sanitizePolyBellSound(bsRaw);
     if (s !== bsRaw) l.bellSound = s;
 
-    if (s.profile !== 'custom') return null;
-    return { profile: 'custom', ignoreGlobalChordAdvanced: true, bs: s };
+    if (s.profile !== 'custom') return { profile: 'mirror', bs: s, layerId: l.id };
+    return { profile: 'custom', ignoreGlobalChordAdvanced: true, bs: s, layerId: l.id };
   }
   function makeDefaultPolyLayer() {
     return {
@@ -7975,6 +8664,8 @@ function syncMasterFxUI() {
       sound: 'bell', // 'bell' | 'tick' | 'synth' | 'perc'
       interval: '1',
       offset: '0',
+      // v021_p04_poly_global_row_gating: null => all rows
+      rowsActive: null,
       volume: 80,
       token: 1,      // 1..12 (pulse)
       phrase: '',    // (phrase)
@@ -7993,6 +8684,568 @@ function syncMasterFxUI() {
   }
 
   
+  // v021_p06_poly_presets_panel_percussion_and_quick_layers: Polyrhythm layer presets
+  // Presets only *append* layers (no schema changes). They are deterministic and lightweight.
+
+  const POLY_LAYER_PRESET_LIBRARY = {
+    percussion: [
+      // --- Hats ---
+      { id: 'hat_8ths', label: 'Hi-hat 8ths (straight)', group: 'Hats', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'noise_hat', volume: 62, phrase: '1e 1e 1e 1e 1e 1e 1e 1e' },
+      ]},
+      { id: 'hat_16ths', label: 'Hi-hat 16ths', group: 'Hats', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'noise_hat', volume: 56, phrase: '1s 1s 1s 1s 1s 1s 1s 1s  1s 1s 1s 1s 1s 1s 1s 1s' },
+      ]},
+      { id: 'hat_quarters', label: 'Hi-hat quarters', group: 'Hats', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'noise_hat', volume: 66, phrase: '1q 1q 1q 1q' },
+      ]},
+      { id: 'hat_offbeats', label: 'Hi-hat offbeats (&)', group: 'Hats', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'noise_hat', volume: 58, phrase: 'Rq 1e  Re 1e  Rq 1e  Re 1e' },
+      ]},
+      { id: 'hat_swing', label: 'Hi-hat swing (e.+s)', group: 'Hats', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'noise_hat', volume: 58, phrase: '1e. 1s  1e. 1s  1e. 1s  1e. 1s' },
+      ]},
+      { id: 'hat_swing_light', label: 'Hi-hat swing (sparser)', group: 'Hats', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'noise_hat', volume: 60, phrase: '1q. 1e  1q. 1e' },
+      ]},
+      { id: 'hat_push_16', label: 'Hi-hat pushed 16ths (rests)', group: 'Hats', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'noise_hat', volume: 56, phrase: '1s Rs  1s Rs  1s Rs  1s Rs  1s Rs  1s Rs  1s Rs  1s Rs' },
+      ]},
+      { id: 'hat_denoms', label: 'Hi-hat 8ths (denominator /2)', group: 'Hats', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'noise_hat', volume: 62, phrase: '1/2 1/2 1/2 1/2 1/2 1/2 1/2 1/2' },
+      ]},
+      { id: 'hat_denoms_dotted', label: 'Hi-hat dotted /2. + /4', group: 'Hats', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'noise_hat', volume: 58, phrase: '1/2. 1/4  1/2. 1/4  1/2. 1/4  1/2. 1/4' },
+      ]},
+      { id: 'hat_triplets_pulse', label: 'Hi-hat triplets (interval 1/3)', group: 'Hats', layers: [
+        { sound: 'perc', type: 'pulse', percPreset: 'noise_hat', volume: 58, interval: '1/3', token: 1 },
+      ]},
+
+      // --- Kicks ---
+      { id: 'kick_four_floor', label: 'Kick 4-on-the-floor', group: 'Kicks', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'kick_sine', volume: 86, phrase: '1q 1q 1q 1q' },
+      ]},
+      { id: 'kick_1_3', label: 'Kick on 1 & 3', group: 'Kicks', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'kick_sine', volume: 88, phrase: '1q Rq  1q Rq' },
+      ]},
+      { id: 'kick_1_only', label: 'Kick on 1', group: 'Kicks', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'kick_sine', volume: 90, phrase: '1w' },
+      ]},
+      { id: 'kick_sync_1a', label: 'Kick syncopated (1, &, 3)', group: 'Kicks', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'kick_sine', volume: 88, phrase: '1e Re  1e Rq  1q Rq' },
+      ]},
+      { id: 'kick_sync_2a', label: 'Kick syncopated (house lift)', group: 'Kicks', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'kick_sine', volume: 86, phrase: '1q  Rq  1e Re  1e Re  1q' },
+      ]},
+      { id: 'kick_three_beat', label: 'Kick 3-beat cycle (3:4)', group: 'Odd cycles', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'kick_sine', volume: 86, phrase: '1q 1q 1q' },
+      ]},
+      { id: 'kick_five_beat', label: 'Kick 5-beat cycle (5:4)', group: 'Odd cycles', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'kick_sine', volume: 84, phrase: '1q 1q 1q 1q 1q' },
+      ]},
+      { id: 'kick_dotted', label: 'Kick dotted (q.+e)', group: 'Kicks', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'kick_sine', volume: 86, phrase: '1q. 1e  1q. 1e' },
+      ]},
+
+      // --- Snares ---
+      { id: 'snare_backbeat', label: 'Snare backbeat (2 & 4)', group: 'Snares', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'snare_noise', volume: 74, phrase: 'Rq 1q Rq 1q' },
+      ]},
+      { id: 'snare_halftime', label: 'Snare halftime (3)', group: 'Snares', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'snare_noise', volume: 74, phrase: 'Rh 1h' },
+      ]},
+      { id: 'snare_push', label: 'Snare push (2e. + s)', group: 'Snares', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'snare_noise', volume: 72, phrase: 'Rq  1e. 1s  Rq  1q' },
+      ]},
+      { id: 'snare_fill_end', label: 'Snare fill (last beat 16ths)', group: 'Snares', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'snare_noise', volume: 70, phrase: 'Rq 1q Rq  1s 1s 1s 1s' },
+      ]},
+
+      // --- Claps ---
+      { id: 'clap_2_4', label: 'Clap on 2 & 4', group: 'Claps', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'clap_noise', volume: 68, phrase: 'Rq 1q Rq 1q' },
+      ]},
+      { id: 'clap_offbeats', label: 'Clap offbeats (&)', group: 'Claps', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'clap_noise', volume: 64, phrase: 'Rq 1e  Re 1e  Rq 1e  Re 1e' },
+      ]},
+      { id: 'clap_double_end', label: 'Clap double at end (e+e)', group: 'Claps', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'clap_noise', volume: 66, phrase: 'Rq 1q Rq  1e 1e' },
+      ]},
+      { id: 'clap_dotted', label: 'Clap dotted accents (q.)', group: 'Claps', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'clap_noise', volume: 64, phrase: '1q. Re  1q  1q' },
+      ]},
+
+      // --- Clicks / Blocks ---
+      { id: 'click_quarters', label: 'Click quarters (metronome)', group: 'Clicks', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'click_block', volume: 64, phrase: '1q 1q 1q 1q' },
+      ]},
+      { id: 'click_8ths', label: 'Click 8ths', group: 'Clicks', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'click_block', volume: 56, phrase: '1e 1e 1e 1e  1e 1e 1e 1e' },
+      ]},
+      { id: 'click_16ths_sparse', label: 'Click 16ths (sparse)', group: 'Clicks', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'click_block', volume: 54, phrase: '1s Rs Rs  1s Rs Rs  1s Rs Rs  1s Rs Rs' },
+      ]},
+      { id: 'click_clave_1', label: 'Click clave (q./e)', group: 'Clicks', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'click_block', volume: 58, phrase: '1q. 1e  1q  1e 1e' },
+      ]},
+      { id: 'click_clave_2', label: 'Click clave (e.+s)', group: 'Clicks', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'click_block', volume: 58, phrase: '1e. 1s  1q  1e. 1s  1q' },
+      ]},
+
+      // --- Mixed single-layer grooves (percs as "patterns") ---
+      { id: 'hat_openish_bright', label: 'Hi-hat bright accents (token 8)', group: 'Hats', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'noise_hat', volume: 58, phrase: '1e 8e 1e 8e  1e 8e 1e 8e' },
+      ]},
+      { id: 'hat_sixteenths_accent', label: 'Hi-hat 16ths (accent every 4)', group: 'Hats', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'noise_hat', volume: 56, phrase: '8s 1s 1s 1s  8s 1s 1s 1s  8s 1s 1s 1s  8s 1s 1s 1s' },
+      ]},
+      { id: 'kick_pickup', label: 'Kick pickup into 1 (s+s)', group: 'Kicks', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'kick_sine', volume: 84, phrase: 'Rq Rq Rq  1s 1s' },
+      ]},
+      { id: 'snare_ghosts', label: 'Snare ghosts (soft 16ths)', group: 'Snares', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'snare_noise', volume: 62, phrase: 'Rs 1s Rs 1s  Rs 1s Rs 1s  Rs 1s Rs 1s  Rs 1s Rs 1s' },
+      ]},
+      { id: 'clap_triplet_pulse', label: 'Clap triplets (interval 1/3)', group: 'Claps', layers: [
+        { sound: 'perc', type: 'pulse', percPreset: 'clap_noise', volume: 58, interval: '1/3', token: 1 },
+      ]},
+
+      // --- Kits (multi-layer) ---
+      { id: 'kit_basic_rock', label: 'Kit: Basic rock (kick+snare+hat)', group: 'Kits', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'kick_sine',  volume: 88, phrase: '1q Rq  1q Rq' },
+        { sound: 'perc', type: 'phrase', percPreset: 'snare_noise', volume: 74, phrase: 'Rq 1q Rq 1q' },
+        { sound: 'perc', type: 'phrase', percPreset: 'noise_hat',  volume: 60, phrase: '1e 1e 1e 1e 1e 1e 1e 1e' },
+      ]},
+      { id: 'kit_four_floor', label: 'Kit: Four-on-floor (kick+clap+hat16)', group: 'Kits', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'kick_sine',  volume: 86, phrase: '1q 1q 1q 1q' },
+        { sound: 'perc', type: 'phrase', percPreset: 'clap_noise', volume: 66, phrase: 'Rq 1q Rq 1q' },
+        { sound: 'perc', type: 'phrase', percPreset: 'noise_hat',  volume: 54, phrase: '1s 1s 1s 1s 1s 1s 1s 1s  1s 1s 1s 1s 1s 1s 1s 1s' },
+      ]},
+      { id: 'kit_boom_bap', label: 'Kit: Boom-bap (kick sync + snare + hat)', group: 'Kits', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'kick_sine',  volume: 88, phrase: '1q  Re 1e  Rq  1q' },
+        { sound: 'perc', type: 'phrase', percPreset: 'snare_noise', volume: 74, phrase: 'Rq 1q Rq 1q' },
+        { sound: 'perc', type: 'phrase', percPreset: 'noise_hat',  volume: 58, phrase: '1e 1e 1e 1e 1e 1e 1e 1e' },
+      ]},
+      { id: 'kit_swing', label: 'Kit: Swing (kick+snare+hat swing)', group: 'Kits', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'kick_sine',  volume: 84, phrase: '1q  Rq  1q  Rq' },
+        { sound: 'perc', type: 'phrase', percPreset: 'snare_noise', volume: 70, phrase: 'Rq 1q Rq 1q' },
+        { sound: 'perc', type: 'phrase', percPreset: 'noise_hat',  volume: 58, phrase: '1e. 1s  1e. 1s  1e. 1s  1e. 1s' },
+      ]},
+      { id: 'kit_minimal_click', label: 'Kit: Minimal (kick+hat+click)', group: 'Kits', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'kick_sine',  volume: 86, phrase: '1q  Rq  1q  Rq' },
+        { sound: 'perc', type: 'phrase', percPreset: 'noise_hat',  volume: 58, phrase: '1e 1e 1e 1e 1e 1e 1e 1e' },
+        { sound: 'perc', type: 'phrase', percPreset: 'click_block', volume: 52, phrase: 'Rq 1e Re 1e  Rq 1e Re 1e' },
+      ]},
+      { id: 'kit_clave_block', label: 'Kit: Clave (click) + kick + clap', group: 'Kits', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'click_block', volume: 60, phrase: '1q. 1e  1q  1e 1e' },
+        { sound: 'perc', type: 'phrase', percPreset: 'kick_sine',  volume: 84, phrase: '1q  Rq  1e Re  1e Re  1q' },
+        { sound: 'perc', type: 'phrase', percPreset: 'clap_noise', volume: 64, phrase: 'Rq 1q Rq 1q' },
+      ]},
+      { id: 'kit_triplet_shuffle', label: 'Kit: Triplet shuffle (hat 1/3 + snare)', group: 'Kits', layers: [
+        { sound: 'perc', type: 'pulse', percPreset: 'noise_hat', volume: 56, interval: '1/3', token: 1 },
+        { sound: 'perc', type: 'phrase', percPreset: 'snare_noise', volume: 72, phrase: 'Rq 1q Rq 1q' },
+        { sound: 'perc', type: 'phrase', percPreset: 'kick_sine',  volume: 84, phrase: '1q  Rq  1q  Rq' },
+      ]},
+      { id: 'kit_odd_cycle_3_4', label: 'Kit: 3-beat kick vs 4-beat snare', group: 'Kits', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'kick_sine',  volume: 84, phrase: '1q 1q 1q' },
+        { sound: 'perc', type: 'phrase', percPreset: 'snare_noise', volume: 72, phrase: 'Rq 1q Rq 1q' },
+        { sound: 'perc', type: 'phrase', percPreset: 'noise_hat',  volume: 56, phrase: '1e 1e 1e 1e 1e 1e 1e 1e' },
+      ]},
+
+      // --- Extra "many" patterns: variations / fills / odd feels ---
+      { id: 'hat_12_8', label: 'Hi-hat 12/8 feel (interval 1/3, accents)', group: 'Odd cycles', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'noise_hat', volume: 56, interval: '1/3', phrase: '8 1 1  8 1 1  8 1 1  8 1 1' },
+      ]},
+      { id: 'kick_gallop', label: 'Kick gallop (e + s + s)', group: 'Kicks', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'kick_sine', volume: 84, phrase: '1e 1s 1s  1e 1s 1s  1e 1s 1s  1e 1s 1s' },
+      ]},
+      { id: 'snare_gallop', label: 'Snare gallop (e + s + s)', group: 'Snares', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'snare_noise', volume: 66, phrase: 'Re 1s Rs  Re 1s Rs  Re 1s Rs  Re 1s Rs' },
+      ]},
+      { id: 'clap_gallop', label: 'Clap gallop (e + s + s)', group: 'Claps', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'clap_noise', volume: 62, phrase: 'Re 1s Rs  Re 1s Rs  Re 1s Rs  Re 1s Rs' },
+      ]},
+      { id: 'click_fills_32', label: 'Click fill (32nds at end)', group: 'Clicks', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'click_block', volume: 52, phrase: 'Rq 1q Rq  1t 1t 1t 1t 1t 1t 1t 1t' },
+      ]},
+      { id: 'hat_fill_32', label: 'Hi-hat fill (32nds at end)', group: 'Hats', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'noise_hat', volume: 54, phrase: '1q 1q 1q  1t 1t 1t 1t 1t 1t 1t 1t' },
+      ]},
+      { id: 'snare_roll_32', label: 'Snare roll (32nds)', group: 'Snares', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'snare_noise', volume: 60, phrase: '1t 1t 1t 1t  1t 1t 1t 1t  1t 1t 1t 1t  1t 1t 1t 1t' },
+      ]},
+      { id: 'clap_roll_16', label: 'Clap roll (16ths)', group: 'Claps', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'clap_noise', volume: 58, phrase: '1s 1s 1s 1s  1s 1s 1s 1s  1s 1s 1s 1s  1s 1s 1s 1s' },
+      ]},
+      { id: 'kick_sparse_odd', label: 'Kick sparse (cycle 7 beats)', group: 'Odd cycles', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'kick_sine', volume: 82, phrase: '1q Rq Rq  1q Rq Rq  1q' },
+      ]},
+      { id: 'click_sparse_odd', label: 'Click sparse (cycle 7 beats)', group: 'Odd cycles', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'click_block', volume: 54, phrase: '1q Rq Rq  1q Rq Rq  1q' },
+      ]},
+      { id: 'hat_sparse_odd', label: 'Hi-hat sparse (cycle 7 beats)', group: 'Odd cycles', layers: [
+        { sound: 'perc', type: 'phrase', percPreset: 'noise_hat', volume: 54, phrase: '1e 1e  Rq  1e 1e  Rq  1e 1e  Rq  1e 1e  Rq  1e 1e' },
+      ]},
+    ],
+
+    quick: [
+      // --- Bell quick-add ---
+      { id: 'bell_arp_1358', label: 'Bell: Arp 1-3-5-8 (8ths)', group: 'Bell', layers: [
+        { sound: 'bell', type: 'phrase', interval: '1', volume: 70, phrase: '1e 3e 5e 8e  5e 3e 1e 3e' },
+      ]},
+      { id: 'bell_pulse_root_5', label: 'Bell: Root + 5th (halves)', group: 'Bell', layers: [
+        { sound: 'bell', type: 'phrase', interval: '1', volume: 68, phrase: '1h 5h' },
+      ]},
+      { id: 'bell_drone_octave', label: 'Bell: Slow octave drone', group: 'Bell', layers: [
+        { sound: 'bell', type: 'phrase', interval: '1', volume: 62, phrase: '1w 8w' },
+      ]},
+      { id: 'bell_waltz_158', label: 'Bell: Waltz 1-5-8 (quarters)', group: 'Bell', layers: [
+        { sound: 'bell', type: 'phrase', interval: '1', volume: 68, phrase: '1q 5q 8q' },
+      ]},
+
+      // --- Synth quick-add ---
+      { id: 'synth_pad_root', label: 'Synth: Saw pad (root halves)', group: 'Synth', layers: [
+        { sound: 'synth', type: 'phrase', synthPreset: 'tone_saw_pad', pitchSource: 'bell12', interval: '1', volume: 58, phrase: '1h 1h' },
+      ]},
+      { id: 'synth_pad_15', label: 'Synth: Soft pad (1+5)', group: 'Synth', layers: [
+        { sound: 'synth', type: 'phrase', synthPreset: 'tone_triangle_pluck', pitchSource: 'bell12', interval: '1', volume: 54, phrase: '1h 5h' },
+      ]},
+      { id: 'synth_fm_bell_arp', label: 'Synth: FM bell arp (1-3-5-8)', group: 'Synth', layers: [
+        { sound: 'synth', type: 'phrase', synthPreset: 'fm_bell', pitchSource: 'bell12', interval: '1', volume: 56, phrase: '1e 3e 5e 8e  5e 3e 1e 3e' },
+      ]},
+      { id: 'synth_lead_simple', label: 'Synth: Square lead (quarters 1-5-8-5)', group: 'Synth', layers: [
+        { sound: 'synth', type: 'phrase', synthPreset: 'tone_square_lead', pitchSource: 'bell12', interval: '1', volume: 52, phrase: '1q 5q 8q 5q' },
+      ]},
+      { id: 'synth_arp_pluck', label: 'Synth: Triangle pluck arp (swing)', group: 'Synth', layers: [
+        { sound: 'synth', type: 'phrase', synthPreset: 'tone_triangle_pluck', pitchSource: 'bell12', interval: '1', volume: 54, phrase: '1e. 3s  5e. 8s  5e. 3s  1e. 3s' },
+      ]},
+
+      // --- Two-layer quick combos ---
+      { id: 'combo_bell_plus_pad', label: 'Combo: Bell arp + Saw pad root', group: 'Combos', layers: [
+        { sound: 'bell',  type: 'phrase', interval: '1', volume: 66, phrase: '1e 3e 5e 8e  5e 3e 1e 3e' },
+        { sound: 'synth', type: 'phrase', synthPreset: 'tone_saw_pad', pitchSource: 'bell12', interval: '1', volume: 52, phrase: '1h 1h' },
+      ]},
+      { id: 'combo_pad_plus_fifth', label: 'Combo: Pad (root) + Bell fifth pulse', group: 'Combos', layers: [
+        { sound: 'synth', type: 'phrase', synthPreset: 'tone_saw_pad', pitchSource: 'bell12', interval: '1', volume: 52, phrase: '1h 1h' },
+        { sound: 'bell',  type: 'phrase', interval: '1', volume: 62, phrase: '5q  Rq  5q  Rq' },
+      ]},
+    ],
+  };
+
+  // v021_p07_poly_presets_harmony_builder_tone_rhythm_suggestions: Harmony/Bass builder helpers (tone + rhythm suggestions)
+  // Runtime-only UI state (ui.poly.*). Adds layers only; does not change gameplay/scoring.
+
+  const POLY_HB_RHYTHM_PRESETS = [
+    { id: 'hb_pedal_quarters', label: 'Pedal (root) — quarters', group: 'Bass' },
+    { id: 'hb_pedal_8ths', label: 'Pedal (root) — 8ths', group: 'Bass' },
+    { id: 'hb_bounce_8ths', label: 'Bounce (two-tone) — 8ths', group: 'Bounce / Arp' },
+    { id: 'hb_arp_up_8ths', label: 'Arp up/down — 8ths', group: 'Bounce / Arp' },
+    { id: 'hb_swell_hdot_pickup', label: 'Swell — h. + 8ths pickup', group: 'Sustain' },
+    { id: 'hb_sync_edot_s', label: 'Syncopated — e. + s (x4)', group: 'Syncopation' },
+  ];
+
+  function polyHBTokenToPhraseChar(tok) {
+    const t = clamp(parseInt(tok, 10) || 0, 0, 12);
+    if (t <= 0) return 'R';
+    if (t >= 1 && t <= 9) return String(t);
+    if (t === 10) return '0';
+    if (t === 11) return 'E';
+    if (t === 12) return 'T';
+    return 'R';
+  }
+
+  function polyHBFormatTokenList(tokens) {
+    try {
+      const arr = Array.isArray(tokens) ? tokens : [];
+      const parts = [];
+      for (let i = 0; i < arr.length; i++) {
+        const v = clamp(parseInt(arr[i], 10) || 0, 0, 12);
+        if (v <= 0) continue;
+        parts.push(String(v));
+      }
+      return parts.join('–');
+    } catch (_) {}
+    return '';
+  }
+
+  function polyHBGetEffectiveScaleDef() {
+    try {
+      if (state.scaleKey && state.scaleKey !== 'custom_hz') return getScaleDefByKey(state.scaleKey);
+      if (state.bellLastKeyScaleKey && state.bellLastKeyScaleKey !== 'custom_hz') return getScaleDefByKey(state.bellLastKeyScaleKey);
+      const k0 = (SCALE_LIBRARY && SCALE_LIBRARY[0] && SCALE_LIBRARY[0].key) ? SCALE_LIBRARY[0].key : 'Fs_major';
+      return getScaleDefByKey(k0);
+    } catch (_) {}
+    return null;
+  }
+
+  function polyHBIsMinorLike(def) {
+    try {
+      const ints = (def && Array.isArray(def.intervals)) ? def.intervals : null;
+      if (!ints || ints.length < 3) return false;
+      return Number(ints[2]) === 3;
+    } catch (_) {}
+    return false;
+  }
+
+  function polyHBGetBellsAscending(stage) {
+    const s = clamp(parseInt(stage, 10) || 0, 1, 12);
+    const offs = getBellPitchOffsets(s) || [];
+    const list = [];
+    for (let bell = 1; bell <= s; bell++) {
+      const off = (offs[bell - 1] != null) ? Number(offs[bell - 1]) : 0;
+      list.push({ bell, off });
+    }
+    list.sort((a, b) => (a.off - b.off) || (a.bell - b.bell));
+    return list;
+  }
+
+  function polyHBGenerateToneSetSuggestions(toneCount) {
+    const tc = clamp(parseInt(toneCount, 10) || 0, 1, 6);
+    const stage = clamp(parseInt(state.stage, 10) || 0, 1, 12);
+    const def = polyHBGetEffectiveScaleDef();
+    const minorLike = polyHBIsMinorLike(def);
+
+    const build = (useStage, allowExtended) => {
+      const bellsAsc = polyHBGetBellsAscending(useStage);
+      const pick = (idxs) => {
+        const toks = [];
+        for (let i = 0; i < idxs.length; i++) {
+          const di = idxs[i];
+          if (!Number.isFinite(di) || di < 0) return null;
+          if (di >= bellsAsc.length) return null;
+          toks.push(bellsAsc[di].bell);
+        }
+        const seen = Object.create(null);
+        for (let i = 0; i < toks.length; i++) {
+          const k = String(toks[i]);
+          if (seen[k]) return null;
+          seen[k] = true;
+        }
+        return toks;
+      };
+
+      const cands = [];
+      if (tc === 1) {
+        cands.push({ id: 'root', label: 'Root pedal', idxs: [0] });
+      } else if (tc === 2) {
+        cands.push({ id: 'root5', label: 'Root + Fifth', idxs: [0, 4] });
+        cands.push({ id: 'root3', label: minorLike ? 'Root + Third (minor)' : 'Root + Third', idxs: [0, 2] });
+        cands.push({ id: 'root8', label: 'Root + Octave', idxs: [0, 7] });
+      } else if (tc === 3) {
+        cands.push({ id: 'triad', label: minorLike ? 'i–III–V (minor)' : 'Triad (I–III–V)', idxs: [0, 2, 4] });
+        cands.push({ id: 'sus2', label: 'Sus2 (I–II–V)', idxs: [0, 1, 4] });
+        cands.push({ id: 'sus4', label: 'Sus4 (I–IV–V)', idxs: [0, 3, 4] });
+        cands.push({ id: 'pwr8', label: 'Root + Fifth + Octave', idxs: [0, 4, 7] });
+      } else if (tc === 4) {
+        cands.push({ id: 'add6', label: 'Add6 (I–III–V–VI)', idxs: [0, 2, 4, 5] });
+        cands.push({ id: 'sev7', label: '7th (I–III–V–VII)', idxs: [0, 2, 4, 6] });
+        cands.push({ id: 'add9', label: 'Add9 (I–III–V–II)', idxs: [0, 2, 4, 8] });
+      } else if (tc === 5) {
+        cands.push({ id: 'frag_1', label: 'Scale fragment (I–II–III–V–VI)', idxs: [0, 1, 2, 4, 5] });
+        cands.push({ id: 'frag_2', label: 'Wide fragment (I–III–IV–V–VI)', idxs: [0, 2, 3, 4, 5] });
+      } else if (tc === 6) {
+        cands.push({ id: 'hex', label: 'Hexatonic (I–II–III–IV–V–VI)', idxs: [0, 1, 2, 3, 4, 5] });
+        cands.push({ id: 'hex_wide', label: 'Wide hex (I–II–IV–V–VI–VIII)', idxs: [0, 1, 3, 4, 5, 7] });
+      }
+
+      const out = [];
+      for (let i = 0; i < cands.length; i++) {
+        const c = cands[i];
+        const toks = pick(c.idxs);
+        if (!toks) continue;
+        let lab = String(c.label || c.id || '');
+        const tokTxt = polyHBFormatTokenList(toks);
+        if (tokTxt) lab += ' — ' + tokTxt;
+
+        if (allowExtended && stage < 12) {
+          let ext = false;
+          for (let j = 0; j < toks.length; j++) {
+            if (Number(toks[j]) > stage) { ext = true; break; }
+          }
+          if (ext) lab += ' (extended)';
+        }
+
+        out.push({ id: 'tc' + tc + '_' + String(c.id), label: lab, tokens: toks });
+      }
+      return out;
+    };
+
+    let out = [];
+    try { out = build(stage, false); } catch (_) { out = []; }
+    if ((!out || !out.length) && stage < 12) {
+      try { out = build(12, true) || []; } catch (_) { out = out || []; }
+    }
+
+    const seen = Object.create(null);
+    const final = [];
+    for (let i = 0; i < (out || []).length; i++) {
+      const it = out[i];
+      if (!it || !it.id) continue;
+      if (seen[it.id]) continue;
+      seen[it.id] = true;
+      final.push(it);
+    }
+    return final;
+  }
+
+  function polyHBBuildRhythmEvents(rhythmId, toneCount) {
+    const tc = clamp(parseInt(toneCount, 10) || 0, 1, 12);
+    const rid = String(rhythmId || '').trim();
+
+    if (rid === 'hb_pedal_8ths') {
+      const out = [];
+      for (let i = 0; i < 8; i++) out.push({ ti: 0, dur: 'e' });
+      return out;
+    }
+    if (rid === 'hb_bounce_8ths') {
+      const out = [];
+      const n = Math.max(1, Math.min(2, tc));
+      for (let i = 0; i < 8; i++) out.push({ ti: (i % n), dur: 'e' });
+      return out;
+    }
+    if (rid === 'hb_arp_up_8ths') {
+      const out = [];
+      const n = Math.max(1, tc);
+      const seq = [];
+      // 8 steps: up then down (deterministic)
+      for (let i = 0; i < n && seq.length < 4; i++) seq.push(i);
+      for (let i = Math.max(0, n - 2); i >= 0 && seq.length < 8; i--) seq.push(i);
+      while (seq.length < 8) seq.push(0);
+      for (let i = 0; i < 8; i++) out.push({ ti: (seq[i] % n), dur: 'e' });
+      return out;
+    }
+    if (rid === 'hb_swell_hdot_pickup') {
+      // 4 beats total: dotted half (3) + 2 eighths (1)
+      return [
+        { ti: 0, dur: 'h.' },
+        { ti: Math.min(1, tc - 1), dur: 'e' },
+        { ti: Math.min(2, tc - 1), dur: 'e' },
+      ];
+    }
+    if (rid === 'hb_sync_edot_s') {
+      // (e. + s) x4 = 4 beats; alternating tones
+      const out = [];
+      const n = Math.max(1, tc);
+      for (let i = 0; i < 4; i++) {
+        out.push({ ti: (i % n), dur: 'e.' });
+        out.push({ ti: ((i + 1) % n), dur: 's' });
+      }
+      return out;
+    }
+
+    // Default: hb_pedal_quarters
+    return [
+      { ti: 0, dur: 'q' }, { ti: 0, dur: 'q' }, { ti: 0, dur: 'q' }, { ti: 0, dur: 'q' },
+    ];
+  }
+
+  function polyHBMakePhraseFromTokens(tokens, rhythmId) {
+    try {
+      const toks = Array.isArray(tokens) ? tokens : [];
+      if (!toks.length) return '';
+      const evs = polyHBBuildRhythmEvents(rhythmId, toks.length) || [];
+      const parts = [];
+      for (let i = 0; i < evs.length; i++) {
+        const e = evs[i] || {};
+        const dur = String(e.dur || '').trim();
+        let ch = 'R';
+        const ti = parseInt(e.ti, 10);
+        if (Number.isFinite(ti) && ti >= 0) {
+          const tok = toks[((ti % toks.length) + toks.length) % toks.length];
+          ch = polyHBTokenToPhraseChar(tok);
+        }
+        parts.push(dur ? (ch + dur) : ch);
+      }
+      return parts.join(' ');
+    } catch (_) {}
+    return '';
+  }
+
+
+
+  function polyFindLayerPresetById(id) {
+    const k = String(id || '').trim();
+    if (!k) return null;
+    const lib = POLY_LAYER_PRESET_LIBRARY;
+    const lists = [lib && lib.percussion, lib && lib.quick];
+    for (let li = 0; li < lists.length; li++) {
+      const arr = lists[li];
+      if (!Array.isArray(arr)) continue;
+      for (let i = 0; i < arr.length; i++) {
+        if (arr[i] && String(arr[i].id) === k) return arr[i];
+      }
+    }
+    return null;
+  }
+
+  function polyMakeLayerFromPresetSpec(spec) {
+    const layer = makeDefaultPolyLayer();
+    const s = (spec && typeof spec === 'object') ? spec : null;
+    if (!s) return layer;
+    for (const key in s) {
+      if (!Object.prototype.hasOwnProperty.call(s, key)) continue;
+      if (key === 'id') continue;
+      const v = s[key];
+      if (v && typeof v === 'object') layer[key] = deepCloneJsonable(v);
+      else layer[key] = v;
+    }
+    return layer;
+  }
+
+  function polyApplyLayerPresetById(presetId) {
+    const p = polyFindLayerPresetById(presetId);
+    if (!p) return;
+
+    if (!Array.isArray(state.polyLayers)) state.polyLayers = [];
+    const layers = Array.isArray(p.layers) ? p.layers : [];
+    for (let i = 0; i < layers.length; i++) {
+      state.polyLayers.push(polyMakeLayerFromPresetSpec(layers[i]));
+    }
+
+    // Required sequence:
+    savePolyrhythmToLS();
+    rebuildPolyrhythmUI();
+    polyResyncActiveNow();
+  }
+
+  function polyPopulatePresetSelect(selectEl, presetList, placeholderLabel) {
+    const sel = selectEl;
+    if (!sel) return;
+    sel.innerHTML = '';
+
+    const ph = document.createElement('option');
+    ph.value = '';
+    ph.textContent = String(placeholderLabel || 'Choose…');
+    sel.appendChild(ph);
+
+    // Preserve insertion order of groups as they appear in the list.
+    const groups = [];
+    const byGroup = Object.create(null);
+
+    const arr = Array.isArray(presetList) ? presetList : [];
+    for (let i = 0; i < arr.length; i++) {
+      const p = arr[i];
+      if (!p) continue;
+      const g = String(p.group || 'Presets');
+      if (!byGroup[g]) { byGroup[g] = []; groups.push(g); }
+      byGroup[g].push(p);
+    }
+
+    for (let gi = 0; gi < groups.length; gi++) {
+      const g = groups[gi];
+      const og = document.createElement('optgroup');
+      og.label = g;
+      const items = byGroup[g] || [];
+      for (let i = 0; i < items.length; i++) {
+        const p = items[i];
+        const o = document.createElement('option');
+        o.value = String(p.id || '');
+        o.textContent = String(p.label || p.id || '');
+        og.appendChild(o);
+      }
+      sel.appendChild(og);
+    }
+  }
+
 
   // v018_p02_poly_synth_advanced: layer-level advanced params + per-token overrides (fail-open)
   function sanitizePolySynthParamsAdvanced(raw) {
@@ -8108,18 +9361,188 @@ function coercePolyLayer(raw, fallbackIdx = 0) {
     const synthParamsAdvanced = sanitizePolySynthParamsAdvanced(r.synthParamsAdvanced);
     const tokenOverrides = sanitizePolyTokenOverrides(r.tokenOverrides);
     const bellSound = sanitizePolyBellSound(r.bellSound);
-    return { id, enabled: r.enabled !== false, type, sound, interval, offset, volume, token, phrase, bellSound, synthPreset, pitchSource, pitchBase, pitchHz, synthParams, synthParamsAdvanced, tokenOverrides, percPreset, percParams };
+    // v021_p04_poly_global_row_gating: per-layer active row slots (1..N). null => all rows.
+    let rowsActive = null;
+    if (Array.isArray(r.rowsActive)) {
+      const tmp = [];
+      for (let i = 0; i < r.rowsActive.length; i++) {
+        const n = parseInt(r.rowsActive[i], 10);
+        if (Number.isFinite(n) && n >= 1 && n <= 32) {
+          if (tmp.indexOf(n) === -1) tmp.push(n);
+        }
+      }
+      if (tmp.length) tmp.sort((a, b) => a - b);
+      rowsActive = tmp.length ? tmp : null;
+    }
+    return { id, enabled: r.enabled !== false, type, sound, interval, offset, rowsActive, volume, token, phrase, bellSound, synthPreset, pitchSource, pitchBase, pitchHz, synthParams, synthParamsAdvanced, tokenOverrides, percPreset, percParams };
   }
 
-  function loadPolyrhythmFromLS() {
+  
+  // v021_p03_polyrhythm_scope: scope helpers + persistence (fail-open)
+  function coercePolyScope(v) {
+    const s = String((typeof v === 'string' || typeof v === 'number') ? v : (v || '')).trim().toLowerCase();
+    return (s === 'global') ? 'global' : 'profile';
+  }
+
+  function getPolyrhythmLSKeyForScope(scope) {
+    return (coercePolyScope(scope) === 'global') ? LS_POLYRHYTHM_GLOBAL : LS_POLYRHYTHM;
+  }
+
+  function getActivePolyrhythmLSKey() {
+    return getPolyrhythmLSKeyForScope(state && state.polyScope);
+  }
+
+  function loadPolyScopeFromLS() {
     try {
-      const txt = safeGetLS(LS_POLYRHYTHM);
+      const txt = safeGetLS(LS_POLY_SCOPE);
+      if (!txt) return;
+      state.polyScope = coercePolyScope(txt);
+    } catch (_) {}
+  }
+
+  function savePolyScopeToLS() {
+    try {
+      safeSetLS(LS_POLY_SCOPE, String(coercePolyScope(state.polyScope)));
+    } catch (_) {}
+  }
+
+  function readPolyrhythmCfgFromLSKey(lsKey) {
+    try {
+      const txt = safeGetLS(lsKey);
+      if (!txt) return null;
+      const raw = safeJsonParse(txt);
+      if (!raw || typeof raw !== 'object') return null;
+      return raw;
+    } catch (_) { return null; }
+  }
+
+  function applyPolyrhythmCfgToState(polyCfg, opts) {
+    const o = (opts && typeof opts === 'object') ? opts : {};
+    const doSave = (typeof o.save === 'undefined') ? true : !!o.save;
+    const doResched = (typeof o.resched === 'undefined') ? true : !!o.resched;
+    const doReset = (typeof o.reset === 'undefined') ? true : !!o.reset;
+
+    if (!polyCfg || typeof polyCfg !== 'object') return false;
+
+    const runActive = !!(state.mode === 'method' && (state.phase === 'countdown' || state.phase === 'running'));
+    const testActive = !!polyTestActive;
+    const wasActive = !!(testActive || (runActive && state.polyEnabledForRuns));
+
+    if (doReset) {
+      // Reset to defaults first so sparse sources can't leak prior state.
+      state.polyEnabledForRuns = false;
+      state.polyMasterVolume = 80;
+      state.polyRowCycleLen = 1;
+      state.polyLayers = [];
+    }
+
+    if (typeof polyCfg.enabledForRuns !== 'undefined') state.polyEnabledForRuns = !!polyCfg.enabledForRuns;
+    if (typeof polyCfg.masterVolume !== 'undefined') state.polyMasterVolume = clamp(Number(polyCfg.masterVolume) || 0, 0, 100);
+    if (typeof polyCfg.rowCycleLen !== 'undefined') state.polyRowCycleLen = clampInt(polyCfg.rowCycleLen, 1, 32, 1);
+
+    if (Array.isArray(polyCfg.layers)) {
+      state.polyLayers = polyCfg.layers.map((l, i) => coercePolyLayer(l, i)).filter(Boolean);
+    } else if (!Array.isArray(state.polyLayers)) {
+      state.polyLayers = [];
+    }
+
+    try { applyPolyMasterGain(); } catch (_) {}
+    try { polySchedNextById = Object.create(null); } catch (_) {}
+
+    if (doSave) {
+      try { savePolyrhythmToLS(); } catch (_) {}
+    }
+
+    if (doResched) {
+      const shouldActive = !!(testActive || (runActive && state.polyEnabledForRuns));
+      if (wasActive || shouldActive) {
+        try { cancelScheduledPolyAudioNow(); } catch (_) {}
+        if (shouldActive) {
+          try {
+            const nowMs = perfNow();
+            const bpm = testActive ? (Number(polyTestBpm) || 120) : (Number(state.bpm) || 120);
+            const beatMs = 60000 / bpm;
+            const anchorMs = testActive ? polyTestStartMs : state.methodStartMs;
+            polyResetSchedPointers(nowMs, anchorMs, beatMs);
+          } catch (_) {}
+          try { kickLoop(); } catch (_) {}
+        }
+      }
+    }
+
+    return true;
+  }
+
+  function setPolyrhythmScope(nextScope) {
+    const prev = coercePolyScope(state.polyScope);
+    const next = coercePolyScope(nextScope);
+    if (next === prev) return;
+
+    // Leaving per-profile scope: capture the current profile snapshot so its polyrhythm is preserved.
+    if (prev === 'profile' && next === 'global') {
+      try { ensureSoundProfilesV1Exists(); } catch (_) {}
+      try {
+        const sp = (state && isPlainObject(state.soundProfilesV1)) ? state.soundProfilesV1 : null;
+        const profiles = (sp && Array.isArray(sp.profiles)) ? sp.profiles : [];
+        const k = Math.max(1, Math.min(MAX_SAFE_PROFILES, profiles.length || 1));
+        const cur = clampInt(sp ? sp.selectedProfileIndex : 1, 1, k, 1);
+        const snap = sanitizeSoundProfileSnapshot(captureCurrentSoundConfigSnapshot());
+        if (sp && Array.isArray(sp.profiles) && sp.profiles[cur - 1]) sp.profiles[cur - 1] = snap;
+      } catch (_) {}
+    }
+
+    // Persist current polyrhythm to its current scope bucket.
+    try { savePolyrhythmToLS(); } catch (_) {}
+
+    state.polyScope = next;
+    savePolyScopeToLS();
+
+    if (next === 'global') {
+      const raw = readPolyrhythmCfgFromLSKey(LS_POLYRHYTHM_GLOBAL);
+      if (raw) {
+        applyPolyrhythmCfgToState(raw, { save: true, reset: true, resched: true });
+      } else {
+        // Fail-open: keep current state as the initial global polyrhythm.
+        try { savePolyrhythmToLS(); } catch (_) {}
+      }
+    } else {
+      // Switching to per-profile: apply polyrhythm from the currently selected profile snapshot.
+      try { ensureSoundProfilesV1Exists(); } catch (_) {}
+      let polyCfg = null;
+      try {
+        const sp = (state && isPlainObject(state.soundProfilesV1)) ? state.soundProfilesV1 : null;
+        const profiles = (sp && Array.isArray(sp.profiles)) ? sp.profiles : [];
+        const k = Math.max(1, Math.min(MAX_SAFE_PROFILES, profiles.length || 1));
+        const sel = clampInt(sp ? sp.selectedProfileIndex : 1, 1, k, 1);
+        const snap = (profiles && profiles[sel - 1] && isPlainObject(profiles[sel - 1])) ? profiles[sel - 1] : null;
+        polyCfg = (snap && isPlainObject(snap.polyrhythm)) ? snap.polyrhythm : null;
+      } catch (_) { polyCfg = null; }
+
+      if (polyCfg) {
+        applyPolyrhythmCfgToState(polyCfg, { save: true, reset: true, resched: true });
+      } else {
+        // Fail-open fallback: restore last per-profile polyrhythm from LS.
+        const raw = readPolyrhythmCfgFromLSKey(LS_POLYRHYTHM);
+        if (raw) applyPolyrhythmCfgToState(raw, { save: true, reset: true, resched: true });
+      }
+    }
+
+    try { rebuildPolyrhythmUI(); } catch (_) {}
+    try { syncPolyrhythmUI(); } catch (_) {}
+  }
+
+function loadPolyrhythmFromLS() {
+    try {
+      const txt = safeGetLS(getActivePolyrhythmLSKey());
       if (!txt) return;
       const raw = safeJsonParse(txt);
       if (!raw || typeof raw !== 'object') return;
 
       if (raw.enabledForRuns != null) state.polyEnabledForRuns = !!raw.enabledForRuns;
       if (raw.masterVolume != null) state.polyMasterVolume = clamp(Number(raw.masterVolume) || 0, 0, 100);
+
+      // v021_p04_poly_global_row_gating
+      if (raw.rowCycleLen != null) state.polyRowCycleLen = clampInt(raw.rowCycleLen, 1, 32, 1);
 
       if (Array.isArray(raw.layers)) {
         state.polyLayers = raw.layers.map((l, i) => coercePolyLayer(l, i)).filter(Boolean);
@@ -8136,6 +9559,7 @@ function coercePolyLayer(raw, fallbackIdx = 0) {
         v: 1,
         enabledForRuns: !!state.polyEnabledForRuns,
         masterVolume: clamp(Number(state.polyMasterVolume) || 0, 0, 100),
+        rowCycleLen: clampInt(state.polyRowCycleLen, 1, 32, 1),
         layers: layers.map((l, i) => {
           const layer = coercePolyLayer(l, i);
           return {
@@ -8145,6 +9569,7 @@ function coercePolyLayer(raw, fallbackIdx = 0) {
             sound: layer.sound,
             interval: layer.interval,
             offset: layer.offset,
+            rowsActive: Array.isArray(layer.rowsActive) ? layer.rowsActive.slice() : null,
             volume: clamp(Number(layer.volume) || 0, 0, 100),
             token: clamp(parseInt(layer.token, 10) || 1, 1, 12),
             phrase: String(layer.phrase || ''),
@@ -8160,7 +9585,7 @@ function coercePolyLayer(raw, fallbackIdx = 0) {
           };
         }),
       };
-      safeSetLS(LS_POLYRHYTHM, JSON.stringify(out));
+      safeSetLS(getActivePolyrhythmLSKey(), JSON.stringify(out));
     } catch (_) {}
   }
 
@@ -8219,6 +9644,8 @@ function coercePolyLayer(raw, fallbackIdx = 0) {
     const P = ui.poly;
     P.layerUiById = Object.create(null);
 
+    P.rowCycleInput = null;
+
     dest.innerHTML = '';
     const root = document.createElement('div');
     root.className = 'rg-poly-root';
@@ -8255,6 +9682,18 @@ function coercePolyLayer(raw, fallbackIdx = 0) {
     global.className = 'rg-poly-global';
     root.appendChild(global);
 
+    // Scope: Per profile / Global
+    const scopeSel = mkSelect([
+      { value: 'profile', label: 'Per profile' },
+      { value: 'global', label: 'Global' },
+    ]);
+    scopeSel.value = coercePolyScope(state.polyScope);
+    scopeSel.addEventListener('change', () => {
+      setPolyrhythmScope(scopeSel.value);
+    });
+    P.scopeSelect = scopeSel;
+    global.appendChild(mkControl('Scope', scopeSel));
+
     // Enabled for runs
     const enabledBtn = document.createElement('button');
     enabledBtn.type = 'button';
@@ -8289,6 +9728,46 @@ function coercePolyLayer(raw, fallbackIdx = 0) {
     P.masterVol = vol;
     global.appendChild(mkControl('Master volume', vol));
 
+    // v021_p04_poly_global_row_gating: global-only row cycle length (1=off/all rows)
+    if (coercePolyScope(state.polyScope) === 'global') {
+      const rowCycleInput = document.createElement('input');
+      rowCycleInput.type = 'number';
+      rowCycleInput.min = '1';
+      rowCycleInput.max = '32';
+      rowCycleInput.step = '1';
+      rowCycleInput.title = '1 = Off / all rows';
+      rowCycleInput.value = String(clampInt(state.polyRowCycleLen, 1, 32, 1));
+      rowCycleInput.addEventListener('change', () => {
+        const n = clampInt(rowCycleInput.value, 1, 32, 1);
+        rowCycleInput.value = String(n);
+        state.polyRowCycleLen = n;
+        // Clamp per-layer assignments to 1..N (fail-open)
+        const layers = Array.isArray(state.polyLayers) ? state.polyLayers : [];
+        for (let i = 0; i < layers.length; i++) {
+          const l = layers[i];
+          if (!l) continue;
+          if (Array.isArray(l.rowsActive) && l.rowsActive.length) {
+            const next = [];
+            for (let j = 0; j < l.rowsActive.length; j++) {
+              const v = parseInt(l.rowsActive[j], 10);
+              if (Number.isFinite(v) && v >= 1 && v <= n) {
+                if (next.indexOf(v) === -1) next.push(v);
+              }
+            }
+            if (next.length) next.sort((a, b) => a - b);
+            l.rowsActive = next.length ? next : null;
+          }
+        }
+        savePolyrhythmToLS();
+        polyResyncActiveNow();
+        polyResyncActiveNow();
+        rebuildPolyrhythmUI();
+        syncPolyrhythmUI();
+      });
+      P.rowCycleInput = rowCycleInput;
+      global.appendChild(mkControl('Row cycle length (rows)', rowCycleInput));
+    }
+
     // Test / Stop
     const testBtn = document.createElement('button');
     testBtn.type = 'button';
@@ -8314,6 +9793,259 @@ function coercePolyLayer(raw, fallbackIdx = 0) {
     });
     P.addBtn = addBtn;
     global.appendChild(addBtn);
+
+    // Reset layers
+    const resetBtn = document.createElement('button');
+    resetBtn.type = 'button';
+    resetBtn.className = 'pill';
+    resetBtn.textContent = 'Reset layers';
+    resetBtn.addEventListener('click', () => {
+      if (!confirm('Reset all polyrhythm layers? This will remove all layers and cannot be undone.')) return;
+      try { cancelScheduledPolyAudioNow(); } catch (_) {}
+      try {
+        if (Array.isArray(state.polyLayers)) {
+          for (let i = 0; i < state.polyLayers.length; i++) {
+            const l = state.polyLayers[i];
+            if (l && l.id) { try { dropPolyBellSpatialStagesForLayer(l.id); } catch (_) {} }
+          }
+        }
+      } catch (_) {}
+      try { polySchedNextById = Object.create(null); } catch (_) {}
+      state.polyLayers = [];
+      savePolyrhythmToLS();
+      rebuildPolyrhythmUI();
+      polyResyncActiveNow();
+    });
+    P.resetBtn = resetBtn;
+    global.appendChild(resetBtn);
+
+    // Presets (inline details panel)
+    const presetsDetails = document.createElement('details');
+    presetsDetails.className = 'rg-poly-presets-details';
+    const presetsSummary = document.createElement('summary');
+    presetsSummary.className = 'pill rg-poly-presets-summary';
+    presetsSummary.textContent = 'Presets';
+    presetsDetails.appendChild(presetsSummary);
+
+    // Persist open/closed state across rebuilds (UI-only)
+    presetsDetails.open = !!P.presetsOpen;
+    presetsDetails.addEventListener('toggle', () => { P.presetsOpen = presetsDetails.open; });
+
+    const presetsPanel = document.createElement('div');
+    presetsPanel.className = 'rg-poly-presets-panel';
+    presetsDetails.appendChild(presetsPanel);
+
+    const percSel = document.createElement('select');
+    polyPopulatePresetSelect(percSel, POLY_LAYER_PRESET_LIBRARY.percussion, 'Percussion presets…');
+    percSel.addEventListener('change', () => {
+      const id = percSel.value;
+      if (!id) return;
+      percSel.value = '';
+      polyApplyLayerPresetById(id);
+    });
+    presetsPanel.appendChild(mkControl('Percussion', percSel));
+
+    const quickSel = document.createElement('select');
+    polyPopulatePresetSelect(quickSel, POLY_LAYER_PRESET_LIBRARY.quick, 'Bell / Synth presets…');
+    quickSel.addEventListener('change', () => {
+      const id = quickSel.value;
+      if (!id) return;
+      quickSel.value = '';
+      polyApplyLayerPresetById(id);
+    });
+    presetsPanel.appendChild(mkControl('Bell / Synth (quick)', quickSel));
+
+    // Harmony/Bass builder (v021_p07): tone-count + rhythm + deterministic tone-set suggestions.
+    try {
+      const hbWrap = document.createElement('div');
+      hbWrap.className = 'rg-poly-hb-builder';
+
+      const hbTitle = document.createElement('div');
+      hbTitle.className = 'rg-poly-hb-title';
+      hbTitle.textContent = 'Harmony/Bass builder';
+      hbWrap.appendChild(hbTitle);
+
+      // Tones (unique)
+      const hbToneCountSel = document.createElement('select');
+      for (let i = 1; i <= 6; i++) {
+        const o = document.createElement('option');
+        o.value = String(i);
+        o.textContent = String(i);
+        hbToneCountSel.appendChild(o);
+      }
+      const hbToneCountDefault = clamp(parseInt(P.hbToneCount, 10) || 3, 1, 6);
+      hbToneCountSel.value = String(hbToneCountDefault);
+      hbWrap.appendChild(mkControl('Tones', hbToneCountSel));
+
+      // Rhythm
+      const hbRhythmSel = document.createElement('select');
+      polyPopulatePresetSelect(hbRhythmSel, POLY_HB_RHYTHM_PRESETS, 'Rhythms…');
+      const hbRhythmDefault = String(P.hbRhythmId || (POLY_HB_RHYTHM_PRESETS[0] && POLY_HB_RHYTHM_PRESETS[0].id) || '');
+      if (hbRhythmDefault) hbRhythmSel.value = hbRhythmDefault;
+      hbWrap.appendChild(mkControl('Rhythm', hbRhythmSel));
+
+      // Tone-set suggestions (deterministic)
+      const hbToneSetSel = document.createElement('select');
+      hbWrap.appendChild(mkControl('Tone set', hbToneSetSel));
+
+      // Add as (Bell / Synth)
+      const hbAddAsSel = document.createElement('select');
+      {
+        const o1 = document.createElement('option'); o1.value = 'bell'; o1.textContent = 'Bell layer';
+        const o2 = document.createElement('option'); o2.value = 'synth'; o2.textContent = 'Synth layer';
+        hbAddAsSel.appendChild(o1); hbAddAsSel.appendChild(o2);
+      }
+      hbAddAsSel.value = String(P.hbAddAs || 'bell');
+      hbWrap.appendChild(mkControl('Add as', hbAddAsSel));
+
+      // Synth preset (only shown when Add as = synth)
+      const hbSynthSel = document.createElement('select');
+      const hbSynthCtl = mkControl('Synth preset', hbSynthSel);
+      hbWrap.appendChild(hbSynthCtl);
+
+      // Add button
+      const hbAddBtn = document.createElement('button');
+      hbAddBtn.type = 'button';
+      hbAddBtn.className = 'pill';
+      hbAddBtn.textContent = 'Add preset';
+      hbWrap.appendChild(hbAddBtn);
+
+      const hbNote = document.createElement('div');
+      hbNote.className = 'rg-poly-hb-note';
+      hbWrap.appendChild(hbNote);
+
+      presetsPanel.appendChild(hbWrap);
+
+      // Populate synth options (tone presets only)
+      try {
+        hbSynthSel.innerHTML = '';
+        const keys = [];
+        for (const k in POLY_SYNTH_PRESETS) {
+          if (!Object.prototype.hasOwnProperty.call(POLY_SYNTH_PRESETS, k)) continue;
+          const p = POLY_SYNTH_PRESETS[k];
+          if (!p || String(p.kind || '') !== 'tone') continue;
+          keys.push(k);
+        }
+        for (let i = 0; i < keys.length; i++) {
+          const k = keys[i];
+          const p = POLY_SYNTH_PRESETS[k];
+          const o = document.createElement('option');
+          o.value = String(k);
+          o.textContent = String((p && p.label) ? p.label : k);
+          hbSynthSel.appendChild(o);
+        }
+
+        let want = String(P.hbSynthPreset || 'tone_sine');
+        if (!want || !POLY_SYNTH_PRESETS[want] || String(POLY_SYNTH_PRESETS[want].kind || '') !== 'tone') {
+          want = (keys[0] ? String(keys[0]) : 'tone_sine');
+        }
+        hbSynthSel.value = want;
+        P.hbSynthPreset = want;
+      } catch (_) {}
+
+      // Suggestions state
+      let hbSugById = Object.create(null);
+
+      function hbUpdateSynthVisibility() {
+        const isSynth = (String(hbAddAsSel.value || 'bell') === 'synth');
+        setVisible(hbSynthCtl, isSynth);
+      }
+
+      function hbRebuildToneSuggestions(keepValue) {
+        hbSugById = Object.create(null);
+        const tc = clamp(parseInt(hbToneCountSel.value, 10) || 3, 1, 6);
+        const sug = polyHBGenerateToneSetSuggestions(tc) || [];
+
+        hbToneSetSel.innerHTML = '';
+        const ph = document.createElement('option');
+        ph.value = '';
+        ph.textContent = sug.length ? 'Tone sets…' : 'No tone sets available';
+        hbToneSetSel.appendChild(ph);
+
+        for (let i = 0; i < sug.length; i++) {
+          const s = sug[i];
+          if (!s || !s.id) continue;
+          hbSugById[s.id] = s;
+          const o = document.createElement('option');
+          o.value = String(s.id);
+          o.textContent = String(s.label || s.id || '');
+          hbToneSetSel.appendChild(o);
+        }
+
+        const want = String(keepValue || P.hbToneSetId || '');
+        if (want && hbSugById[want]) hbToneSetSel.value = want;
+        else if (sug.length) hbToneSetSel.value = String(sug[0].id);
+        else hbToneSetSel.value = '';
+
+        P.hbToneSetId = String(hbToneSetSel.value || '');
+
+        hbAddBtn.disabled = !sug.length;
+        hbNote.textContent = sug.length ? '' : 'Tip: try fewer tones, or increase Stage / adjust pitch mapping.';
+      }
+
+      hbUpdateSynthVisibility();
+      hbRebuildToneSuggestions(P.hbToneSetId);
+
+      hbToneCountSel.addEventListener('change', () => {
+        const tc = clamp(parseInt(hbToneCountSel.value, 10) || 3, 1, 6);
+        P.hbToneCount = tc;
+        hbRebuildToneSuggestions(P.hbToneSetId);
+      });
+
+      hbRhythmSel.addEventListener('change', () => {
+        P.hbRhythmId = String(hbRhythmSel.value || '');
+      });
+
+      hbToneSetSel.addEventListener('change', () => {
+        P.hbToneSetId = String(hbToneSetSel.value || '');
+      });
+
+      hbAddAsSel.addEventListener('change', () => {
+        P.hbAddAs = String(hbAddAsSel.value || 'bell');
+        hbUpdateSynthVisibility();
+      });
+
+      hbSynthSel.addEventListener('change', () => {
+        P.hbSynthPreset = String(hbSynthSel.value || '');
+      });
+
+      hbAddBtn.addEventListener('click', () => {
+        try {
+          const sugId = String(hbToneSetSel.value || '').trim();
+          const sug = hbSugById[sugId] || null;
+          if (!sug || !Array.isArray(sug.tokens) || !sug.tokens.length) return;
+
+          const rhythmId = String(hbRhythmSel.value || P.hbRhythmId || 'hb_pedal_quarters');
+          const phrase = polyHBMakePhraseFromTokens(sug.tokens, rhythmId);
+          if (!phrase) return;
+
+          if (!Array.isArray(state.polyLayers)) state.polyLayers = [];
+          const layer = makeDefaultPolyLayer();
+          layer.type = 'phrase';
+          layer.phrase = phrase;
+          layer.token = clamp(parseInt(sug.tokens[0], 10) || 1, 1, 12);
+
+          const addAs = String(hbAddAsSel.value || 'bell');
+          if (addAs === 'synth') {
+            layer.sound = 'synth';
+            layer.pitchSource = 'bell12';
+            layer.synthPreset = String(hbSynthSel.value || P.hbSynthPreset || layer.synthPreset || 'tone_sine');
+            layer.volume = 56;
+          } else {
+            layer.sound = 'bell';
+            layer.volume = 62;
+          }
+
+          state.polyLayers.push(layer);
+          savePolyrhythmToLS();
+          rebuildPolyrhythmUI();
+          polyResyncActiveNow();
+        } catch (_) {}
+      });
+    } catch (_) {}
+
+    global.appendChild(presetsDetails);
+
 
     const layersWrap = document.createElement('div');
     layersWrap.className = 'rg-poly-layers';
@@ -8387,6 +10119,8 @@ function coercePolyLayer(raw, fallbackIdx = 0) {
       removeBtn.addEventListener('click', () => {
         // Cancel only polyrhythm scheduled audio (not base bells)
         try { cancelScheduledPolyAudioNow(); } catch (_) {}
+        // v021_p02_poly_bell_spatial_token_custom_drag_fix: drop per-layer poly spatial stages
+        try { dropPolyBellSpatialStagesForLayer(layer.id); } catch (_) {}
 
         if (Array.isArray(state.polyLayers)) {
           const idx = state.polyLayers.findIndex(l => l && l.id === layer.id);
@@ -8462,6 +10196,61 @@ function coercePolyLayer(raw, fallbackIdx = 0) {
         syncPolyrhythmUI();
       });
       controls.appendChild(mkControl('Offset', offsetSel));
+
+      // v021_p04_poly_global_row_gating: per-layer active row slots (global scope only)
+      let rowsCtl = null;
+      let rowSlotBtns = null;
+      if (coercePolyScope(state.polyScope) === 'global') {
+        const n = clampInt(state.polyRowCycleLen, 1, 32, 1);
+        if (n > 1) {
+          const rowsWrap = document.createElement('div');
+          rowsWrap.className = 'rg-poly-row-slots';
+          rowSlotBtns = [];
+          for (let s = 1; s <= n; s++) {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'pill rg-mini rg-poly-row-slot';
+            b.textContent = String(s);
+            b.dataset.slot = String(s);
+            b.addEventListener('click', () => {
+              const nn = clampInt(state.polyRowCycleLen, 1, 32, 1);
+              const slot = s;
+              let arr = (Array.isArray(layer.rowsActive) && layer.rowsActive.length) ? layer.rowsActive.slice() : null;
+              if (arr == null) {
+                // All -> remove slot -> explicit subset
+                arr = [];
+                for (let k = 1; k <= nn; k++) if (k !== slot) arr.push(k);
+              } else {
+                const ix = arr.indexOf(slot);
+                if (ix !== -1) {
+                  if (arr.length <= 1) return; // keep at least one
+                  arr.splice(ix, 1);
+                } else {
+                  arr.push(slot);
+                }
+                const tmp = [];
+                for (let t = 0; t < arr.length; t++) {
+                  const v = parseInt(arr[t], 10);
+                  if (Number.isFinite(v) && v >= 1 && v <= nn) {
+                    if (tmp.indexOf(v) === -1) tmp.push(v);
+                  }
+                }
+                if (tmp.length) tmp.sort((a, b) => a - b);
+                arr = tmp;
+              }
+              if (arr && arr.length === nn) arr = null;
+              layer.rowsActive = arr;
+              savePolyrhythmToLS();
+              polyResyncActiveNow();
+              syncPolyrhythmUI();
+            });
+            rowSlotBtns.push(b);
+            rowsWrap.appendChild(b);
+          }
+          rowsCtl = mkControl('Rows active', rowsWrap);
+          controls.appendChild(rowsCtl);
+        }
+      }
 
       // Volume
       const volRange = document.createElement('input');
@@ -8613,15 +10402,92 @@ function coercePolyLayer(raw, fallbackIdx = 0) {
         b.dataset.token = String(k + 1);
         b.addEventListener('click', (ev) => {
           ev.preventDefault();
+          const now = perfNow();
+          if (ui.polyTestKbIgnoreClickUntilMs && now < ui.polyTestKbIgnoreClickUntilMs) return;
           const tok = clamp(parseInt(String(b.dataset.token || ''), 10) || (k + 1), 1, 12);
           polyAuditionLayerTokenNow(tok);
         });
         testKbWrap.appendChild(b);
         testKbBtns.push(b);
       }
-      testArea.appendChild(testKbWrap);
+testArea.appendChild(testKbWrap);
 
-      const testCtl = mkControl('Test', testArea);
+// v021_p02_poly_bell_spatial_token_custom_drag_fix: drag-to-play on the test keyboard (mouse + touch)
+const polyTestKbSetActive = (el) => {
+  try { if (ui.polyTestKbActiveEl) ui.polyTestKbActiveEl.classList.remove('is-active'); } catch (_) {}
+  ui.polyTestKbActiveEl = el || null;
+  try { if (ui.polyTestKbActiveEl) ui.polyTestKbActiveEl.classList.add('is-active'); } catch (_) {}
+};
+const hitTestPolyTestKb = (e) => {
+  const x = (e && typeof e.clientX === 'number') ? e.clientX : null;
+  const y = (e && typeof e.clientY === 'number') ? e.clientY : null;
+  if (x == null || y == null) return null;
+  const el = (document.elementFromPoint) ? document.elementFromPoint(x, y) : null;
+  const btn = (el && el.closest) ? el.closest('.rg-quick-bell-btn[data-token]') : null;
+  if (!btn || !testKbWrap.contains(btn)) return null;
+  const t = parseInt(btn.dataset && btn.dataset.token ? btn.dataset.token : '0', 10) || 0;
+  if (t < 1 || t > 12) return null;
+  return { token: t, el: btn };
+};
+const endPolyTestKbDrag = (e) => {
+  if (!ui.polyTestKbDragActive) return;
+  if (ui.polyTestKbOwnerEl && ui.polyTestKbOwnerEl !== testKbWrap) return;
+  if (ui.polyTestKbDragPointerId != null && e && e.pointerId != null && e.pointerId !== ui.polyTestKbDragPointerId) return;
+  ui.polyTestKbDragActive = false;
+  ui.polyTestKbDragPointerId = null;
+  ui.polyTestKbDragLastToken = null;
+  ui.polyTestKbOwnerEl = null;
+  polyTestKbSetActive(null);
+};
+
+testKbWrap.addEventListener('pointerdown', (e) => {
+  const hit = hitTestPolyTestKb(e);
+  if (!hit) return;
+
+  // If another pointer is already dragging, ignore additional touches.
+  if (ui.polyTestKbDragActive && ui.polyTestKbDragPointerId != null && e.pointerId !== ui.polyTestKbDragPointerId) return;
+
+  ui.polyTestKbDragActive = true;
+  ui.polyTestKbDragPointerId = e.pointerId;
+  ui.polyTestKbDragLastToken = hit.token;
+  ui.polyTestKbOwnerEl = testKbWrap;
+  ui.polyTestKbIgnoreClickUntilMs = perfNow() + 350;
+  polyTestKbSetActive(hit.el);
+  try { testKbWrap.setPointerCapture(e.pointerId); } catch (_) {}
+
+  polyAuditionLayerTokenNow(hit.token);
+  e.preventDefault();
+}, { passive: false });
+
+testKbWrap.addEventListener('pointermove', (e) => {
+  if (!ui.polyTestKbDragActive) return;
+  if (ui.polyTestKbOwnerEl && ui.polyTestKbOwnerEl !== testKbWrap) return;
+  if (ui.polyTestKbDragPointerId != null && e.pointerId !== ui.polyTestKbDragPointerId) return;
+
+  const hit = hitTestPolyTestKb(e);
+  if (!hit) {
+    // Leaving the kb clears the last token so re-entry can ring again.
+    ui.polyTestKbDragLastToken = null;
+    polyTestKbSetActive(null);
+    e.preventDefault();
+    return;
+  }
+
+  if (hit.token === ui.polyTestKbDragLastToken) {
+    e.preventDefault();
+    return;
+  }
+
+  ui.polyTestKbDragLastToken = hit.token;
+  polyTestKbSetActive(hit.el);
+  polyAuditionLayerTokenNow(hit.token);
+  e.preventDefault();
+}, { passive: false });
+
+testKbWrap.addEventListener('pointerup', endPolyTestKbDrag);
+testKbWrap.addEventListener('pointercancel', endPolyTestKbDrag);
+
+const testCtl = mkControl('Test', testArea);
       controls.appendChild(testCtl);
 
       // Token (Pulse)
@@ -8642,7 +10508,7 @@ function coercePolyLayer(raw, fallbackIdx = 0) {
       // Phrase (Phrase)
       const phraseInput = document.createElement('input');
       phraseInput.type = 'text';
-      phraseInput.placeholder = 'e.g., 1234 0ET.. (non-tokens become rests)';
+      phraseInput.placeholder = 'e.g., 1234 0ET..';
       phraseInput.addEventListener('input', () => {
         layer.phrase = String(phraseInput.value || '');
         savePolyrhythmToLS();
@@ -8653,6 +10519,10 @@ function coercePolyLayer(raw, fallbackIdx = 0) {
         polyResyncActiveNow();
       });
       const phraseCtl = mkControl('Phrase', phraseInput);
+      const phraseHelp = document.createElement('div');
+      phraseHelp.className = 'control-note rg-muted';
+      phraseHelp.textContent = 'How to write: tokens like 1234 0ET..; use R for rests; add durations like 2q.4e or 2/4, and R/8.';
+      phraseCtl.appendChild(phraseHelp);
       controls.appendChild(phraseCtl);
       // v017_p02_polyrhythm_layer_sound: per-layer bell sound profile UI (Bell layers only)
       const soundDetails = document.createElement('details');
@@ -9146,7 +11016,9 @@ function coercePolyLayer(raw, fallbackIdx = 0) {
       soundTransposeInput.min = '-24';
       soundTransposeInput.max = '24';
       soundTransposeInput.step = '1';
-      soundCustomControls.appendChild(mkControl('Transpose (semis)', soundTransposeInput));
+      const testTransposeCtl = mkControl('Transpose (semis)', soundTransposeInput);
+      testTransposeCtl.classList.add('rg-poly-quick-transpose');
+      testArea.appendChild(testTransposeCtl);
 
       // Layer timbre (0..1)
       function mkPolyRange01() {
@@ -9230,7 +11102,8 @@ function coercePolyLayer(raw, fallbackIdx = 0) {
         const k = String(bellNum);
         const e = bs.perBell[k];
         if (!e) return;
-        if (!e.pitch && !e.timbre && !e.chords) delete bs.perBell[k];
+        const hasSpatial = (e.pan != null) || (e.depth != null) || (e.volMul != null);
+        if (!e.pitch && !e.timbre && !e.chords && !hasSpatial) delete bs.perBell[k];
       }
 
       function mkPerBellGroup(titleText) {
@@ -9341,9 +11214,37 @@ function coercePolyLayer(raw, fallbackIdx = 0) {
         chordIntervals.type = 'text';
         chordIntervals.placeholder = '0 4 7 (optional)';
         chordG.body.appendChild(chordIntervals);
-        rowCtrls.appendChild(chordG.g);
+rowCtrls.appendChild(chordG.g);
 
-        // Data wiring
+// Spatial override (pan/depth/vol)
+const spatialG = mkPerBellGroup('Spatial');
+const spatialPan = document.createElement('input');
+spatialPan.type = 'number';
+spatialPan.min = '-1';
+spatialPan.max = '1';
+spatialPan.step = '0.01';
+spatialPan.placeholder = 'Pan L/R';
+spatialPan.title = 'Pan (-1..1)';
+const spatialDepth = document.createElement('input');
+spatialDepth.type = 'number';
+spatialDepth.min = '0';
+spatialDepth.max = '1';
+spatialDepth.step = '0.01';
+spatialDepth.placeholder = 'Depth F/B';
+spatialDepth.title = 'Depth (0..1)';
+const spatialVolMul = document.createElement('input');
+spatialVolMul.type = 'number';
+spatialVolMul.min = '0';
+spatialVolMul.max = '100';
+spatialVolMul.step = '1';
+spatialVolMul.placeholder = 'Vol %';
+spatialVolMul.title = 'Volume multiplier (0..100%)';
+spatialG.body.appendChild(spatialPan);
+spatialG.body.appendChild(spatialDepth);
+spatialG.body.appendChild(spatialVolMul);
+rowCtrls.appendChild(spatialG.g);
+
+// Data wiring
         clearBtn.addEventListener('click', () => {
           const bs = ensureLayerBellSound();
           const k = String(b);
@@ -9490,12 +11391,70 @@ function coercePolyLayer(raw, fallbackIdx = 0) {
           }
           savePolyrhythmToLS();
         });
-        chordIntervals.addEventListener('change', () => {
-          savePolyrhythmToLS();
-          polyResyncActiveNow();
-        });
+chordIntervals.addEventListener('change', () => {
+  savePolyrhythmToLS();
+  polyResyncActiveNow();
+});
 
-        perBellUi[b] = {
+spatialG.cb.addEventListener('change', () => {
+  const bs = ensureLayerBellSound();
+  const k = String(b);
+  if (spatialG.cb.checked) {
+    const e = ensureLayerPerBellEntry(b);
+    if (e.pan == null) e.pan = 0;
+    if (e.depth == null) e.depth = 0;
+    if (e.volMul == null) e.volMul = 100;
+  } else {
+    const e = bs.perBell[k];
+    if (e) {
+      if (e.pan != null) delete e.pan;
+      if (e.depth != null) delete e.depth;
+      if (e.volMul != null) delete e.volMul;
+    }
+    cleanupLayerPerBellEntry(b);
+  }
+  savePolyrhythmToLS();
+  polyResyncActiveNow();
+  syncPolyrhythmUI();
+});
+
+spatialPan.addEventListener('input', () => {
+  const e = ensureLayerPerBellEntry(b);
+  const v = String(spatialPan.value || '').trim();
+  const n = v ? Number(v) : NaN;
+  e.pan = Number.isFinite(n) ? clamp(n, -1, 1) : 0;
+  savePolyrhythmToLS();
+});
+spatialPan.addEventListener('change', () => {
+  savePolyrhythmToLS();
+  polyResyncActiveNow();
+});
+
+spatialDepth.addEventListener('input', () => {
+  const e = ensureLayerPerBellEntry(b);
+  const v = String(spatialDepth.value || '').trim();
+  const n = v ? Number(v) : NaN;
+  e.depth = Number.isFinite(n) ? clamp(n, 0, 1) : 0;
+  savePolyrhythmToLS();
+});
+spatialDepth.addEventListener('change', () => {
+  savePolyrhythmToLS();
+  polyResyncActiveNow();
+});
+
+spatialVolMul.addEventListener('input', () => {
+  const e = ensureLayerPerBellEntry(b);
+  const v = String(spatialVolMul.value || '').trim();
+  const n = v ? Number(v) : NaN;
+  e.volMul = Number.isFinite(n) ? clamp(n, 0, 100) : 100;
+  savePolyrhythmToLS();
+});
+spatialVolMul.addEventListener('change', () => {
+  savePolyrhythmToLS();
+  polyResyncActiveNow();
+});
+
+perBellUi[b] = {
           clearBtn,
           pitchToggle: pitchG.cb,
           pitchBody: pitchG.body,
@@ -9510,8 +11469,13 @@ function coercePolyLayer(raw, fallbackIdx = 0) {
           chordBody: chordG.body,
           chordEnabled,
           chordPresetSel,
-          chordIntervals,
-        };
+  chordIntervals,
+  spatialToggle: spatialG.cb,
+  spatialBody: spatialG.body,
+  spatialPan,
+  spatialDepth,
+  spatialVolMul,
+};
       }
 
       soundProfileSel.addEventListener('change', () => {
@@ -9594,6 +11558,7 @@ function coercePolyLayer(raw, fallbackIdx = 0) {
         layer.bellSound.chords.enabled = !!soundChordsEnabled.checked;
         savePolyrhythmToLS();
         polyResyncActiveNow();
+        syncPolyrhythmUI();
       });
 
       soundChordsPresetSel.addEventListener('change', () => {
@@ -9627,13 +11592,14 @@ function coercePolyLayer(raw, fallbackIdx = 0) {
       card.appendChild(methodNote);
 
       P.layerUiById[layer.id] = {
-        card, enabled, typeSel, soundSel, intervalSel, offsetSel, volRange, testCtl, testArea, testTickBtn, testPercBtn, testKbWrap, testKbBtns,
+        card, enabled, typeSel, soundSel, intervalSel, offsetSel, rowsCtl, rowSlotBtns, volRange, testCtl, testArea, testTickBtn, testPercBtn, testKbWrap, testKbBtns,
         tokenSel, phraseInput, tokenCtl, phraseCtl, methodNote,
         soundDetails, soundProfileSel, soundBadge, soundCustomWrap,
         // v018_p01_poly_synth_core
         soundBellControls: soundControls, soundProfileCtl,
         soundSynthControls, synthPresetSel, pitchSourceSel, pitchBaseCtl, pitchBaseInput, pitchHzCtl, pitchHzInput,
         soundPercControls, percPresetSel,
+        testTransposeCtl,
         soundTransposeInput,
         soundRingLengthRange: rlCtl.range, soundRingLengthValue: rlCtl.val,
         soundBrightnessRange: brCtl.range, soundBrightnessValue: brCtl.val,
@@ -9651,6 +11617,8 @@ function coercePolyLayer(raw, fallbackIdx = 0) {
     if (!ui.poly) return;
     const P = ui.poly;
 
+    if (P.scopeSelect) P.scopeSelect.value = coercePolyScope(state.polyScope);
+
     function setVisible(el, on) {
       if (!el) return;
       el.style.display = on ? '' : 'none';
@@ -9663,6 +11631,8 @@ function coercePolyLayer(raw, fallbackIdx = 0) {
     }
 
     if (P.masterVol) P.masterVol.value = String(clamp(Number(state.polyMasterVolume) || 0, 0, 100));
+
+    if (P.rowCycleInput) P.rowCycleInput.value = String(clampInt(state.polyRowCycleLen, 1, 32, 1));
     applyPolyMasterGain();
 
     if (P.testBtn) {
@@ -9692,6 +11662,24 @@ function coercePolyLayer(raw, fallbackIdx = 0) {
       if (lu.offsetSel.value !== layer.offset) lu.offsetSel.value = layer.offset;
 
       lu.volRange.value = String(clamp(Number(layer.volume) || 0, 0, 100));
+
+      // v021_p04_poly_global_row_gating
+      if (lu.rowsCtl) {
+        const n = clampInt(state.polyRowCycleLen, 1, 32, 1);
+        const isGlobal = (coercePolyScope(state.polyScope) === 'global');
+        setVisible(lu.rowsCtl, (isGlobal && n > 1));
+      }
+      if (lu.rowSlotBtns && lu.rowSlotBtns.length) {
+        const ra = (Array.isArray(layer.rowsActive) && layer.rowsActive.length) ? layer.rowsActive : null;
+        for (let b = 0; b < lu.rowSlotBtns.length; b++) {
+          const btn = lu.rowSlotBtns[b];
+          if (!btn) continue;
+          const slot = parseInt(btn.dataset.slot, 10) || (b + 1);
+          const on = (!ra) || (ra.indexOf(slot) !== -1);
+          btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+          if (on) btn.classList.add('active'); else btn.classList.remove('active');
+        }
+      }
       lu.tokenSel.value = String(clamp(parseInt(layer.token, 10) || 1, 1, 12));
       lu.phraseInput.value = String(layer.phrase || '');
 
@@ -9710,6 +11698,7 @@ function coercePolyLayer(raw, fallbackIdx = 0) {
       setVisible(lu.testTickBtn, isTick);
       setVisible(lu.testPercBtn, isPerc);
       setVisible(lu.testKbWrap, (isBell || isSynth));
+      setVisible(lu.testTransposeCtl, (isBell || isSynth));
       const hasSoundDetails = (isBell || isSynth || isPerc);
       setVisible(lu.soundDetails, hasSoundDetails);
       setVisible(lu.soundBellControls, isBell);
@@ -9843,9 +11832,16 @@ function coercePolyLayer(raw, fallbackIdx = 0) {
           if (lu.soundStrikeHardnessValue) lu.soundStrikeHardnessValue.textContent = fmtDepth2(v);
         }
 
-        if (lu.soundChordsEnabled) lu.soundChordsEnabled.checked = !!bs.chords.enabled;
-        if (lu.soundChordsPresetSel) lu.soundChordsPresetSel.value = String(bs.chords.preset || 'unison');
-        if (lu.soundChordsIntervalsInput) lu.soundChordsIntervalsInput.value = String(bs.chords.customIntervals || '');
+const chordsOn = !!bs.chords.enabled;
+if (lu.soundChordsEnabled) lu.soundChordsEnabled.checked = chordsOn;
+if (lu.soundChordsPresetSel) {
+  lu.soundChordsPresetSel.value = String(bs.chords.preset || 'unison');
+  lu.soundChordsPresetSel.disabled = !chordsOn;
+}
+if (lu.soundChordsIntervalsInput) {
+  lu.soundChordsIntervalsInput.value = String(bs.chords.customIntervals || '');
+  lu.soundChordsIntervalsInput.disabled = !chordsOn;
+}
 
         const pb = (bs.perBell && typeof bs.perBell === 'object') ? bs.perBell : {};
         if (lu.perBellUi && typeof lu.perBellUi === 'object') {
@@ -9866,8 +11862,14 @@ function coercePolyLayer(raw, fallbackIdx = 0) {
             ui.timbreRL.value = hasTimbre ? String((ent.timbre.ringLength01 != null) ? ent.timbre.ringLength01 : bs.timbre.ringLength01) : '';
             ui.timbreBR.value = hasTimbre ? String((ent.timbre.brightness01 != null) ? ent.timbre.brightness01 : bs.timbre.brightness01) : '';
             ui.timbreHD.value = hasTimbre ? String((ent.timbre.strikeHardness01 != null) ? ent.timbre.strikeHardness01 : bs.timbre.strikeHardness01) : '';
+const hasSpatial = !!(ent && (ent.pan != null || ent.depth != null || ent.volMul != null));
+ui.spatialToggle.checked = hasSpatial;
+ui.spatialBody.style.display = hasSpatial ? '' : 'none';
+ui.spatialPan.value = hasSpatial ? String(clamp(Number(ent.pan) || 0, -1, 1)) : '0';
+ui.spatialDepth.value = hasSpatial ? String(clamp(Number(ent.depth) || 0, 0, 1)) : '0';
+ui.spatialVolMul.value = hasSpatial ? String(clamp(Number((ent.volMul != null) ? ent.volMul : 100) || 100, 0, 100)) : '100';
 
-            const hasChord = !!(ent && ent.chords);
+const hasChord = !!(ent && ent.chords);
             ui.chordToggle.checked = hasChord;
             ui.chordBody.style.display = hasChord ? '' : 'none';
             ui.chordEnabled.checked = hasChord ? !!ent.chords.enabled : true;
@@ -10346,11 +12348,21 @@ function parseCustomDroneIntervalsText(raw, cap) {
 
 function buildLayer1FromLegacyDroneState() {
   const type = state.droneType;
+  const fallbackKey = (SCALE_LIBRARY.find(s => s.key === 'Fs_major')
+    ? 'Fs_major'
+    : (SCALE_LIBRARY[0] ? SCALE_LIBRARY[0].key : 'Fs_major'));
+  const lastKey = (isValidScaleKey(state.droneLastKeyScaleKey) && state.droneLastKeyScaleKey !== 'custom_hz')
+    ? String(state.droneLastKeyScaleKey || '')
+    : ((isValidScaleKey(state.droneScaleKey) && state.droneScaleKey !== 'custom_hz')
+      ? String(state.droneScaleKey || '')
+      : fallbackKey);
   const layer = {
     muted: false,
     type,
     followBellKey: false,
+    temperamentOverrideKey: 'inherit',
     key: state.droneScaleKey,
+    lastKeyScaleKey: (state.droneScaleKey === 'custom_hz') ? lastKey : state.droneScaleKey,
     register: clamp(Number(state.droneOctaveC) || 3, 1, 6),
     customHzEnabled: state.droneScaleKey === 'custom_hz',
     customHz: coerceCustomHz(state.droneCustomHz, 440),
@@ -10395,11 +12407,25 @@ function coerceDroneLayer(raw, fallback) {
   const type = (typeof v.type === 'string' && v.type) ? v.type : base.type;
   const soundType = (String(v.soundType || base.soundType || '') === 'synth') ? 'synth' : 'drone';
 
+  const fallbackKey = (SCALE_LIBRARY.find(s => s.key === 'Fs_major')
+    ? 'Fs_major'
+    : (SCALE_LIBRARY[0] ? SCALE_LIBRARY[0].key : 'Fs_major'));
+  const lastRaw = (typeof v.lastKeyScaleKey === 'string' && v.lastKeyScaleKey)
+    ? v.lastKeyScaleKey
+    : (base && typeof base.lastKeyScaleKey === 'string' ? base.lastKeyScaleKey : '');
+  const lastCoerced = (isValidScaleKey(lastRaw) && lastRaw !== 'custom_hz')
+    ? String(lastRaw || '')
+    : ((base && isValidScaleKey(base.lastKeyScaleKey) && base.lastKeyScaleKey !== 'custom_hz')
+      ? String(base.lastKeyScaleKey || '')
+      : fallbackKey);
+
   const out = {
     muted: !!v.muted,
     type,
     followBellKey: !!v.followBellKey,
+    temperamentOverrideKey: coerceTemperamentOverrideKey(v.temperamentOverrideKey),
     key: (typeof v.key === 'string' && v.key) ? v.key : base.key,
+    lastKeyScaleKey: lastCoerced,
     register: clamp(Number(v.register) || base.register || 3, 1, 6),
     customHzEnabled: !!v.customHzEnabled,
     customHz: coerceCustomHz(v.customHz, base.customHz || 440),
@@ -10416,6 +12442,12 @@ function coerceDroneLayer(raw, fallback) {
   // Keep customHzEnabled consistent with key selection.
   if (out.key === 'custom_hz') out.customHzEnabled = true;
   if (out.key !== 'custom_hz') out.customHzEnabled = false;
+
+  // Keep lastKeyScaleKey consistent with key selection.
+  if (out.key !== 'custom_hz') out.lastKeyScaleKey = out.key;
+  if (out.key === 'custom_hz') {
+    if (!isValidScaleKey(out.lastKeyScaleKey) || out.lastKeyScaleKey === 'custom_hz') out.lastKeyScaleKey = fallbackKey;
+  }
 
   return out;
 }
@@ -10464,6 +12496,15 @@ function syncLegacyDroneStateFromLayer1() {
 
   state.droneType = l1.type;
   state.droneScaleKey = l1.key;
+
+  const fallbackKey = (SCALE_LIBRARY.find(s => s.key === 'Fs_major')
+    ? 'Fs_major'
+    : (SCALE_LIBRARY[0] ? SCALE_LIBRARY[0].key : 'Fs_major'));
+  const l1Last = (l1 && typeof l1.lastKeyScaleKey === 'string' && l1.lastKeyScaleKey)
+    ? String(l1.lastKeyScaleKey || '')
+    : '';
+  const safeLast = (isValidScaleKey(l1Last) && l1Last !== 'custom_hz') ? l1Last : fallbackKey;
+  state.droneLastKeyScaleKey = (String(l1.key || '') === 'custom_hz') ? safeLast : String(l1.key || safeLast);
   state.droneOctaveC = clamp(Number(l1.register) || 3, 1, 6);
   state.droneCustomHz = coerceCustomHz(l1.customHz, 440);
 
@@ -10487,6 +12528,13 @@ function syncLayer1FromLegacyDroneState() {
   // NOTE: ensureDroneLayersState() mirrors Layer 1 -> legacy, so capture desired legacy values first.
   const desiredType = state.droneType;
   const desiredKey = state.droneScaleKey;
+  const fallbackKey = (SCALE_LIBRARY.find(s => s.key === 'Fs_major')
+    ? 'Fs_major'
+    : (SCALE_LIBRARY[0] ? SCALE_LIBRARY[0].key : 'Fs_major'));
+  const rawLast = (isValidScaleKey(state.droneLastKeyScaleKey) && state.droneLastKeyScaleKey !== 'custom_hz')
+    ? String(state.droneLastKeyScaleKey || '')
+    : fallbackKey;
+  const desiredLastKey = (String(desiredKey || '') === 'custom_hz') ? rawLast : String(desiredKey || rawLast);
   const desiredRegister = clamp(Number(state.droneOctaveC) || 3, 1, 6);
   const desiredCustomHz = coerceCustomHz(state.droneCustomHz, 440);
   const desiredVariants = {
@@ -10505,6 +12553,7 @@ function syncLayer1FromLegacyDroneState() {
 
   l1.type = desiredType;
   l1.key = desiredKey;
+  l1.lastKeyScaleKey = desiredLastKey;
   l1.register = desiredRegister;
   l1.customHz = desiredCustomHz;
   l1.customHzEnabled = (l1.key === 'custom_hz');
@@ -10566,11 +12615,22 @@ function makeNewDroneLayerTemplate() {
   ensureDroneLayersState();
   const base = state.droneLayers[0] || buildLayer1FromLegacyDroneState();
   const type = base.type || state.droneType;
+  const fallbackKey = (SCALE_LIBRARY.find(s => s.key === 'Fs_major')
+    ? 'Fs_major'
+    : (SCALE_LIBRARY[0] ? SCALE_LIBRARY[0].key : 'Fs_major'));
+  const baseLast = (base && typeof base.lastKeyScaleKey === 'string' && base.lastKeyScaleKey)
+    ? String(base.lastKeyScaleKey || '')
+    : '';
+  const safeLast = (isValidScaleKey(baseLast) && baseLast !== 'custom_hz') ? baseLast : fallbackKey;
+  const seededKey = String(base.key || state.scaleKey || fallbackKey);
+  const seededLast = (seededKey === 'custom_hz') ? safeLast : seededKey;
   return {
     muted: false,
     type,
     followBellKey: true, // default ON for new layers
-    key: base.key || state.scaleKey,
+    temperamentOverrideKey: 'inherit',
+    key: seededKey,
+    lastKeyScaleKey: seededLast,
     register: clamp(Number(base.register) || 3, 1, 6),
     customHzEnabled: false,
     customHz: 440,
@@ -10596,6 +12656,11 @@ function getDroneLayerRootFrequency(layer) {
   const oct = clamp(Number(layer && layer.register) || 3, 1, 6);
   const rootMidi = noteToMidi(def.root, oct);
   return midiToFreq(rootMidi);
+}
+
+function getEffectiveTemperamentForDroneLayer(layer) {
+  if (layer && layer.temperamentOverrideKey && layer.temperamentOverrideKey !== 'inherit') return layer.temperamentOverrideKey;
+  return state.temperamentKey;
 }
 
 function applyDroneSpecVoiceTrim(spec, maxVoicesTotal) {
@@ -10637,6 +12702,7 @@ function computeDroneLayerEffectiveConfigs() {
     if (!eff[i].active) continue;
     const layer = layers[i];
     const f = getDroneLayerRootFrequency(layer);
+    const effectiveTemperamentKey = getEffectiveTemperamentForDroneLayer(layer);
     const vars = {
       density: eff[i].density,
       clusterWidth: layer.variants && layer.variants.clusterWidth,
@@ -10645,7 +12711,7 @@ function computeDroneLayerEffectiveConfigs() {
 
       customIntervals: layer.customIntervals
     };
-    const spec = computeDroneSpec(layer.type, f, nyquist, vars);
+    const spec = computeDroneSpec(layer.type, f, nyquist, vars, effectiveTemperamentKey);
     const n = (spec.voices ? spec.voices.length : 0) + (spec.noise ? 1 : 0);
     eff[i].voiceCount = n;
     total += n;
@@ -10658,6 +12724,7 @@ function computeDroneLayerEffectiveConfigs() {
     for (let i = layers.length - 1; i >= 0 && total > DRONE_GLOBAL_VOICE_CAP; i--) {
       if (!eff[i].active) continue;
       const layer = layers[i];
+      const effectiveTemperamentKey = getEffectiveTemperamentForDroneLayer(layer);
 
       let d = eff[i].density;
       while (d > 1 && total > DRONE_GLOBAL_VOICE_CAP) {
@@ -10673,7 +12740,7 @@ function computeDroneLayerEffectiveConfigs() {
 
           customIntervals: layer.customIntervals
         };
-        const spec = computeDroneSpec(layer.type, f, nyquist, vars);
+        const spec = computeDroneSpec(layer.type, f, nyquist, vars, effectiveTemperamentKey);
         const n = (spec.voices ? spec.voices.length : 0) + (spec.noise ? 1 : 0);
 
         eff[i].density = d;
@@ -10782,6 +12849,7 @@ function startDroneLayer(layerIndex, effCfg) {
   const now = audioCtx.currentTime;
   const nyquist = audioCtx.sampleRate * 0.5;
   const f = getDroneLayerRootFrequency(layer);
+  const effectiveTemperamentKey = getEffectiveTemperamentForDroneLayer(layer);
 
   const eff = effCfg || {};
   const vars = {
@@ -10793,7 +12861,7 @@ function startDroneLayer(layerIndex, effCfg) {
     customIntervals: layer.customIntervals
   };
 
-  let spec = computeDroneSpec(layer.type, f, nyquist, vars);
+  let spec = computeDroneSpec(layer.type, f, nyquist, vars, effectiveTemperamentKey);
   if (Number.isFinite(eff.maxVoicesTotal)) spec = applyDroneSpecVoiceTrim(spec, eff.maxVoicesTotal);
 
   const nodes = [];
@@ -11060,6 +13128,7 @@ function refreshDroneLayer(layerIndex, effCfg) {
 
   const nyquist = audioCtx.sampleRate * 0.5;
   const f = getDroneLayerRootFrequency(layer);
+  const effectiveTemperamentKey = getEffectiveTemperamentForDroneLayer(layer);
 
   const eff = effCfg || {};
   const vars = {
@@ -11071,7 +13140,7 @@ function refreshDroneLayer(layerIndex, effCfg) {
     customIntervals: layer.customIntervals
   };
 
-  let spec = computeDroneSpec(layer.type, f, nyquist, vars);
+  let spec = computeDroneSpec(layer.type, f, nyquist, vars, effectiveTemperamentKey);
   if (Number.isFinite(eff.maxVoicesTotal)) spec = applyDroneSpecVoiceTrim(spec, eff.maxVoicesTotal);
 
   // Update normalization
@@ -11352,6 +13421,28 @@ function syncLayerCardHeaderUI(layerIndex, shell) {
   const layer = state.droneLayers && state.droneLayers[layerIndex];
   if (!layer || !shell) return;
 
+  // Title + temperament override label (UI-only)
+  try {
+    if (shell.title) {
+      const baseTitle = `Layer ${layerIndex + 1}`;
+      const ok = coerceTemperamentOverrideKey(layer.temperamentOverrideKey);
+      let oLabel = '';
+      if (ok === 'equal') oLabel = 'Equal';
+      else if (ok === 'just_5limit') oLabel = 'Just';
+      else if (ok === 'pythagorean') oLabel = 'Pythagorean';
+      else if (ok === 'meantone_quarter') oLabel = 'Meantone';
+
+      shell.title.textContent = '';
+      shell.title.appendChild(document.createTextNode(baseTitle));
+      if (ok !== 'inherit' && oLabel) {
+        const sp = document.createElement('span');
+        sp.className = 'rg-override-label';
+        sp.textContent = `${oLabel} (override)`;
+        shell.title.appendChild(sp);
+      }
+    }
+  } catch (_) {}
+
   const muted = !!layer.muted;
   if (muted) {
     shell.card.classList.add('rg-drone-layer-muted');
@@ -11451,6 +13542,18 @@ function rebuildDroneLayersUI() {
     followCtl.appendChild(followLab);
     followCtl.appendChild(followBtn);
 
+    // Temperament override (per layer; UI/state only)
+    const tempCtl = document.createElement('div');
+    tempCtl.className = 'control';
+    const tempLab = document.createElement('label');
+    tempLab.textContent = 'Temperament';
+    tempLab.htmlFor = 'droneLayerTemperamentOverride_L1';
+    const tempSel = document.createElement('select');
+    tempSel.id = 'droneLayerTemperamentOverride_L1';
+    tempSel.innerHTML = '<option value="inherit">Inherit (Global)</option><option value="equal">Equal</option><option value="just_5limit">Just</option><option value="pythagorean">Pythagorean</option><option value="meantone_quarter">Meantone</option>';
+    tempCtl.appendChild(tempLab);
+    tempCtl.appendChild(tempSel);
+
     // Sound type (classic drone vs synth)
     const soundCtl = document.createElement('div');
     soundCtl.className = 'control';
@@ -11527,6 +13630,7 @@ function rebuildDroneLayersUI() {
 
 
     layer1Body.appendChild(followCtl);
+    layer1Body.appendChild(tempCtl);
     layer1Body.appendChild(soundCtl);
     layer1Body.appendChild(presetCtl);
     layer1Body.appendChild(volCtl);
@@ -11537,6 +13641,16 @@ function rebuildDroneLayersUI() {
       ensureDroneLayersState();
       const l1 = state.droneLayers[0];
       l1.followBellKey = !l1.followBellKey;
+      saveDroneLayersToLS();
+      rebuildDroneLayersUI();
+      if (state.droneOn) refreshAllDroneLayers();
+    });
+
+    tempSel.addEventListener('change', () => {
+      ensureDroneLayersState();
+      const l1 = state.droneLayers[0];
+      l1.temperamentOverrideKey = coerceTemperamentOverrideKey(tempSel.value);
+      markUserTouchedConfig();
       saveDroneLayersToLS();
       rebuildDroneLayersUI();
       if (state.droneOn) refreshAllDroneLayers();
@@ -11637,6 +13751,7 @@ function rebuildDroneLayersUI() {
       const soundSel = document.getElementById('droneLayerSoundType_L1');
       const presetSel = document.getElementById('droneLayerSynthPreset_L1');
       const presetCtl = document.getElementById('droneLayerSynthPresetControl_L1');
+      const tempSel = document.getElementById('droneLayerTemperamentOverride_L1');
       if (followBtn) {
         if (layer.followBellKey) {
           followBtn.classList.add('active');
@@ -11654,6 +13769,7 @@ function rebuildDroneLayersUI() {
       if (soundSel) soundSel.value = st;
       if (presetCtl) presetCtl.classList.toggle('hidden', st !== 'synth');
       if (presetSel) fillPolySynthPresetSelect(presetSel, layer.synthPreset || 'tone_sine');
+      if (tempSel) tempSel.value = coerceTemperamentOverrideKey(layer.temperamentOverrideKey);
 
       if (volIn) volIn.value = String(Math.round(clamp(Number(layer.volume) || 0, 0, 1) * 100));
       if (panIn) panIn.value = fmtPan1(layer.pan);
@@ -11663,10 +13779,14 @@ function rebuildDroneLayersUI() {
       const depthValEl = document.getElementById('droneLayerDepthVal_L1');
       if (depthValEl) depthValEl.textContent = fmtDepth2(layer.depth);
 
-      // Hide/show legacy key controls depending on followBellKey.
+      // Hide/show key controls depending on followBellKey.
+      const rootCtl = (typeof droneRootSelect !== 'undefined' && droneRootSelect) ? droneRootSelect.closest('.control') : null;
+      const modeCtl = (typeof droneModeSelect !== 'undefined' && droneModeSelect) ? droneModeSelect.closest('.control') : null;
       const keyCtl = (typeof droneScaleSelect !== 'undefined' && droneScaleSelect) ? droneScaleSelect.closest('.control') : null;
       const hzCtl = (typeof droneCustomHzInput !== 'undefined' && droneCustomHzInput) ? droneCustomHzInput.closest('.control') : null;
-      if (keyCtl) keyCtl.classList.toggle('hidden', !!layer.followBellKey);
+      if (keyCtl) keyCtl.classList.add('hidden'); // legacy combined selector (kept for compatibility)
+      if (rootCtl) rootCtl.classList.toggle('hidden', !!layer.followBellKey);
+      if (modeCtl) modeCtl.classList.toggle('hidden', !!layer.followBellKey);
       if (hzCtl) hzCtl.classList.toggle('hidden', !!layer.followBellKey || (state.droneScaleKey !== 'custom_hz'));
       if (droneCustomIntervalsControl) droneCustomIntervalsControl.classList.toggle('hidden', String(layer.type || '') !== 'custom');
       if (droneCustomIntervalsInput) droneCustomIntervalsInput.value = String(layer.customIntervals || '');
@@ -11764,18 +13884,54 @@ function rebuildDroneLayersUI() {
       followCtl.appendChild(followBtn);
       shell.body.appendChild(followCtl);
 
-      // Key
-      const keyCtl = cloneControlByChildId('droneScaleSelect', `_L${i + 1}`);
-      if (keyCtl) shell.body.appendChild(keyCtl);
-      const keySel = keyCtl ? keyCtl.querySelector('select') : null;
-      if (keySel) keySel.value = layer.key;
-      if (keyCtl) keyCtl.classList.toggle('hidden', !!layer.followBellKey);
+      // Key (Root + Mode)
+      const rootCtl = cloneControlByChildId('droneRootSelect', `_L${i + 1}`);
+      if (rootCtl) shell.body.appendChild(rootCtl);
+      const rootSel = rootCtl ? rootCtl.querySelector('select') : null;
+
+      const modeCtl = cloneControlByChildId('droneModeSelect', `_L${i + 1}`);
+      if (modeCtl) shell.body.appendChild(modeCtl);
+      const modeSel = modeCtl ? modeCtl.querySelector('select') : null;
+
+      const fallbackKey = (SCALE_LIBRARY.find(s => s.key === 'Fs_major')
+        ? 'Fs_major'
+        : (SCALE_LIBRARY[0] ? SCALE_LIBRARY[0].key : 'Fs_major'));
+      const lastKey = (isValidScaleKey(layer.lastKeyScaleKey) && layer.lastKeyScaleKey !== 'custom_hz')
+        ? String(layer.lastKeyScaleKey || '')
+        : fallbackKey;
+      if (String(layer.key || '') === 'custom_hz') {
+        const parsedLast = parseScaleKey(lastKey) || parseScaleKey(fallbackKey) || parseScaleKey('Fs_major');
+        if (rootSel) rootSel.value = 'custom_hz';
+        if (modeSel) modeSel.value = String((parsedLast && parsedLast.modeSuffix) ? parsedLast.modeSuffix : 'major');
+      } else {
+        const parsed = parseScaleKey(layer.key) || parseScaleKey(fallbackKey) || parseScaleKey('Fs_major');
+        if (rootSel && parsed && parsed.rootPrefix) rootSel.value = String(parsed.rootPrefix);
+        if (modeSel) modeSel.value = String((parsed && parsed.modeSuffix) ? parsed.modeSuffix : 'major');
+      }
+      try { if (rootSel) rootSel.disabled = false; } catch (_) {}
+
+      if (rootCtl) rootCtl.classList.toggle('hidden', !!layer.followBellKey);
+      if (modeCtl) modeCtl.classList.toggle('hidden', !!layer.followBellKey);
 
       // Register
       const regCtl = cloneControlByChildId('droneOctaveSelect', `_L${i + 1}`);
       if (regCtl) shell.body.appendChild(regCtl);
       const regSel = regCtl ? regCtl.querySelector('select') : null;
       if (regSel) regSel.value = String(layer.register);
+
+      // Temperament override (per layer; UI/state only)
+      const tempCtl = document.createElement('div');
+      tempCtl.className = 'control';
+      const tempLab = document.createElement('label');
+      tempLab.textContent = 'Temperament';
+      tempLab.htmlFor = `droneLayerTemperamentOverride_L${i + 1}`;
+      const tempSel = document.createElement('select');
+      tempSel.id = `droneLayerTemperamentOverride_L${i + 1}`;
+      tempSel.innerHTML = '<option value="inherit">Inherit (Global)</option><option value="equal">Equal</option><option value="just_5limit">Just</option><option value="pythagorean">Pythagorean</option><option value="meantone_quarter">Meantone</option>';
+      tempSel.value = coerceTemperamentOverrideKey(layer.temperamentOverrideKey);
+      tempCtl.appendChild(tempLab);
+      tempCtl.appendChild(tempSel);
+      shell.body.appendChild(tempCtl);
 
       // Custom Hz (only when not following and key is custom_hz)
       const hzCtl = cloneControlByChildId('droneCustomHzInput', `_L${i + 1}`);
@@ -11895,11 +14051,46 @@ function rebuildDroneLayersUI() {
         layerUpdateAndRefresh();
       });
 
-      if (keySel) {
-        keySel.addEventListener('change', () => {
+      if (rootSel) {
+        rootSel.addEventListener('change', () => {
           ensureDroneLayersState();
-          layer.key = keySel.value;
-          layer.customHzEnabled = (layer.key === 'custom_hz');
+          const rootVal = String(rootSel.value || 'Fs');
+          if (rootVal === 'custom_hz') {
+            layer.key = 'custom_hz';
+            layer.customHzEnabled = true;
+          } else {
+            layer.key = composeScaleKey(rootVal, String(modeSel ? (modeSel.value || 'major') : 'major'));
+            layer.customHzEnabled = false;
+            layer.lastKeyScaleKey = layer.key;
+          }
+          layerUpdateAndRefresh();
+        });
+      }
+
+      if (modeSel) {
+        modeSel.addEventListener('change', () => {
+          ensureDroneLayersState();
+          const rootVal = String(rootSel ? (rootSel.value || 'Fs') : 'Fs');
+          const modeVal = String(modeSel.value || 'major');
+
+          const fallbackKey = (SCALE_LIBRARY.find(s => s.key === 'Fs_major')
+            ? 'Fs_major'
+            : (SCALE_LIBRARY[0] ? SCALE_LIBRARY[0].key : 'Fs_major'));
+
+          if (rootVal === 'custom_hz') {
+            const prevLast = (isValidScaleKey(layer.lastKeyScaleKey) && layer.lastKeyScaleKey !== 'custom_hz')
+              ? String(layer.lastKeyScaleKey || '')
+              : fallbackKey;
+            const parsedPrev = parseScaleKey(prevLast) || parseScaleKey(fallbackKey) || parseScaleKey('Fs_major');
+            const rp = (parsedPrev && parsedPrev.rootPrefix) ? parsedPrev.rootPrefix : 'Fs';
+            layer.lastKeyScaleKey = composeScaleKey(String(rp), modeVal);
+            layer.key = 'custom_hz';
+            layer.customHzEnabled = true;
+          } else {
+            layer.key = composeScaleKey(rootVal, modeVal);
+            layer.lastKeyScaleKey = layer.key;
+            layer.customHzEnabled = false;
+          }
           layerUpdateAndRefresh();
         });
       }
@@ -11907,6 +14098,15 @@ function rebuildDroneLayersUI() {
         regSel.addEventListener('change', () => {
           ensureDroneLayersState();
           layer.register = clamp(Number(regSel.value) || 3, 1, 6);
+          layerUpdateAndRefresh();
+        });
+      }
+
+      if (tempSel) {
+        tempSel.addEventListener('change', () => {
+          ensureDroneLayersState();
+          layer.temperamentOverrideKey = coerceTemperamentOverrideKey(tempSel.value);
+          markUserTouchedConfig();
           layerUpdateAndRefresh();
         });
       }
@@ -12220,8 +14420,15 @@ function toggleDronePaused() {
 
 
 
+  function getFallbackScaleDef() {
+    return SCALE_LIBRARY.find(s => s && s.key === 'Fs_major')
+      || SCALE_LIBRARY.find(s => s && typeof s.key === 'string' && s.key.endsWith('_major'))
+      || SCALE_LIBRARY[0]
+      || { key: 'Fs_major', label: 'F# major (Ionian)', root: 'F#', intervals: [0,2,4,5,7,9,11,12] };
+  }
+
   function getScaleDefByKey(key) {
-    return SCALE_LIBRARY.find(s => s.key === key) || SCALE_LIBRARY[0];
+    return SCALE_LIBRARY.find(s => s.key === key) || getFallbackScaleDef();
   }
 
   function getBellRootFrequency() {
@@ -12269,6 +14476,214 @@ function toggleDronePaused() {
       bellCustomHzSlider.disabled = !on;
     }
   }
+// v020_p02_bell_tuning_segmented_root_mode: Root/Mode selectors + Key/Custom Hz segmented toggle
+function parseScaleKey(scaleKey) {
+  const k = String(scaleKey || '').trim();
+  if (!k || k === 'custom_hz') return null;
+  const i = k.indexOf('_');
+  if (i <= 0 || i >= k.length - 1) return null;
+  const rootPrefix = k.slice(0, i);
+  const modeSuffix = k.slice(i + 1);
+  if (!rootPrefix || !modeSuffix) return null;
+  return { rootPrefix, modeSuffix };
+}
+
+function composeScaleKey(rootPrefix, modeSuffix) {
+  return String(rootPrefix || '').trim() + '_' + String(modeSuffix || '').trim();
+}
+
+function populateBellRootSelect() {
+  if (!bellRootSelect) return;
+  bellRootSelect.innerHTML = '';
+  const roots = [
+    { value: 'C',  label: 'C'  },
+    { value: 'Cs', label: 'C#' },
+    { value: 'D',  label: 'D'  },
+    { value: 'Ef', label: 'Eb' },
+    { value: 'E',  label: 'E'  },
+    { value: 'F',  label: 'F'  },
+    { value: 'Fs', label: 'F#' },
+    { value: 'G',  label: 'G'  },
+    { value: 'Af', label: 'Ab' },
+    { value: 'A',  label: 'A'  },
+    { value: 'Bf', label: 'Bb' },
+    { value: 'B',  label: 'B'  }
+  ];
+  for (const r of roots) {
+    const opt = document.createElement('option');
+    opt.value = r.value;
+    opt.textContent = r.label;
+    bellRootSelect.appendChild(opt);
+  }
+}
+
+function populateBellModeSelect() {
+  if (!bellModeSelect) return;
+  bellModeSelect.innerHTML = '';
+  const modes = [
+    { value: 'major',          label: 'Major (Ionian)' },
+    { value: 'minor',          label: 'Minor (Aeolian)' },
+    { value: 'dorian',         label: 'Dorian' },
+    { value: 'phrygian',       label: 'Phrygian' },
+    { value: 'lydian',         label: 'Lydian' },
+    { value: 'mixolydian',     label: 'Mixolydian' },
+    { value: 'locrian',        label: 'Locrian' },
+    { value: 'harmonic_minor', label: 'Harmonic Minor' },
+    { value: 'melodic_minor',  label: 'Melodic Minor' }
+  ];
+  for (const m of modes) {
+    const opt = document.createElement('option');
+    opt.value = m.value;
+    opt.textContent = m.label;
+    bellModeSelect.appendChild(opt);
+  }
+}
+
+
+function populateDroneRootSelect() {
+  if (!droneRootSelect) return;
+  droneRootSelect.innerHTML = '';
+  const roots = [
+    { value: 'C',  label: 'C'  },
+    { value: 'Cs', label: 'C#' },
+    { value: 'D',  label: 'D'  },
+    { value: 'Ef', label: 'Eb' },
+    { value: 'E',  label: 'E'  },
+    { value: 'F',  label: 'F'  },
+    { value: 'Fs', label: 'F#' },
+    { value: 'G',  label: 'G'  },
+    { value: 'Af', label: 'Ab' },
+    { value: 'A',  label: 'A'  },
+    { value: 'Bf', label: 'Bb' },
+    { value: 'B',  label: 'B'  }
+  ,
+    { value: 'custom_hz', label: 'Custom (Hz)' }
+  ];
+  for (const r of roots) {
+    const opt = document.createElement('option');
+    opt.value = r.value;
+    opt.textContent = r.label;
+    droneRootSelect.appendChild(opt);
+  }
+}
+
+function populateDroneModeSelect() {
+  if (!droneModeSelect) return;
+  droneModeSelect.innerHTML = '';
+  const modes = [
+    { value: 'major',          label: 'Major (Ionian)' },
+    { value: 'minor',          label: 'Minor (Aeolian)' },
+    { value: 'dorian',         label: 'Dorian' },
+    { value: 'phrygian',       label: 'Phrygian' },
+    { value: 'lydian',         label: 'Lydian' },
+    { value: 'mixolydian',     label: 'Mixolydian' },
+    { value: 'locrian',        label: 'Locrian' },
+    { value: 'harmonic_minor', label: 'Harmonic Minor' },
+    { value: 'melodic_minor',  label: 'Melodic Minor' }];
+  for (const m of modes) {
+    const opt = document.createElement('option');
+    opt.value = m.value;
+    opt.textContent = m.label;
+    droneModeSelect.appendChild(opt);
+  }
+}
+
+function syncDroneRootModeUIFromState() {
+  // Keep legacy hidden select synced
+  try { if (droneScaleSelect) droneScaleSelect.value = String(state.droneScaleKey || ''); } catch (_) {}
+
+  const fallbackKey = (SCALE_LIBRARY.find(s => s.key === 'Fs_major')
+    ? 'Fs_major'
+    : (SCALE_LIBRARY[0] ? SCALE_LIBRARY[0].key : 'Fs_major'));
+
+  const lastKey = (isValidScaleKey(state.droneLastKeyScaleKey) && state.droneLastKeyScaleKey !== 'custom_hz')
+    ? String(state.droneLastKeyScaleKey || '')
+    : fallbackKey;
+
+  if (String(state.droneScaleKey || '') === 'custom_hz') {
+    try { if (droneRootSelect) droneRootSelect.value = 'custom_hz'; } catch (_) {}
+    const parsedLast = parseScaleKey(lastKey) || parseScaleKey(fallbackKey) || parseScaleKey('Fs_major');
+    try { if (droneModeSelect) droneModeSelect.value = String((parsedLast && parsedLast.modeSuffix) ? parsedLast.modeSuffix : 'major'); } catch (_) {}
+    try { if (droneRootSelect) droneRootSelect.disabled = false; } catch (_) {}
+    return;
+  }
+
+  try { if (droneRootSelect) droneRootSelect.disabled = false; } catch (_) {}
+
+  const parsed = parseScaleKey(state.droneScaleKey) || parseScaleKey(fallbackKey) || parseScaleKey('Fs_major');
+  if (parsed) {
+    try { if (droneRootSelect) droneRootSelect.value = String(parsed.rootPrefix); } catch (_) {}
+    try { if (droneModeSelect) droneModeSelect.value = String(parsed.modeSuffix); } catch (_) {}
+  }
+}
+
+function syncBellRootModeAndToggleUIFromState() {
+  // Keep legacy hidden select synced
+  try { if (scaleSelect) scaleSelect.value = String(state.scaleKey || ''); } catch (_) {}
+
+  const isCustom = state.scaleKey === 'custom_hz';
+
+  if (bellTuningKeyBtn) bellTuningKeyBtn.classList.toggle('active', !isCustom);
+  if (bellTuningCustomHzBtn) bellTuningCustomHzBtn.classList.toggle('active', isCustom);
+
+  if (bellCustomHzControl) {
+    if (isCustom) bellCustomHzControl.classList.remove('hidden');
+    else bellCustomHzControl.classList.add('hidden');
+  }
+
+  if (bellRootSelect) bellRootSelect.disabled = !!isCustom;
+  if (bellModeSelect) bellModeSelect.disabled = false;
+
+  const fallbackKey = (SCALE_LIBRARY.find(s => s.key === 'Fs_major')
+    ? 'Fs_major'
+    : (SCALE_LIBRARY[0] ? SCALE_LIBRARY[0].key : 'Fs_major'));
+
+  const lastKey = (isValidScaleKey(state.bellLastKeyScaleKey) && state.bellLastKeyScaleKey !== 'custom_hz')
+    ? String(state.bellLastKeyScaleKey || '')
+    : fallbackKey;
+
+  const keyForUI = isCustom ? lastKey : String(state.scaleKey || '');
+  const parsed = parseScaleKey(keyForUI) || parseScaleKey(fallbackKey);
+
+  if (parsed) {
+    try { if (bellRootSelect) bellRootSelect.value = parsed.rootPrefix; } catch (_) {}
+    try { if (bellModeSelect) bellModeSelect.value = parsed.modeSuffix; } catch (_) {}
+  }
+}
+
+function applyBellScaleKey(nextKey, opts) {
+  const o = (opts && typeof opts === 'object') ? opts : {};
+  const fromUI = !!o.fromUI;
+
+  let k = String(nextKey || '').trim();
+  if (!isValidScaleKey(k)) {
+    k = (SCALE_LIBRARY.find(s => s.key === 'Fs_major')
+      ? 'Fs_major'
+      : (SCALE_LIBRARY[0] ? SCALE_LIBRARY[0].key : 'Fs_major'));
+  }
+
+  if (fromUI) markUserTouchedConfig();
+  state.scaleKey = k;
+
+  try { if (scaleSelect) scaleSelect.value = k; } catch (_) {}
+
+  if (k !== 'custom_hz' && isValidScaleKey(k)) {
+    state.bellLastKeyScaleKey = k;
+  }
+
+  // Match existing scaleSelect change side effects (order preserved)
+  syncBellCustomHzUI();
+  rebuildBellFrequencies();
+  onBellTuningChanged();
+  syncBellPitchSummaryUI();
+
+  // v014_p04_multi_drone_layers: refresh any drone layers that follow the bell key.
+  if (state.droneOn) refreshDrone();
+
+  syncBellRootModeAndToggleUIFromState();
+}
+
+
 
   function syncDroneCustomHzUI() {
     const on = state.droneScaleKey === 'custom_hz';
@@ -12356,11 +14771,11 @@ function stopDrone() {
 
   
 
-  function computeDroneSpec(type, f, nyquist, variants) {
+  function computeDroneSpec(type, f, nyquist, variants, temperamentKey) {
     const MIN_F = 20;
     const MAX_F = Math.max(MIN_F, nyquist * 0.9);
     const clampVoiceFreq = (hz) => clamp(hz, MIN_F, MAX_F);
-    const et = (semi) => Math.pow(2, semi / 12);
+    const et = (semi) => tunedRatioFromSemis(semi, temperamentKey || state.temperamentKey, true);
 
     // v014_p02_drone_variant_knobs: variant knobs
     const v = (variants && typeof variants === 'object') ? variants : null;
@@ -12718,9 +15133,1788 @@ function refreshDrone() {
     return { rows, stage };
   }
 
-  function computeRows() {
+  
+// v019_p01_lead_overlay =========================================================
+// Lead detection + color state (fail-open; defaults to 1 lead unless known).
+const LEAD_OVERLAY_ALPHA_NOTATION = 0.12;
+const LEAD_OVERLAY_ALPHA_SPOTLIGHT = 0.14;
+const LEAD_OVERLAY_ALPHA_DISPLAY = 0.12;
+
+const LEAD_OVERLAY_DEFAULT_PALETTE = [
+  '#332288', '#88CCEE', '#44AA99', '#117733', '#999933', '#DDCC77',
+  '#CC6677', '#882255', '#AA4499', '#0072B2', '#E69F00', '#009E73'
+];
+
+function sanitizeHexColor(v) {
+  if (v == null) return null;
+  let s = String(v).trim();
+  // Accept #RGB and normalize to #RRGGBB.
+  const m3 = /^#([0-9a-fA-F]{3})$/.exec(s);
+  if (m3) {
+    const r = m3[1][0], g = m3[1][1], b = m3[1][2];
+    return ('#' + r + r + g + g + b + b).toUpperCase();
+  }
+  const m6 = /^#([0-9a-fA-F]{6})$/.exec(s);
+  if (m6) return ('#' + m6[1]).toUpperCase();
+  return null;
+}
+
+function getAutoLeadCountRaw() {
+  const mm = state.methodMeta;
+  const lc = (mm && isFinite(mm.leadCount)) ? Number(mm.leadCount) : 0;
+  return (lc > 0) ? Math.max(1, Math.floor(lc)) : 1;
+}
+
+// v019_p08_lead_range_editor: leadCount now reflects the ACTIVE lead model (auto or manual ranges).
+function getLeadCount() {
+  try {
+    const ranges = getActiveLeadRanges();
+    const n = (ranges && ranges.length) ? ranges.length : 1;
+    return Math.max(1, Math.floor(Number(n) || 1));
+  } catch (_) {
+    return 1;
+  }
+}
+
+// v019_p02_sound_profiles_tabs: multi-profile Sound editing helpers (tabs only)
+function sanitizeSoundProfileSnapshot(snap) {
+  const s = isPlainObject(snap) ? deepCloneJsonable(snap) : {};
+  try { delete s.leadProfilesV1; } catch (_) {}
+  return s;
+}
+
+function captureCurrentSoundConfigSnapshot() {
+  // Must match buildSettingsExportPayload(...).config.sound shape (store only config.sound).
+  try {
+    const p = buildSettingsExportPayload({});
+    const snd = (p && p.config && isPlainObject(p.config.sound)) ? deepCloneJsonable(p.config.sound) : {};
+    try { delete snd.leadProfilesV1; } catch (_) {}
+    return snd;
+  } catch (_) {
+    return {};
+  }
+}
+
+function ensureSoundProfilesV1Exists() {
+  const raw = (state && isPlainObject(state.soundProfilesV1)) ? state.soundProfilesV1 : null;
+  const fallback = captureCurrentSoundConfigSnapshot();
+
+  let profiles = (raw && Array.isArray(raw.profiles)) ? raw.profiles : [];
+  profiles = profiles.map((p) => sanitizeSoundProfileSnapshot(p))
+    .filter((p) => p && typeof p === 'object' && !Array.isArray(p))
+    .slice(0, MAX_SAFE_PROFILES);
+
+  if (profiles.length < 1) profiles = [sanitizeSoundProfileSnapshot(fallback)];
+
+  const sel = clampInt(raw ? raw.selectedProfileIndex : 1, 1, profiles.length, 1);
+
+  let leadAssignments = (raw && Array.isArray(raw.leadAssignments)) ? raw.leadAssignments.slice() : [];
+  try { leadAssignments = normalizeSoundLeadAssignmentsArray(leadAssignments, getLeadCount(), profiles.length); } catch (_) {}
+
+  state.soundProfilesV1 = { profiles, selectedProfileIndex: sel, leadAssignments };
+}
+
+
+function syncSoundLeadCountUI() {
+  if (!soundLeadCountValue) return;
+  try { soundLeadCountValue.textContent = String(getLeadCount()); } catch (_) {}
+}
+
+function normalizeSoundLeadAssignmentsArray(arr, leadCount, k) {
+  const lc = Math.max(1, clampInt(Number(leadCount) || 1, 1, 999, 1));
+  const kk = Math.max(1, clampInt(Number(k) || 1, 1, MAX_SAFE_PROFILES, 1));
+  let out = Array.isArray(arr) ? arr.slice() : [];
+
+  if (out.length < lc) {
+    while (out.length < lc) out.push(1);
+  } else if (out.length > lc) {
+    out = out.slice(0, lc);
+  }
+
+  for (let i = 0; i < out.length; i++) {
+    const v = parseInt(out[i], 10);
+    out[i] = clampInt((isFinite(v) ? v : 1), 1, kk, 1);
+  }
+  return out;
+}
+
+
+function normalizeSoundLeadAssignmentsForCurrentLeadCount() {
+  const sp = (state && isPlainObject(state.soundProfilesV1)) ? state.soundProfilesV1 : null;
+  if (!sp) return;
+
+  const profiles = (sp && Array.isArray(sp.profiles)) ? sp.profiles : [];
+  const k = Math.max(1, Math.min(MAX_SAFE_PROFILES, profiles.length || 1));
+
+  let lc = 1;
+  try { lc = Math.max(1, clampInt(getLeadCount(), 1, 999, 1)); } catch (_) { lc = 1; }
+
+  try { sp.leadAssignments = normalizeSoundLeadAssignmentsArray(sp.leadAssignments, lc, k); } catch (_) {}
+}
+
+
+function syncSoundLeadAssignmentsUI() {
+  if (!soundLeadAssignments || !soundLeadAssignmentsNote || !soundLeadAssignmentsList) return;
+  try { ensureSoundProfilesV1Exists(); } catch (_) {}
+
+  const sp = (state && isPlainObject(state.soundProfilesV1)) ? state.soundProfilesV1 : null;
+  if (!sp) return;
+
+  const profiles = (sp && Array.isArray(sp.profiles)) ? sp.profiles : [];
+  const k = Math.max(1, Math.min(MAX_SAFE_PROFILES, profiles.length || 1));
+
+  let lc = 1;
+  try { lc = Math.max(1, clampInt(getLeadCount(), 1, 999, 1)); } catch (_) { lc = 1; }
+
+  try { normalizeSoundLeadAssignmentsForCurrentLeadCount(); } catch (_) {}
+
+  const assigns = (sp && Array.isArray(sp.leadAssignments)) ? sp.leadAssignments : [];
+
+  if (lc <= 1) {
+    soundLeadAssignmentsNote.style.display = '';
+    soundLeadAssignmentsList.style.display = 'none';
+    soundLeadAssignmentsList.innerHTML = '';
+    try { ui._soundLeadAssignmentsUiCache = { lc: 0, k: 0, selects: [] }; } catch (_) {}
+    return;
+  }
+
+  soundLeadAssignmentsNote.style.display = 'none';
+  soundLeadAssignmentsList.style.display = '';
+
+  let cache = null;
+  try {
+    if (!ui._soundLeadAssignmentsUiCache) ui._soundLeadAssignmentsUiCache = { lc: 0, k: 0, selects: [] };
+    cache = ui._soundLeadAssignmentsUiCache;
+  } catch (_) { cache = null; }
+
+  const prevLc = cache && Number.isFinite(Number(cache.lc)) ? Number(cache.lc) : 0;
+  const prevK = cache && Number.isFinite(Number(cache.k)) ? Number(cache.k) : 0;
+
+  const needsRebuildRows = (prevLc !== lc) || !cache || !Array.isArray(cache.selects);
+  const needsRebuildOptions = (prevK !== k) || needsRebuildRows;
+
+  if (needsRebuildRows) {
+    const frag = document.createDocumentFragment();
+    const selects = [];
+
+    for (let i = 1; i <= lc; i++) {
+      const row = document.createElement('div');
+      row.className = 'rg-sound-lead-assignments-row';
+
+      const lbl = document.createElement('div');
+      lbl.className = 'rg-sound-lead-assignments-label';
+      lbl.textContent = 'Lead ' + i;
+
+      const sel = document.createElement('select');
+      sel.className = 'rg-sound-lead-assignments-select';
+      sel.dataset.soundLeadAssign = String(i);
+      sel.setAttribute('aria-label', 'Lead ' + i + ' profile');
+
+      row.appendChild(lbl);
+      row.appendChild(sel);
+      frag.appendChild(row);
+      selects.push(sel);
+    }
+
+    soundLeadAssignmentsList.innerHTML = '';
+    soundLeadAssignmentsList.appendChild(frag);
+
+    if (cache) {
+      cache.selects = selects;
+    }
+  }
+
+  if (needsRebuildOptions) {
+    // Build options once and clone per select.
+    const optFrag = document.createDocumentFragment();
+    for (let p = 1; p <= k; p++) {
+      const opt = document.createElement('option');
+      opt.value = String(p);
+      opt.textContent = 'Profile ' + p;
+      optFrag.appendChild(opt);
+    }
+
+    const selects = cache && Array.isArray(cache.selects) ? cache.selects : Array.from(soundLeadAssignmentsList.querySelectorAll('select[data-sound-lead-assign]'));
+    for (let i = 0; i < selects.length; i++) {
+      const s = selects[i];
+      if (!s) continue;
+      s.innerHTML = '';
+      s.appendChild(optFrag.cloneNode(true));
+    }
+  }
+
+  // Update selected values (no option rebuild).
+  const selects = cache && Array.isArray(cache.selects) ? cache.selects : Array.from(soundLeadAssignmentsList.querySelectorAll('select[data-sound-lead-assign]'));
+  for (let i = 0; i < selects.length; i++) {
+    const s = selects[i];
+    if (!s) continue;
+    const v = clampInt(assigns[i], 1, k, 1);
+    try { s.value = String(v); } catch (_) {}
+  }
+
+  if (cache) {
+    cache.lc = lc;
+    cache.k = k;
+  }
+}
+
+
+
+function syncSoundProfilesUI() {
+  if (!soundProfilesTabs) return;
+  try { ensureSoundProfilesV1Exists(); } catch (_) {}
+
+  const sp = state.soundProfilesV1;
+  const profiles = (sp && Array.isArray(sp.profiles)) ? sp.profiles : [];
+  const k = Math.max(1, Math.min(MAX_SAFE_PROFILES, profiles.length || 1));
+  const sel = clampInt(sp ? sp.selectedProfileIndex : 1, 1, k, 1);
+
+  // Dropdown options
+  try {
+    // Only rebuild options when count changes.
+    const prevK = clampInt(soundProfilesTabs.dataset.profileCount, 0, 9999, 0);
+    if (prevK !== k) {
+      const frag = document.createDocumentFragment();
+      for (let i = 1; i <= k; i++) {
+        const opt = document.createElement('option');
+        opt.value = String(i);
+        opt.textContent = 'Profile ' + i;
+        frag.appendChild(opt);
+      }
+      soundProfilesTabs.innerHTML = '';
+      soundProfilesTabs.appendChild(frag);
+      soundProfilesTabs.dataset.profileCount = String(k);
+    }
+    soundProfilesTabs.value = String(sel);
+  } catch (_) {}
+
+  const atMax = (k >= MAX_SAFE_PROFILES);
+
+  if (soundProfilesAddBtn) {
+    soundProfilesAddBtn.disabled = atMax;
+    soundProfilesAddBtn.classList.toggle('is-disabled', atMax);
+    soundProfilesAddBtn.title = atMax ? ('Max ' + MAX_SAFE_PROFILES + ' profiles reached') : '';
+  }
+
+  if (soundProfilesDuplicateBtn) {
+    soundProfilesDuplicateBtn.disabled = atMax;
+    soundProfilesDuplicateBtn.classList.toggle('is-disabled', atMax);
+    soundProfilesDuplicateBtn.title = atMax ? ('Max ' + MAX_SAFE_PROFILES + ' profiles reached') : '';
+  }
+
+  if (soundProfilesRemoveBtn) {
+    soundProfilesRemoveBtn.disabled = !(k > 1 && sel > 1);
+  }
+
+  if (soundProfilesMaxNote) {
+    soundProfilesMaxNote.style.display = atMax ? '' : 'none';
+    soundProfilesMaxNote.textContent = 'Max ' + MAX_SAFE_PROFILES + ' profiles reached.';
+  }
+
+  syncSoundLeadCountUI();
+  try { syncSoundLeadAssignmentsUI(); } catch (_) {}
+}
+
+
+function applySoundSnapshotForEditing(snapshot) {
+  const snap = sanitizeSoundProfileSnapshot(snapshot);
+  try {
+    // Apply as a full config to avoid resetting method/stage when using applyImportedSettingsConfig.
+    const payload = buildSettingsExportPayload({});
+    const cfg = (payload && isPlainObject(payload.config)) ? deepCloneJsonable(payload.config) : null;
+    if (!cfg) return;
+
+    // Keep the leadProfilesV1 block attached so import can restore tabs fail-open.
+    try { ensureSoundProfilesV1Exists(); } catch (_) {}
+    const sp = (state && isPlainObject(state.soundProfilesV1)) ? state.soundProfilesV1 : { profiles: [snap], selectedProfileIndex: 1 };
+    const profs = (sp && Array.isArray(sp.profiles)) ? sp.profiles.map((p) => sanitizeSoundProfileSnapshot(p)).slice(0, MAX_SAFE_PROFILES) : [snap];
+    const sel = clampInt(sp ? sp.selectedProfileIndex : 1, 1, profs.length, 1);
+
+    cfg.sound = deepCloneJsonable(snap);
+
+    // v021_p03_polyrhythm_scope: in Global scope, do NOT apply per-profile polyrhythm
+    if (coercePolyScope(state.polyScope) === 'global') {
+      try { delete cfg.sound.polyrhythm; } catch (_) {}
+    }
+    let leadAssignments = (sp && Array.isArray(sp.leadAssignments)) ? sp.leadAssignments.slice() : [];
+    try { leadAssignments = normalizeSoundLeadAssignmentsArray(leadAssignments, getLeadCount(), profs.length); } catch (_) {}
+    cfg.sound.leadProfilesV1 = { profiles: profs, selectedProfileIndex: sel, leadAssignments };
+
+    applyImportedSettingsConfig(cfg, { importedConfig: cfg, dronesHint: 'profiles' });
+  } catch (_) {}
+
+  try { ensureSoundProfilesV1Exists(); } catch (_) {}
+  try { syncSoundProfilesUI(); } catch (_) {}
+}
+
+
+
+// v019_p04_runtime_switch_by_lead: runtime sound profile switching during runs (no UI churn, no LS writes).
+function resolveRuntimeProfileIndexForLeadIdx(leadIdx) {
+  try {
+    const sp = (state && isPlainObject(state.soundProfilesV1)) ? state.soundProfilesV1 : null;
+    if (!sp || !Array.isArray(sp.profiles) || sp.profiles.length < 1) return 1;
+    const k = Math.max(1, Math.min(MAX_SAFE_PROFILES, sp.profiles.length || 1));
+
+    let lc = 1;
+    try { lc = Math.max(1, clampInt(getLeadCount(), 1, 999, 1)); } catch (_) { lc = 1; }
+
+    const li = clampInt(parseInt(leadIdx, 10) || 1, 1, lc, 1);
+    const la = Array.isArray(sp.leadAssignments) ? sp.leadAssignments : [];
+    const raw = (li >= 1 && li <= la.length) ? parseInt(la[li - 1], 10) : 1;
+    return clampInt((isFinite(raw) ? raw : 1), 1, k, 1);
+  } catch (_) { return 1; }
+}
+
+
+function resolveRuntimeRowIdxAtMs(nowMs) {
+  try {
+    const t = Number(nowMs);
+    const start = Number(state.methodStartMs);
+    const bpm = Number(state.bpm) || 120;
+    const stage = Number(state.stage) || 1;
+    if (!isFinite(t) || !isFinite(start) || !isFinite(bpm) || bpm <= 0 || !isFinite(stage) || stage <= 0) return 0;
+    const beatMs = 60000 / bpm;
+    if (!isFinite(beatMs) || beatMs <= 0) return 0;
+    const r = Math.floor(((t - start) / beatMs) / stage);
+    return Math.max(0, (isFinite(r) ? r : 0));
+  } catch (_) { return 0; }
+}
+
+function resolveRuntimeProfileIndexForRowIdx(rowIdx) {
+  try {
+    const ri = Number(rowIdx);
+    const li = leadIndexForRow(isFinite(ri) ? ri : 0);
+    return resolveRuntimeProfileIndexForLeadIdx(li);
+  } catch (_) { return 1; }
+}
+
+function resolveRuntimeProfileIndexForNowMs(nowMs) {
+  try {
+    const rowIdx = resolveRuntimeRowIdxAtMs(nowMs);
+    return resolveRuntimeProfileIndexForRowIdx(rowIdx);
+  } catch (_) { return 1; }
+}
+
+
+function applyMasterFxProfileRuntime(snapshot) {
+  // v019_p05_runtime_switch_drones_master:
+  // Master FX graph is shared with drones. To avoid clobbering meditation-owned drones,
+  // we gate runtime master-FX switching behind run ownership (fail-open).
+  try { if (String(state.droneOwner || 'run') !== 'run') return false; } catch (_) { return false; }
+
+  const snap = (snapshot && isPlainObject(snapshot)) ? snapshot : null;
+  if (!snap) return false;
+
+  const mfx = isPlainObject(snap.masterFx) ? snap.masterFx : null;
+  if (!mfx) return false;
+
+  const prevQ = (typeof quantizeReverbSize === 'function') ? quantizeReverbSize(state.fxReverbSize) : null;
+
+  try {
+    const limiter = isPlainObject(mfx.limiter) ? mfx.limiter : {};
+    const reverb = isPlainObject(mfx.reverb) ? mfx.reverb : {};
+
+    if (typeof limiter.enabled !== 'undefined') state.fxLimiterEnabled = !!limiter.enabled;
+    if (typeof limiter.amount01 !== 'undefined') state.fxLimiterAmount = clamp(Number(limiter.amount01) || 0, 0, 1);
+
+    if (typeof reverb.enabled !== 'undefined') state.fxReverbEnabled = !!reverb.enabled;
+    if (typeof reverb.size01 !== 'undefined') state.fxReverbSize = clamp(Number(reverb.size01) || 0, 0, 1);
+    if (typeof reverb.mix01 !== 'undefined') state.fxReverbMix = clamp(Number(reverb.mix01) || 0, 0, 1);
+    if (typeof reverb.highCutHz !== 'undefined') state.fxReverbHighCutHz = clamp(Number(reverb.highCutHz) || 0, 20, 20000);
+  } catch (_) {}
+
+  // Ensure graph exists; then avoid instant impulse swaps (no click/pop) by pre-seeding via ducked rebuild when size changes.
+  try { if (typeof ensureMasterFxGraph === 'function') ensureMasterFxGraph(); } catch (_) {}
+
+  try {
+    if (state.fxReverbEnabled && typeof quantizeReverbSize === 'function' && prevQ !== null) {
+      const nextQ = quantizeReverbSize(state.fxReverbSize);
+      if (nextQ !== prevQ) {
+        try { ensureMasterReverbImpulse(true, false); } catch (_) {}
+      }
+    }
+  } catch (_) {}
+
+  try { if (typeof applyMasterFxAll === 'function') applyMasterFxAll(false); } catch (_) {}
+  return true;
+}
+
+function applyDroneProfileRuntime(snapshot, opts) {
+  // v019_p05_runtime_switch_drones_master:
+  // Called only from applySoundProfileRuntime(...) when droneOwner==='run'.
+  // Must preserve current run audible state (on/paused) across profile swaps.
+  const _opts = (opts && typeof opts === 'object') ? opts : null;
+
+  const snap = (snapshot && isPlainObject(snapshot)) ? snapshot : null;
+  if (!snap) return false;
+
+  const drones = isPlainObject(snap.drones) ? snap.drones : null;
+  if (!drones) return false;
+
+  const prevOn = !!state.droneOn;
+  const prevPaused = !!state.dronePaused;
+
+  try {
+    const legacy = isPlainObject(drones.legacy) ? drones.legacy : {};
+    const layers = isPlainObject(drones.layers) ? drones.layers : {};
+
+    // Apply master volume (do not unpause)
+    if (typeof legacy.volume !== 'undefined') {
+      const n = Number(legacy.volume);
+      if (Number.isFinite(n)) {
+        if (n >= 0 && n <= 1) state.droneVolume = clampInt(Math.round(n * 100), 0, 100, state.droneVolume);
+        else state.droneVolume = clampInt(Math.round(n), 0, 100, state.droneVolume);
+      }
+    } else if (typeof layers.masterVolume !== 'undefined') {
+      state.droneVolume = clampInt(Number(layers.masterVolume) || 0, 0, 100, state.droneVolume);
+    }
+
+    // Apply densityByType map (if present)
+    if (isPlainObject(legacy.variants) && isPlainObject(legacy.variants.densityByType)) {
+      state.droneDensityByType = deepCloneJsonable(legacy.variants.densityByType);
+    }
+
+    // Apply full layer array if present
+    if (typeof layers.droneLayers !== 'undefined') {
+      if (layers.droneLayers === null) state.droneLayers = null;
+      else if (Array.isArray(layers.droneLayers)) state.droneLayers = deepCloneJsonable(layers.droneLayers.slice(0, 4));
+    }
+
+    // If only legacy drone fields are present (older payloads), apply them into Layer 1 so syncLegacyDroneStateFromLayer1 doesn't overwrite.
+    try {
+      if (!Array.isArray(state.droneLayers) || !state.droneLayers.length) {
+        state.droneLayers = [buildLayer1FromLegacyDroneState()];
+      }
+      const l1 = (state.droneLayers && state.droneLayers[0] && typeof state.droneLayers[0] === 'object') ? state.droneLayers[0] : null;
+      if (l1) {
+        if (typeof legacy.type !== 'undefined') l1.type = String(legacy.type || l1.type || 'single');
+
+        if (typeof legacy.scaleKey !== 'undefined') {
+          const nextDroneScaleKey = String(legacy.scaleKey || '');
+          if (isValidScaleKey(nextDroneScaleKey)) {
+            l1.key = nextDroneScaleKey;
+            l1.customHzEnabled = (l1.key === 'custom_hz');
+          }
+        }
+
+        if (typeof legacy.octaveC !== 'undefined') l1.register = clampInt(Number(legacy.octaveC), 1, 6, clampInt(Number(l1.register) || 3, 1, 6, 3));
+        if (typeof legacy.customHz !== 'undefined') l1.customHz = coerceCustomHz(legacy.customHz, l1.customHz);
+
+        if (isPlainObject(legacy.variants)) {
+          const v = legacy.variants;
+          if (!isPlainObject(l1.variants)) l1.variants = {};
+          if (typeof v.normalize !== 'undefined') l1.variants.normalize = !!v.normalize;
+          if (typeof v.density !== 'undefined') l1.variants.density = clampDroneDensityForType(l1.type, v.density);
+          if (typeof v.driftCents !== 'undefined') l1.variants.driftCents = clamp(Number(v.driftCents) || 0, 0, 20);
+          if (typeof v.motionRate !== 'undefined') l1.variants.motionRate = clamp(Number(v.motionRate) || 0, 0, 10);
+          if (typeof v.clusterWidth !== 'undefined') l1.variants.clusterWidth = coerceDroneClusterWidth(v.clusterWidth);
+          if (typeof v.noiseTilt !== 'undefined') l1.variants.noiseTilt = clamp(Number(v.noiseTilt) || 0, -1, 1);
+          if (typeof v.noiseQ !== 'undefined') l1.variants.noiseQ = clamp(Number(v.noiseQ) || 1, 0.5, 10);
+        }
+      }
+    } catch (_) {}
+
+    try { if (typeof ensureDroneLayersState === 'function') ensureDroneLayersState(); } catch (_) {}
+
+    // Restore audible state (no surprise audio)
+    state.droneOn = prevOn;
+    state.dronePaused = prevPaused;
+    state.dronesEnabled = prevOn;
+    state.dronesPaused = prevPaused;
+    state.dronesMasterVolume = clamp(Number(state.droneVolume) || 0, 0, 100);
+
+    try { applyDroneMasterGain(); } catch (_) {}
+
+    // Refresh/rebuild drone audio graph only if the run's drones are active.
+    if (prevOn) {
+      try { refreshDrone(); } catch (_) {}
+    }
+  } catch (_) {}
+
+  return true;
+}
+
+function applySoundProfileRuntime(profileIndex) {
+  // No run-stopping calls, no UI sync, no LS writes.
+  let sp = null;
+  let profiles = null;
+  try { sp = (state && isPlainObject(state.soundProfilesV1)) ? state.soundProfilesV1 : null; } catch (_) { sp = null; }
+  try { profiles = (sp && Array.isArray(sp.profiles)) ? sp.profiles : null; } catch (_) { profiles = null; }
+
+  const k = Math.max(1, Math.min(MAX_SAFE_PROFILES, (profiles && profiles.length) ? profiles.length : 1));
+  let idx = clampInt(parseInt(profileIndex, 10) || 1, 1, k, 1);
+
+  // Fail-open to profile 1 on invalid snapshot.
+  let snap = (profiles && profiles[idx - 1] && isPlainObject(profiles[idx - 1])) ? profiles[idx - 1] : null;
+  if (!snap) {
+    idx = 1;
+    snap = (profiles && profiles[0] && isPlainObject(profiles[0])) ? profiles[0] : null;
+  }
+
+  if (ui && ui._runtimeAppliedProfileIndex === idx) return;
+  if (ui) ui._runtimeAppliedProfileIndex = idx;
+
+  if (!snap) return;
+
+  // Snapshot shape matches buildSettingsExportPayload(...).config.sound
+  try {
+    // === Pitch / scale (bells) ===
+    const pitch = isPlainObject(snap.pitch) ? snap.pitch : {};
+    if (typeof pitch.scaleKey !== 'undefined') {
+      const nextScaleKey = String(pitch.scaleKey || '');
+      if (isValidScaleKey(nextScaleKey)) state.scaleKey = nextScaleKey;
+    }
+    if (typeof pitch.octaveC !== 'undefined') state.octaveC = clampInt(Number(pitch.octaveC), 1, 6, 4);
+    if (typeof pitch.temperamentKey !== 'undefined') state.temperamentKey = coerceTemperamentKey(pitch.temperamentKey);
+    if (typeof pitch.customHz !== 'undefined') state.bellCustomHz = clamp(Number(pitch.customHz) || 440, 20, 20000);
+    if (typeof pitch.bellPitchFamily !== 'undefined') state.bellPitchFamily = coerceBellPitchFamily(String(pitch.bellPitchFamily || 'diatonic'));
+    if (typeof pitch.bellPitchSpan !== 'undefined') state.bellPitchSpan = (String(pitch.bellPitchSpan) === 'extended') ? 'extended' : 'compact';
+    if (typeof pitch.bellPitchSpanUser !== 'undefined') state.bellPitchSpanUser = !!pitch.bellPitchSpanUser;
+    if (typeof pitch.bellPitchDiatonicMap !== 'undefined') state.bellPitchDiatonicMap = coerceBellPitchDiatonicMap(pitch.bellPitchDiatonicMap);
+    if (typeof pitch.bellPitchPentVariant !== 'undefined') state.bellPitchPentVariant = String(pitch.bellPitchPentVariant || 'major_pent');
+    if (typeof pitch.bellPitchChromaticDirection !== 'undefined') state.bellPitchChromaticDirection = String(pitch.bellPitchChromaticDirection || 'descending');
+    if (typeof pitch.bellPitchFifthsType !== 'undefined') state.bellPitchFifthsType = String(pitch.bellPitchFifthsType || 'fifths');
+    if (typeof pitch.bellPitchFifthsShape !== 'undefined') state.bellPitchFifthsShape = String(pitch.bellPitchFifthsShape || 'folded');
+    if (typeof pitch.bellPitchPartialsShape !== 'undefined') state.bellPitchPartialsShape = String(pitch.bellPitchPartialsShape || 'ladder');
+
+    rebuildBellFrequencies(true);
+
+    // === Bells ===
+    const bells = isPlainObject(snap.bells) ? snap.bells : {};
+    if (typeof bells.masterVolume !== 'undefined') state.bellVolume = clampInt(Number(bells.masterVolume), 0, 100, 100);
+
+    if (isPlainObject(bells.timbre)) {
+      const t = bells.timbre;
+      if (typeof t.ringLength01 !== 'undefined') state.bellRingLength = clamp(Number(t.ringLength01) || 0, 0, 1);
+      if (typeof t.brightness01 !== 'undefined') state.bellBrightness = clamp(Number(t.brightness01) || 0, 0, 1);
+      if (typeof t.strikeHardness01 !== 'undefined') state.bellStrikeHardness = clamp(Number(t.strikeHardness01) || 0, 0, 1);
+    }
+
+    // Per-bell overrides (apply directly; do NOT use LS)
+    try {
+      // Reset to defaults first so sparse maps cannot leak prior state.
+      state.bellHzOverride = new Array(13).fill(null);
+      state.bellVolOverride = new Array(13).fill(null);
+      state.bellKeyOverride = new Array(13).fill(null);
+      state.bellOctaveOverride = new Array(13).fill(null);
+      state.bellPan = new Array(13).fill(0);
+      state.bellDepth = new Array(13).fill(0);
+      state.spatialDepthMode = 'normal';
+
+      state.bellTimbreOverrides = new Array(13);
+      for (let b = 0; b < 13; b++) state.bellTimbreOverrides[b] = bellTimbreOverrideDefaults();
+
+      state.bellChordOverrides = new Array(13);
+      for (let b = 0; b < 13; b++) state.bellChordOverrides[b] = bellChordOverrideDefaults();
+    } catch (_) {}
+
+    const pbo = isPlainObject(bells.perBellOverrides) ? bells.perBellOverrides : null;
+    if (pbo) {
+      if (isPlainObject(pbo.hz)) {
+        for (const k0 in pbo.hz) {
+          if (!Object.prototype.hasOwnProperty.call(pbo.hz, k0)) continue;
+          const b = parseInt(k0, 10);
+          if (!Number.isFinite(b) || b < 1 || b > 12) continue;
+          const v = Number(pbo.hz[k0]);
+          if (Number.isFinite(v) && v > 0) state.bellHzOverride[b] = clamp(v, 20, 5000);
+        }
+      }
+
+      if (isPlainObject(pbo.volume)) {
+        for (const k0 in pbo.volume) {
+          if (!Object.prototype.hasOwnProperty.call(pbo.volume, k0)) continue;
+          const b = parseInt(k0, 10);
+          if (!Number.isFinite(b) || b < 1 || b > 12) continue;
+          let v = Number(pbo.volume[k0]);
+          if (!Number.isFinite(v)) continue;
+          if (v <= 1.0001 && v >= 0) v = v * 100; // allow 0..1 factor too
+          state.bellVolOverride[b] = clamp(v, 0, 100);
+        }
+      }
+
+      if (isPlainObject(pbo.key)) {
+        for (const k0 in pbo.key) {
+          if (!Object.prototype.hasOwnProperty.call(pbo.key, k0)) continue;
+          const b = parseInt(k0, 10);
+          if (!Number.isFinite(b) || b < 1 || b > 12) continue;
+          const v = String(pbo.key[k0] || '').trim();
+          if (!v) continue;
+          if (v === 'custom_hz') continue;
+          if (isValidScaleKey(v)) state.bellKeyOverride[b] = v;
+        }
+      }
+
+      if (isPlainObject(pbo.octave)) {
+        for (const k0 in pbo.octave) {
+          if (!Object.prototype.hasOwnProperty.call(pbo.octave, k0)) continue;
+          const b = parseInt(k0, 10);
+          if (!Number.isFinite(b) || b < 1 || b > 12) continue;
+          const v = parseInt(pbo.octave[k0], 10);
+          if (!Number.isFinite(v)) continue;
+          state.bellOctaveOverride[b] = clampInt(v, 1, 6, null);
+        }
+      }
+
+      if (isPlainObject(pbo.pan)) {
+        for (const k0 in pbo.pan) {
+          if (!Object.prototype.hasOwnProperty.call(pbo.pan, k0)) continue;
+          const b = parseInt(k0, 10);
+          if (!Number.isFinite(b) || b < 1 || b > 12) continue;
+          const v = Number(pbo.pan[k0]);
+          if (!Number.isFinite(v)) continue;
+          state.bellPan[b] = clamp(v, -1, 1);
+        }
+      }
+
+      if (isPlainObject(pbo.depth)) {
+        for (const k0 in pbo.depth) {
+          if (!Object.prototype.hasOwnProperty.call(pbo.depth, k0)) continue;
+          const b = parseInt(k0, 10);
+          if (!Number.isFinite(b) || b < 1 || b > 12) continue;
+          const v = Number(pbo.depth[k0]);
+          if (!Number.isFinite(v)) continue;
+          state.bellDepth[b] = clamp(v, 0, 1);
+        }
+      }
+
+      if (typeof pbo.spatialDepthMode !== 'undefined') {
+        try { state.spatialDepthMode = sanitizeSpatialDepthMode(pbo.spatialDepthMode); } catch (_) { state.spatialDepthMode = 'normal'; }
+      }
+
+      if (isPlainObject(pbo.timbre)) {
+        for (const k0 in pbo.timbre) {
+          if (!Object.prototype.hasOwnProperty.call(pbo.timbre, k0)) continue;
+          const b = parseInt(k0, 10);
+          if (!Number.isFinite(b) || b < 1 || b > 12) continue;
+          const cfg = sanitizeBellTimbreOverride(pbo.timbre[k0]);
+          cfg.mode = 'override';
+          state.bellTimbreOverrides[b] = cfg;
+        }
+      }
+
+      if (isPlainObject(pbo.chords)) {
+        for (const k0 in pbo.chords) {
+          if (!Object.prototype.hasOwnProperty.call(pbo.chords, k0)) continue;
+          const b = parseInt(k0, 10);
+          if (!Number.isFinite(b) || b < 1 || b > 12) continue;
+          state.bellChordOverrides[b] = sanitizeBellChordOverride(pbo.chords[k0]);
+        }
+      }
+    }
+
+    // Minimal audio sync
+    try { applyBellMasterGain(); } catch (_) {}
+
+    // Apply spatial to audio stages immediately (no UI)
+    try {
+      for (let b = 1; b <= 12; b++) {
+        try { applyBellPanToAudio(b); } catch (_) {}
+        try { applyBellDepthToAudio(b, true); } catch (_) {}
+        try { if (typeof rampActiveBellTimbreBrightness === 'function') rampActiveBellTimbreBrightness(b); } catch (_) {}
+      }
+    } catch (_) {}
+
+    // === Polyrhythm ===
+    if (coercePolyScope(state.polyScope) !== 'global') {
+      const polyCfg = isPlainObject(snap.polyrhythm) ? snap.polyrhythm : null;
+      if (polyCfg) {
+      const wasActive = (typeof polyIsActive === 'function') ? polyIsActive() : false;
+
+      if (typeof polyCfg.enabledForRuns !== 'undefined') state.polyEnabledForRuns = !!polyCfg.enabledForRuns;
+      if (typeof polyCfg.masterVolume !== 'undefined') state.polyMasterVolume = clamp(Number(polyCfg.masterVolume) || 0, 0, 100);
+
+      if (Array.isArray(polyCfg.layers)) {
+        state.polyLayers = polyCfg.layers.map((l, i) => coercePolyLayer(l, i)).filter(Boolean);
+      } else if (!Array.isArray(state.polyLayers)) {
+        state.polyLayers = [];
+      }
+
+      try { applyPolyMasterGain(); } catch (_) {}
+      try { polySchedNextById = Object.create(null); } catch (_) {}
+
+      const shouldActive = (typeof polyIsActive === 'function') ? polyIsActive() : false;
+      if (wasActive || shouldActive) {
+        try { cancelScheduledPolyAudioNow(); } catch (_) {}
+        if (shouldActive) {
+          try {
+            const n = perfNow();
+            const bpm = polyTestActive ? (Number(polyTestBpm) || 120) : (Number(state.bpm) || 120);
+            const beatMs = 60000 / bpm;
+            const anchorMs = polyTestActive ? polyTestStartMs : state.methodStartMs;
+            polyResetSchedPointers(n, anchorMs, beatMs);
+          } catch (_) {}
+        }
+      }
+    }
+    }
+
+
+// === Master FX / output (guarded) ===
+try { applyMasterFxProfileRuntime(snap); } catch (_) {}
+
+// === Drones (strict ownership + pause semantics) ===
+try {
+  if (String(state.droneOwner || 'run') === 'run') {
+    applyDroneProfileRuntime(snap, { reason: 'leadSwitch' });
+  }
+} catch (_) {}
+  } catch (_) {}
+}
+
+function switchSoundProfileTab(nextIndex) {
+  try { ensureSoundProfilesV1Exists(); } catch (_) {}
+  const sp = state.soundProfilesV1;
+  const profiles = (sp && Array.isArray(sp.profiles)) ? sp.profiles : [];
+  const k = Math.max(1, Math.min(MAX_SAFE_PROFILES, profiles.length || 1));
+  const cur = clampInt(sp ? sp.selectedProfileIndex : 1, 1, k, 1);
+  const next = clampInt(nextIndex, 1, k, 1);
+  if (next === cur) return;
+
+  // Commit current snapshot.
+  try {
+    const prev = sp.profiles[cur - 1];
+    const globalScope = coercePolyScope(state.polyScope) === 'global';
+    const prevPoly = (globalScope && prev && Object.prototype.hasOwnProperty.call(prev, 'polyrhythm')) ? deepCloneJsonable(prev.polyrhythm) : undefined;
+
+    const snap = sanitizeSoundProfileSnapshot(captureCurrentSoundConfigSnapshot());
+    if (globalScope) {
+      if (typeof prevPoly !== 'undefined') snap.polyrhythm = prevPoly;
+      else { try { delete snap.polyrhythm; } catch (_) {} }
+    }
+    sp.profiles[cur - 1] = snap;
+  } catch (_) {}
+
+  sp.selectedProfileIndex = next;
+  const target = sanitizeSoundProfileSnapshot(sp.profiles[next - 1]);
+  applySoundSnapshotForEditing(target);
+}
+
+
+function addSoundProfileFromCurrent() {
+  try { ensureSoundProfilesV1Exists(); } catch (_) {}
+  const sp = state.soundProfilesV1;
+  const profiles = (sp && Array.isArray(sp.profiles)) ? sp.profiles : [];
+  const k = Math.max(1, Math.min(MAX_SAFE_PROFILES, profiles.length || 1));
+  if (k >= MAX_SAFE_PROFILES) return;
+
+  const cur = clampInt(sp ? sp.selectedProfileIndex : 1, 1, k, 1);
+  // Commit current before adding.
+  try {
+    const prev = sp.profiles[cur - 1];
+    const globalScope = coercePolyScope(state.polyScope) === 'global';
+    const prevPoly = (globalScope && prev && Object.prototype.hasOwnProperty.call(prev, 'polyrhythm')) ? deepCloneJsonable(prev.polyrhythm) : undefined;
+
+    const snap0 = sanitizeSoundProfileSnapshot(captureCurrentSoundConfigSnapshot());
+    if (globalScope) {
+      if (typeof prevPoly !== 'undefined') snap0.polyrhythm = prevPoly;
+      else { try { delete snap0.polyrhythm; } catch (_) {} }
+    }
+    sp.profiles[cur - 1] = snap0;
+  } catch (_) {}
+
+  const snap = sanitizeSoundProfileSnapshot(captureCurrentSoundConfigSnapshot());
+  sp.profiles.push(snap);
+  sp.selectedProfileIndex = sp.profiles.length;
+  applySoundSnapshotForEditing(snap);
+}
+
+function duplicateSelectedSoundProfile() {
+  try { ensureSoundProfilesV1Exists(); } catch (_) {}
+  const sp = state.soundProfilesV1;
+  const profiles = (sp && Array.isArray(sp.profiles)) ? sp.profiles : [];
+  const k = Math.max(1, Math.min(MAX_SAFE_PROFILES, profiles.length || 1));
+  if (k >= MAX_SAFE_PROFILES) return;
+
+  const cur = clampInt(sp ? sp.selectedProfileIndex : 1, 1, k, 1);
+
+  // Commit current before duplicating.
+  try {
+    const prev = sp.profiles[cur - 1];
+    const globalScope = coercePolyScope(state.polyScope) === 'global';
+    const prevPoly = (globalScope && prev && Object.prototype.hasOwnProperty.call(prev, 'polyrhythm')) ? deepCloneJsonable(prev.polyrhythm) : undefined;
+
+    const snap0 = sanitizeSoundProfileSnapshot(captureCurrentSoundConfigSnapshot());
+    if (globalScope) {
+      if (typeof prevPoly !== 'undefined') snap0.polyrhythm = prevPoly;
+      else { try { delete snap0.polyrhythm; } catch (_) {} }
+    }
+    sp.profiles[cur - 1] = snap0;
+  } catch (_) {}
+
+  const snap = sanitizeSoundProfileSnapshot(sp.profiles[cur - 1]);
+  sp.profiles.push(deepCloneJsonable(snap));
+  sp.selectedProfileIndex = sp.profiles.length;
+  applySoundSnapshotForEditing(snap);
+}
+
+function removeSelectedSoundProfile() {
+  try { ensureSoundProfilesV1Exists(); } catch (_) {}
+  const sp = state.soundProfilesV1;
+  const profiles = (sp && Array.isArray(sp.profiles)) ? sp.profiles : [];
+  const k = Math.max(1, Math.min(MAX_SAFE_PROFILES, profiles.length || 1));
+  const cur = clampInt(sp ? sp.selectedProfileIndex : 1, 1, k, 1);
+  if (k <= 1 || cur <= 1) return; // Profile 1 cannot be removed.
+
+  // Commit current before removing.
+  try {
+    const prev = sp.profiles[cur - 1];
+    const globalScope = coercePolyScope(state.polyScope) === 'global';
+    const prevPoly = (globalScope && prev && Object.prototype.hasOwnProperty.call(prev, 'polyrhythm')) ? deepCloneJsonable(prev.polyrhythm) : undefined;
+
+    const snap0 = sanitizeSoundProfileSnapshot(captureCurrentSoundConfigSnapshot());
+    if (globalScope) {
+      if (typeof prevPoly !== 'undefined') snap0.polyrhythm = prevPoly;
+      else { try { delete snap0.polyrhythm; } catch (_) {} }
+    }
+    sp.profiles[cur - 1] = snap0;
+  } catch (_) {}
+
+  sp.profiles.splice(cur - 1, 1);
+  const next = Math.max(1, Math.min(sp.profiles.length, cur - 1));
+  sp.selectedProfileIndex = next;
+  const target = sanitizeSoundProfileSnapshot(sp.profiles[next - 1]);
+  applySoundSnapshotForEditing(target);
+}
+
+
+function getLeadLenRows() {
+  const leadCount = getLeadCount();
+  if (leadCount <= 1) return 0;
+  const rows = state.rows;
+  const n = rows && rows.length ? ((rows.length - 1) / leadCount) : 0;
+  if (!isFinite(n) || n <= 0) return 0;
+  const leadLen = Math.round(n);
+  return (isFinite(leadLen) && leadLen > 0) ? leadLen : 0;
+}
+
+// v019_p08_lead_range_editor =========================================================
+// Lead ranges are 1-based over state.rows (UI row 1 == state.rows[0]).
+
+function ensureLeadsV1Exists() {
+  if (!state) return;
+  const raw = (state && isPlainObject(state.leadsV1)) ? state.leadsV1 : null;
+  if (!raw) {
+    state.leadsV1 = { mode: 'auto', ranges: [] };
+    return;
+  }
+  const mode = (raw.mode === 'manual') ? 'manual' : 'auto';
+  const ranges = Array.isArray(raw.ranges) ? raw.ranges : [];
+  raw.mode = mode;
+  // Keep persistence minimal in auto mode (auto-derived ranges are not stored).
+  raw.ranges = (mode === 'manual') ? ranges : [];
+}
+
+function getRowCountForLeads() {
+  const rows = (state && Array.isArray(state.rows)) ? state.rows : null;
+  const rc = rows && rows.length ? Math.max(1, Math.floor(rows.length)) : 1;
+  return rc;
+}
+
+function getMaxSafeLeadsForRowCount(rowCount) {
+  let rc = Number(rowCount);
+  if (!isFinite(rc) || rc <= 0) rc = 1;
+  rc = Math.max(1, Math.floor(rc));
+  return Math.max(1, Math.min(500, rc));
+}
+
+function normalizeManualRangesToPartition(ranges, rowCount) {
+  const rc = Math.max(1, clampInt(Number(rowCount) || 1, 1, 999999, 1));
+  const maxSafe = getMaxSafeLeadsForRowCount(rc);
+
+  // Sanitize input list (order preserved; fail-open).
+  let src = Array.isArray(ranges) ? ranges.slice() : [];
+  src = src.map((r) => {
+    const o = (r && typeof r === 'object') ? r : {};
+    let a = clampInt(Number(o.a) || 1, 1, rc, 1);
+    let b = clampInt(Number(o.b) || a, 1, rc, a);
+    if (b < a) { const t = a; a = b; b = t; }
+    return { a: a, b: b };
+  });
+
+  if (src.length < 1) src = [{ a: 1, b: rc }];
+
+  // Hard bounds: never exceed rowCount leads; also cap to MAX_SAFE_LEADS.
+  const hardMax = Math.min(rc, maxSafe);
+  if (src.length > hardMax) {
+    const keep = src.slice(0, hardMax);
+    // Merge remaining rows into the last kept lead.
+    keep[hardMax - 1] = { a: keep[hardMax - 1].a, b: rc };
+    src = keep;
+  }
+
+  const k = Math.max(1, Math.min(src.length, hardMax));
+
+  // Build strictly increasing end boundaries (b), then rebuild contiguous a's.
+  const ends = new Array(k);
+  for (let i = 0; i < k - 1; i++) {
+    const minEnd = i + 1;
+    const maxEnd = rc - (k - 1 - i);
+    let v = clampInt(Number(src[i].b) || minEnd, minEnd, maxEnd, minEnd);
+    if (i > 0) v = Math.max(v, ends[i - 1] + 1);
+    v = Math.min(v, maxEnd);
+    ends[i] = v;
+  }
+  ends[k - 1] = rc;
+
+  const out = [];
+  for (let i = 0; i < k; i++) {
+    const a = (i === 0) ? 1 : (ends[i - 1] + 1);
+    const b = ends[i];
+    out.push({ a: a, b: b });
+  }
+  return out;
+}
+
+function normalizeLeadsV1AfterRows() {
+  try { ensureLeadsV1Exists(); } catch (_) { return; }
+  const lv = (state && isPlainObject(state.leadsV1)) ? state.leadsV1 : null;
+  if (!lv) return;
+
+  const rc = getRowCountForLeads();
+  const maxSafe = getMaxSafeLeadsForRowCount(rc);
+
+  if (lv.mode !== 'manual') {
+    // Keep minimal persistence in auto mode.
+    lv.mode = 'auto';
+    lv.ranges = [];
+    return;
+  }
+
+  let r = Array.isArray(lv.ranges) ? lv.ranges : [];
+  // Fail-open: empty manual definition becomes a single full-range lead.
+  if (r.length < 1) r = [{ a: 1, b: rc }];
+
+  // Ensure we never store more leads than rows or MAX_SAFE_LEADS.
+  const hardMax = Math.min(rc, maxSafe);
+  if (r.length > hardMax) {
+    r = r.slice(0, hardMax);
+    r[hardMax - 1] = { a: r[hardMax - 1] && r[hardMax - 1].a ? r[hardMax - 1].a : 1, b: rc };
+  }
+
+  const norm = normalizeManualRangesToPartition(r, rc);
+  lv.ranges = norm;
+}
+
+// Auto lead segmentation (derived from existing detection: leadCount + leadLenRows heuristic).
+function getAutoLeadLenRows() {
+  const leadCountRaw = getAutoLeadCountRaw();
+  const rows = state.rows;
+  const rc = rows && rows.length ? Math.max(1, Math.floor(rows.length)) : 1;
+
+  const maxSafe = getMaxSafeLeadsForRowCount(rc);
+  const leadCount = clampInt(leadCountRaw, 1, Math.min(rc, maxSafe), 1);
+  if (leadCount <= 1) return 0;
+
+  const n = rc ? ((rc - 1) / leadCount) : 0;
+  if (!isFinite(n) || n <= 0) return 0;
+  const leadLen = Math.round(n);
+  return (isFinite(leadLen) && leadLen > 0) ? leadLen : 0;
+}
+
+function getAutoLeadRanges() {
+  // Cache auto-derived ranges in ui (non-persisted), keyed by rowCount + detected leadCount.
+  try { if (!ui._leadsRangesCacheV1) ui._leadsRangesCacheV1 = {}; } catch (_) {}
+  const cache = ui && ui._leadsRangesCacheV1 ? ui._leadsRangesCacheV1 : null;
+
+  const rows = state.rows;
+  const rc = rows && rows.length ? Math.max(1, Math.floor(rows.length)) : 1;
+
+  const detected = getAutoLeadCountRaw();
+  const maxSafe = getMaxSafeLeadsForRowCount(rc);
+  const detectedClamped = clampInt(detected, 1, Math.min(rc, maxSafe), 1);
+
+  const leadLen = getAutoLeadLenRows();
+  const key = String(rc) + '|' + String(detectedClamped) + '|' + String(leadLen);
+
+  if (cache && cache.autoKey === key && Array.isArray(cache.autoRanges) && cache.autoRanges.length) {
+    return cache.autoRanges;
+  }
+
+  // Fail-open: 1 lead spanning the whole range.
+  if (detectedClamped <= 1 || !leadLen || leadLen <= 0) {
+    const one = [{ a: 1, b: rc }];
+    if (cache) { cache.autoKey = key; cache.autoRanges = one; }
+    return one;
+  }
+
+  // Effective lead count: avoid unreachable trailing leads due to rounding (preserves old mapping).
+  let effective = Math.floor((rc - 1) / leadLen) + 1;
+  if (!isFinite(effective) || effective <= 0) effective = 1;
+  effective = clampInt(effective, 1, detectedClamped, 1);
+
+  const out = [];
+  for (let i = 0; i < effective; i++) {
+    const a = (i * leadLen) + 1;
+    const b = (i === effective - 1) ? rc : Math.min(rc, (i + 1) * leadLen);
+    out.push({ a: a, b: b });
+  }
+
+  // Ensure contiguous partition invariant (defensive).
+  const norm = normalizeManualRangesToPartition(out, rc);
+  if (cache) { cache.autoKey = key; cache.autoRanges = norm; }
+  return norm;
+}
+
+function getActiveLeadRanges() {
+  try { ensureLeadsV1Exists(); } catch (_) {}
+  const lv = (state && isPlainObject(state.leadsV1)) ? state.leadsV1 : null;
+  if (lv && lv.mode === 'manual') {
+    try { normalizeLeadsV1AfterRows(); } catch (_) {}
+    const rr = (lv && Array.isArray(lv.ranges) && lv.ranges.length) ? lv.ranges : null;
+    return rr && rr.length ? rr : [{ a: 1, b: getRowCountForLeads() }];
+  }
+  return getAutoLeadRanges();
+}
+
+// Enforce contiguous partition after a single-field edit (user-friendly cascade).
+function normalizeManualRangesAfterEdit(ranges, editedIndex, changedField) {
+  const src = Array.isArray(ranges) ? ranges.map((r) => ({ a: Number(r && r.a), b: Number(r && r.b) })) : [];
+  const rc = getRowCountForLeads();
+  const maxSafe = getMaxSafeLeadsForRowCount(rc);
+  const k0 = src.length ? src.length : 1;
+  const k = Math.max(1, Math.min(k0, Math.min(rc, maxSafe)));
+
+  // Start from a valid partition (defensive).
+  const base = normalizeManualRangesToPartition(src, rc).slice(0, k);
+
+  const ends = base.map((r) => clampInt(r.b, 1, rc, rc));
+  ends[k - 1] = rc;
+
+  let i = clampInt(Number(editedIndex) || 0, 0, k - 1, 0);
+  const field = String(changedField || '');
+
+  if (field === 'a') {
+    // Start edit changes the previous boundary (i-1). Lead 1 start is fixed at 1.
+    if (i <= 0) {
+      // nothing
+    } else {
+      const curB = ends[i];
+      let a = clampInt(Number(src[i].a) || (ends[i - 1] + 1), 1, rc, ends[i - 1] + 1);
+      // Ensure lead i remains at least 1 row.
+      if (a > curB) a = curB;
+      // Set previous end to a-1, then cascade backward shrinking earlier leads if needed.
+      let prevEnd = clampInt(a - 1, i, curB - 1, i);
+      ends[i - 1] = prevEnd;
+
+      for (let j = i - 1; j >= 1; j--) {
+        if (ends[j - 1] >= ends[j]) {
+          ends[j - 1] = ends[j] - 1;
+        }
+        // Ensure each lead has at least 1 row.
+        const minEnd = j;
+        if (ends[j - 1] < minEnd) ends[j - 1] = minEnd;
+      }
+    }
+  } else if (field === 'b') {
+    // End edit changes boundary i. Last lead end is fixed at rowCount.
+    if (i >= k - 1) {
+      ends[k - 1] = rc;
+    } else {
+      const minEnd = (i === 0) ? 1 : (ends[i - 1] + 1);
+      const maxEnd = rc - (k - 1 - i);
+      let b = clampInt(Number(src[i].b) || ends[i], minEnd, maxEnd, minEnd);
+      ends[i] = b;
+
+      // Cascade forward: ensure strictly increasing boundaries, shrinking later leads as needed.
+      for (let j = i + 1; j < k - 1; j++) {
+        const minJ = ends[j - 1] + 1;
+        const maxJ = rc - (k - 1 - j);
+        let v = ends[j];
+        if (!isFinite(v)) v = minJ;
+        v = clampInt(v, minJ, maxJ, minJ);
+        // If needed, bump forward to maintain validity.
+        if (v < minJ) v = minJ;
+        if (v > maxJ) v = maxJ;
+        ends[j] = v;
+      }
+      ends[k - 1] = rc;
+    }
+  }
+
+  const out = [];
+  for (let j = 0; j < k; j++) {
+    const a = (j === 0) ? 1 : (ends[j - 1] + 1);
+    const b = ends[j];
+    out.push({ a: a, b: b });
+  }
+  return out;
+}
+
+function leadIndexForRow(rowIdx) {
+  try {
+    const ranges = getActiveLeadRanges();
+    const k = (ranges && ranges.length) ? ranges.length : 1;
+    if (k <= 1) return 1;
+
+    let r = Number(rowIdx);
+    if (!isFinite(r)) r = 0;
+    const rc = getRowCountForLeads();
+    const uiRow = clampInt(r + 1, 1, rc, 1);
+
+    // Ranges are contiguous; scan by boundary.
+    for (let i = 0; i < k; i++) {
+      const rr = ranges[i];
+      if (!rr) continue;
+      const a = Number(rr.a);
+      const b = Number(rr.b);
+      if (isFinite(a) && isFinite(b) && uiRow >= a && uiRow <= b) return i + 1;
+      if (isFinite(b) && uiRow <= b) return i + 1; // defensive
+    }
+    return 1;
+  } catch (_) {
+    return 1;
+  }
+}
+
+
+function getDefaultLeadOverlayColors(leadCount) {
+  let n = Number(leadCount);
+  if (!isFinite(n) || n <= 0) n = 1;
+  n = Math.max(1, Math.floor(n));
+  const out = [];
+  for (let i = 0; i < n; i++) out.push(LEAD_OVERLAY_DEFAULT_PALETTE[i % LEAD_OVERLAY_DEFAULT_PALETTE.length]);
+  return out;
+}
+
+function normalizeLeadOverlayColorsForCurrentLeadCount() {
+  const leadCount = getLeadCount();
+  const defaults = getDefaultLeadOverlayColors(leadCount);
+  const src = Array.isArray(state.leadOverlayColors) ? state.leadOverlayColors : [];
+  const out = [];
+  for (let i = 0; i < leadCount; i++) {
+    const c = sanitizeHexColor(src[i]);
+    out.push(c || defaults[i]);
+  }
+  state.leadOverlayColors = out;
+}
+
+function getLeadOverlayColorForRow(rowIdx) {
+  const leadCount = getLeadCount();
+  if (leadCount <= 0) return null;
+  const li = leadIndexForRow(rowIdx);
+  const arr = Array.isArray(state.leadOverlayColors) ? state.leadOverlayColors : [];
+  const c = arr[clampInt(li - 1, 0, Math.max(0, leadCount - 1), 0)];
+  return sanitizeHexColor(c) || getDefaultLeadOverlayColors(leadCount)[li - 1] || null;
+}
+
+// v019_p08_lead_range_editor: lead range editor actions (View menu)
+function setLeadOverlayEditorNote(msg) {
+  try { ui._leadOverlayEditorNote = (msg == null) ? '' : String(msg || ''); } catch (_) {}
+}
+
+function clearLeadOverlayEditorNote() {
+  try { ui._leadOverlayEditorNote = ''; } catch (_) {}
+}
+
+function ensureManualLeadsSeededFromAuto() {
+  try { ensureLeadsV1Exists(); } catch (_) {}
+  const lv = (state && isPlainObject(state.leadsV1)) ? state.leadsV1 : null;
+  if (!lv) return;
+
+  if (lv.mode !== 'manual') {
+    // Switching from auto → manual: seed ranges from current auto detection (user-friendly).
+    const auto = getAutoLeadRanges();
+    lv.mode = 'manual';
+    lv.ranges = auto.map((r) => ({ a: r.a, b: r.b }));
+  }
+
+  try { normalizeLeadsV1AfterRows(); } catch (_) {}
+}
+
+function syncAfterLeadModelChange() {
+  try { normalizeLeadsV1AfterRows(); } catch (_) {}
+  try { normalizeLeadOverlayColorsForCurrentLeadCount(); } catch (_) {}
+  try { normalizeSoundLeadAssignmentsForCurrentLeadCount(); } catch (_) {}
+  try { syncSoundLeadCountUI(); } catch (_) {}
+  try { syncSoundLeadAssignmentsUI(); } catch (_) {}
+  try { syncLeadOverlayControlsUI(); } catch (_) {}
+}
+
+function normalizeV19LeadAndProfileStateAfterRows() {
+  // v019_p10_load_repro_hardening: single choke point after rows exist (computeRows) for:
+  // - leadsV1 (auto/manual ranges) + derived active lead count
+  // - lead overlay enabled/colors
+  // - sound profiles + per-lead assignments
+  // Prevents "import before rows" normalization bugs and one-frame lead-count glitches.
+
+  let didApplyProfiles = false;
+
+  // Apply any deferred import blocks first (so all normalization uses the restored lead model).
+  try {
+    const p = pendingV19ImportBlocks;
+    if (p && typeof p === 'object') {
+      // leadsV1
+      if (p.leadsV1 && isPlainObject(p.leadsV1)) {
+        const m = (p.leadsV1 && p.leadsV1.mode === 'manual') ? 'manual' : 'auto';
+        const rr = (m === 'manual' && Array.isArray(p.leadsV1.ranges)) ? p.leadsV1.ranges.slice() : [];
+        state.leadsV1 = { mode: m, ranges: rr };
+      }
+
+      // lead overlay
+      if (p.leadOverlay && isPlainObject(p.leadOverlay)) {
+        if (typeof p.leadOverlay.enabled !== 'undefined') {
+          state.leadOverlayEnabled = !!p.leadOverlay.enabled;
+          try { if (leadOverlayToggle) leadOverlayToggle.checked = !!state.leadOverlayEnabled; } catch (_) {}
+        }
+        if (Array.isArray(p.leadOverlay.colors)) {
+          // Store raw; normalize below once rows exist.
+          state.leadOverlayColors = p.leadOverlay.colors.slice();
+        }
+      }
+
+      // sound profiles + per-lead assignments
+      if (p.soundProfilesV1 && isPlainObject(p.soundProfilesV1)) {
+        let profiles = Array.isArray(p.soundProfilesV1.profiles) ? p.soundProfilesV1.profiles : [];
+        profiles = profiles.filter((x) => x && typeof x === 'object' && !Array.isArray(x)).slice(0, MAX_SAFE_PROFILES);
+
+        const sel = clampInt(p.soundProfilesV1.selectedProfileIndex, 1, Math.max(1, profiles.length || 1), 1);
+
+        let leadAssignments = [];
+        try { leadAssignments = Array.isArray(p.soundProfilesV1.leadAssignments) ? p.soundProfilesV1.leadAssignments.slice() : []; } catch (_) { leadAssignments = []; }
+
+        state.soundProfilesV1 = { profiles, selectedProfileIndex: sel, leadAssignments };
+        didApplyProfiles = true;
+        try { ui._runtimeAppliedProfileIndex = 0; } catch (_) {}
+      }
+
+      pendingV19ImportBlocks = null;
+    }
+  } catch (_) {
+    try { pendingV19ImportBlocks = null; } catch (_) {}
+  }
+
+  // Normalize lead model after rows exist.
+  try { ensureLeadsV1Exists(); } catch (_) {}
+  try { normalizeLeadsV1AfterRows(); } catch (_) {}
+
+  // Determine active lead ranges (forces clamping to current rowCount).
+  try { getActiveLeadRanges(); } catch (_) {}
+
+  // Normalize overlay colors for the current active lead count.
+  try { normalizeLeadOverlayColorsForCurrentLeadCount(); } catch (_) {}
+
+  // Ensure at least 1 profile and normalize per-lead assignments length + values.
+  try {
+    const sp = (state && isPlainObject(state.soundProfilesV1)) ? state.soundProfilesV1 : null;
+    const needsEnsure = !sp || !Array.isArray(sp.profiles) || sp.profiles.length < 1;
+    if (didApplyProfiles || needsEnsure) ensureSoundProfilesV1Exists();
+  } catch (_) {}
+  try { normalizeSoundLeadAssignmentsForCurrentLeadCount(); } catch (_) {}
+
+  // UI that depends on lead model
+  try { syncSoundLeadCountUI(); } catch (_) {}
+  try { syncSoundLeadAssignmentsUI(); } catch (_) {}
+  try { syncLeadOverlayControlsUI(); } catch (_) {}
+
+  // If profiles were imported/changed, refresh the tabs/dropdown once (no heavy loops).
+  if (didApplyProfiles) {
+    try { syncSoundProfilesUI(); } catch (_) {}
+  }
+}
+
+
+function insertLeadOverlayColorAt(index0, color) {
+  const arr = Array.isArray(state.leadOverlayColors) ? state.leadOverlayColors.slice() : [];
+  const i = clampInt(Number(index0) || 0, 0, Math.max(0, arr.length), arr.length);
+  const v = sanitizeHexColor(color) || LEAD_OVERLAY_DEFAULT_PALETTE[i % LEAD_OVERLAY_DEFAULT_PALETTE.length];
+  arr.splice(i, 0, v);
+  state.leadOverlayColors = arr;
+}
+
+function removeLeadOverlayColorAt(index0) {
+  const arr = Array.isArray(state.leadOverlayColors) ? state.leadOverlayColors.slice() : [];
+  const i = clampInt(Number(index0) || 0, 0, Math.max(0, arr.length - 1), 0);
+  if (arr.length && i >= 0 && i < arr.length) arr.splice(i, 1);
+  state.leadOverlayColors = arr;
+}
+
+function insertSoundLeadAssignmentAt(index0, value) {
+  const sp = (state && isPlainObject(state.soundProfilesV1)) ? state.soundProfilesV1 : null;
+  if (!sp) return;
+  const arr = Array.isArray(sp.leadAssignments) ? sp.leadAssignments.slice() : [];
+  const i = clampInt(Number(index0) || 0, 0, Math.max(0, arr.length), arr.length);
+  const v = clampInt(Number(value) || 1, 1, MAX_SAFE_PROFILES, 1);
+  arr.splice(i, 0, v);
+  sp.leadAssignments = arr;
+}
+
+function removeSoundLeadAssignmentAt(index0) {
+  const sp = (state && isPlainObject(state.soundProfilesV1)) ? state.soundProfilesV1 : null;
+  if (!sp) return;
+  const arr = Array.isArray(sp.leadAssignments) ? sp.leadAssignments.slice() : [];
+  const i = clampInt(Number(index0) || 0, 0, Math.max(0, arr.length - 1), 0);
+  if (arr.length && i >= 0 && i < arr.length) arr.splice(i, 1);
+  sp.leadAssignments = arr;
+}
+
+function setLeadsV1Auto() {
+  try { ensureLeadsV1Exists(); } catch (_) {}
+  if (!state.leadsV1) state.leadsV1 = { mode: 'auto', ranges: [] };
+  state.leadsV1.mode = 'auto';
+  state.leadsV1.ranges = [];
+}
+
+function setLeadsV1ManualSingle() {
+  try { ensureLeadsV1Exists(); } catch (_) {}
+  if (!state.leadsV1) state.leadsV1 = { mode: 'manual', ranges: [] };
+  const rc = getRowCountForLeads();
+  state.leadsV1.mode = 'manual';
+  state.leadsV1.ranges = [{ a: 1, b: rc }];
+}
+
+function tryAddLeadAfter(index0) {
+  const rc = getRowCountForLeads();
+  const maxSafe = getMaxSafeLeadsForRowCount(rc);
+
+  ensureManualLeadsSeededFromAuto();
+
+  const lv = (state && isPlainObject(state.leadsV1)) ? state.leadsV1 : null;
+  if (!lv || !Array.isArray(lv.ranges)) return;
+
+  const ranges = lv.ranges.map((r) => ({ a: r.a, b: r.b }));
+  const k = ranges.length;
+
+  // Safety: never exceed rowCount leads; also cap to MAX_SAFE_LEADS.
+  const hardMax = Math.min(rc, maxSafe);
+  if (k >= hardMax) {
+    setLeadOverlayEditorNote('Lead limit reached (MAX_SAFE_LEADS = ' + hardMax + ').');
+    return;
+  }
+
+  const i = clampInt(Number(index0) || 0, 0, Math.max(0, k - 1), 0);
+  const r = ranges[i];
+  if (!r) return;
+
+  const len = (Number(r.b) - Number(r.a) + 1);
+  if (isFinite(len) && len > 1) {
+    const a = clampInt(Number(r.a) || 1, 1, rc, 1);
+    const b = clampInt(Number(r.b) || a, 1, rc, a);
+    const mid = Math.floor((a + b) / 2);
+    const newRange = { a: mid + 1, b: b };
+    ranges[i] = { a: a, b: mid };
+    ranges.splice(i + 1, 0, newRange);
+
+    // Default color: next palette entry.
+    insertLeadOverlayColorAt(i + 1, LEAD_OVERLAY_DEFAULT_PALETTE[(i + 1) % LEAD_OVERLAY_DEFAULT_PALETTE.length]);
+
+    // Sound lead assignment: copy from the split lead (more user-friendly than resetting to 1).
+    const sp = (state && isPlainObject(state.soundProfilesV1)) ? state.soundProfilesV1 : null;
+    const assigns = (sp && Array.isArray(sp.leadAssignments)) ? sp.leadAssignments : [];
+    const copied = clampInt(assigns[i], 1, MAX_SAFE_PROFILES, 1);
+    insertSoundLeadAssignmentAt(i + 1, copied);
+
+    lv.ranges = normalizeManualRangesToPartition(ranges, rc);
+    clearLeadOverlayEditorNote();
+    return;
+  }
+
+  // Single-row lead: try to split a neighbor by borrowing a row (if possible).
+  // Prefer borrowing from next lead (creates the new lead immediately after i).
+  if (i + 1 < k) {
+    const nxt = ranges[i + 1];
+    const nlen = (Number(nxt.b) - Number(nxt.a) + 1);
+    if (isFinite(nlen) && nlen > 1) {
+      const take = clampInt(Number(nxt.a) || (r.b + 1), 1, rc, r.b + 1);
+      ranges.splice(i + 1, 0, { a: take, b: take });
+      ranges[i + 2] = { a: take + 1, b: nxt.b };
+
+      insertLeadOverlayColorAt(i + 1, LEAD_OVERLAY_DEFAULT_PALETTE[(i + 1) % LEAD_OVERLAY_DEFAULT_PALETTE.length]);
+
+      const sp = (state && isPlainObject(state.soundProfilesV1)) ? state.soundProfilesV1 : null;
+      const assigns = (sp && Array.isArray(sp.leadAssignments)) ? sp.leadAssignments : [];
+      const copied = clampInt(assigns[i], 1, MAX_SAFE_PROFILES, 1);
+      insertSoundLeadAssignmentAt(i + 1, copied);
+
+      lv.ranges = normalizeManualRangesToPartition(ranges, rc);
+      clearLeadOverlayEditorNote();
+      return;
+    }
+  }
+  // Otherwise try borrowing from previous lead (inserts a new lead before i).
+  if (i - 1 >= 0) {
+    const prv = ranges[i - 1];
+    const plen = (Number(prv.b) - Number(prv.a) + 1);
+    if (isFinite(plen) && plen > 1) {
+      const take = clampInt(Number(prv.b) || (r.a - 1), 1, rc, r.a - 1);
+      ranges[i - 1] = { a: prv.a, b: take - 1 };
+      ranges.splice(i, 0, { a: take, b: take });
+
+      insertLeadOverlayColorAt(i, LEAD_OVERLAY_DEFAULT_PALETTE[(i) % LEAD_OVERLAY_DEFAULT_PALETTE.length]);
+
+      const sp = (state && isPlainObject(state.soundProfilesV1)) ? state.soundProfilesV1 : null;
+      const assigns = (sp && Array.isArray(sp.leadAssignments)) ? sp.leadAssignments : [];
+      const copied = clampInt(assigns[i - 1], 1, MAX_SAFE_PROFILES, 1);
+      insertSoundLeadAssignmentAt(i, copied);
+
+      lv.ranges = normalizeManualRangesToPartition(ranges, rc);
+      clearLeadOverlayEditorNote();
+      return;
+    }
+  }
+
+  setLeadOverlayEditorNote('Cannot add a lead here (no neighbor has a range > 1 row).');
+}
+
+function tryRemoveLeadAt(index0) {
+  ensureManualLeadsSeededFromAuto();
+
+  const lv = (state && isPlainObject(state.leadsV1)) ? state.leadsV1 : null;
+  if (!lv || !Array.isArray(lv.ranges)) return;
+
+  const ranges = lv.ranges.map((r) => ({ a: r.a, b: r.b }));
+  const k = ranges.length;
+  if (k <= 1) {
+    setLeadOverlayEditorNote('Cannot remove the only lead.');
+    return;
+  }
+
+  const rc = getRowCountForLeads();
+  const i = clampInt(Number(index0) || 0, 0, Math.max(0, k - 1), 0);
+  const removed = ranges[i];
+
+  if (i > 0) {
+    // Merge into previous by extending prev.b to removed.b
+    ranges[i - 1] = { a: ranges[i - 1].a, b: removed.b };
+    ranges.splice(i, 1);
+  } else {
+    // i==0: merge into next by shifting next.a to removed.a
+    ranges[1] = { a: removed.a, b: ranges[1].b };
+    ranges.splice(0, 1);
+  }
+
+  removeLeadOverlayColorAt(i);
+  removeSoundLeadAssignmentAt(i);
+
+  lv.ranges = normalizeManualRangesToPartition(ranges, rc);
+  clearLeadOverlayEditorNote();
+}
+
+function applyManualRangeEdit(index0, field, value) {
+  const rc = getRowCountForLeads();
+  const v = clampInt(Number(value) || 0, 1, rc, 0);
+  if (!v) return;
+
+  ensureManualLeadsSeededFromAuto();
+  const lv = (state && isPlainObject(state.leadsV1)) ? state.leadsV1 : null;
+  if (!lv || !Array.isArray(lv.ranges) || !lv.ranges.length) return;
+
+  const ranges = lv.ranges.map((r) => ({ a: r.a, b: r.b }));
+  const i = clampInt(Number(index0) || 0, 0, Math.max(0, ranges.length - 1), 0);
+
+  if (field === 'a') ranges[i].a = v;
+  else ranges[i].b = v;
+
+  lv.ranges = normalizeManualRangesAfterEdit(ranges, i, field);
+  clearLeadOverlayEditorNote();
+}
+
+
+function rebuildLeadOverlayEditorUI() {
+  if (!leadOverlayColors) return;
+
+  // Keep ranges + colors aligned with the current row count (fail-open).
+  try { normalizeLeadsV1AfterRows(); } catch (_) {}
+  try { normalizeLeadOverlayColorsForCurrentLeadCount(); } catch (_) {}
+
+  // Clear list
+  try { leadOverlayColors.innerHTML = ''; } catch (_) {}
+
+  const rc = getRowCountForLeads();
+  const maxSafe = getMaxSafeLeadsForRowCount(rc);
+
+  const autoRanges = getAutoLeadRanges();
+  const autoCount = autoRanges.length;
+
+  const activeRanges = getActiveLeadRanges();
+  const leadCount = activeRanges.length;
+
+  const mode = (state && isPlainObject(state.leadsV1) && state.leadsV1.mode === 'manual') ? 'manual' : 'auto';
+
+  // Info: auto detection count (always shown, even in manual mode).
+  const infoAuto = document.createElement('div');
+  infoAuto.className = 'lead-overlay-info rg-muted';
+  infoAuto.textContent = 'Leads detected (auto): ' + String(autoCount);
+  leadOverlayColors.appendChild(infoAuto);
+
+  if (mode === 'manual' && leadCount !== autoCount) {
+    const infoActive = document.createElement('div');
+    infoActive.className = 'lead-overlay-info rg-muted';
+    infoActive.textContent = 'Active leads: ' + String(leadCount);
+    leadOverlayColors.appendChild(infoActive);
+  }
+
+  // Inline note: safety limit reached (fail-open; do not crash).
+  if (leadCount >= Math.min(rc, maxSafe)) {
+    const note = document.createElement('div');
+    note.className = 'lead-overlay-note rg-muted';
+    note.textContent = 'Lead limit reached (MAX_SAFE_LEADS = ' + String(Math.min(rc, maxSafe)) + ').';
+    leadOverlayColors.appendChild(note);
+  }
+
+  // Inline note: last editor action message (e.g., invalid split).
+  const uiNote = (ui && typeof ui._leadOverlayEditorNote !== 'undefined') ? String(ui._leadOverlayEditorNote || '') : '';
+  if (uiNote) {
+    const note2 = document.createElement('div');
+    note2.className = 'lead-overlay-note rg-muted';
+    note2.textContent = uiNote;
+    leadOverlayColors.appendChild(note2);
+  }
+
+  const ranges = (mode === 'manual') ? activeRanges : autoRanges;
+
+  // Ensure colors array is present for active lead count.
+  const colors = Array.isArray(state.leadOverlayColors) ? state.leadOverlayColors : [];
+  const defaults = getDefaultLeadOverlayColors(leadCount);
+
+  for (let i = 0; i < ranges.length; i++) {
+    const rr = ranges[i] || { a: 1, b: rc };
+
+    const row = document.createElement('div');
+    row.className = 'lead-overlay-row';
+
+    const lbl = document.createElement('div');
+    lbl.className = 'lead-overlay-label';
+    lbl.textContent = 'Lead ' + (i + 1);
+
+    const colorInp = document.createElement('input');
+    colorInp.type = 'color';
+    const curColor = sanitizeHexColor(colors[i]) || defaults[i] || LEAD_OVERLAY_DEFAULT_PALETTE[i % LEAD_OVERLAY_DEFAULT_PALETTE.length];
+    colorInp.value = curColor;
+
+    const hex = document.createElement('div');
+    hex.className = 'lead-overlay-hex rg-muted';
+    hex.textContent = curColor;
+
+    colorInp.addEventListener('input', () => {
+      markUserTouchedConfig();
+      clearLeadOverlayEditorNote();
+      const v = sanitizeHexColor(colorInp.value) || defaults[i];
+      state.leadOverlayColors[i] = v;
+      hex.textContent = v;
+      markDirty();
+      kickLoop();
+    });
+
+    // First row input (1-based, inclusive).
+    const firstWrap = document.createElement('div');
+    firstWrap.className = 'lead-overlay-field';
+
+    const firstLbl = document.createElement('div');
+    firstLbl.className = 'lead-overlay-field-label rg-muted';
+    firstLbl.textContent = 'First';
+
+    const firstInp = document.createElement('input');
+    firstInp.type = 'number';
+    firstInp.className = 'lead-overlay-num';
+    firstInp.min = '1';
+    firstInp.max = String(rc);
+    firstInp.step = '1';
+    firstInp.value = String(clampInt(Number(rr.a) || 1, 1, rc, 1));
+    firstInp.setAttribute('aria-label', 'Lead ' + (i + 1) + ' first row');
+
+    // Lead 1 start is always 1.
+    if (i === 0) firstInp.disabled = true;
+
+    const onFirst = () => {
+      markUserTouchedConfig();
+      // Editing in auto mode switches to manual.
+      applyManualRangeEdit(i, 'a', firstInp.value);
+      syncAfterLeadModelChange();
+      markDirty();
+      kickLoop();
+    };
+    firstInp.addEventListener('input', onFirst);
+    firstInp.addEventListener('change', onFirst);
+
+    firstWrap.appendChild(firstLbl);
+    firstWrap.appendChild(firstInp);
+
+    // Last row input (1-based, inclusive).
+    const lastWrap = document.createElement('div');
+    lastWrap.className = 'lead-overlay-field';
+
+    const lastLbl = document.createElement('div');
+    lastLbl.className = 'lead-overlay-field-label rg-muted';
+    lastLbl.textContent = 'Last';
+
+    const lastInp = document.createElement('input');
+    lastInp.type = 'number';
+    lastInp.className = 'lead-overlay-num';
+    lastInp.min = '1';
+    lastInp.max = String(rc);
+    lastInp.step = '1';
+    lastInp.value = String(clampInt(Number(rr.b) || rc, 1, rc, rc));
+    lastInp.setAttribute('aria-label', 'Lead ' + (i + 1) + ' last row');
+
+    // Last lead end is always rowCount.
+    if (i === ranges.length - 1) lastInp.disabled = true;
+
+    const onLast = () => {
+      markUserTouchedConfig();
+      applyManualRangeEdit(i, 'b', lastInp.value);
+      syncAfterLeadModelChange();
+      markDirty();
+      kickLoop();
+    };
+    lastInp.addEventListener('input', onLast);
+    lastInp.addEventListener('change', onLast);
+
+    lastWrap.appendChild(lastLbl);
+    lastWrap.appendChild(lastInp);
+
+    // Add / Remove buttons
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'pill lead-overlay-mini';
+    addBtn.textContent = '+';
+    addBtn.title = 'Add lead (split)';
+
+    addBtn.addEventListener('click', () => {
+      markUserTouchedConfig();
+      tryAddLeadAfter(i);
+      syncAfterLeadModelChange();
+      markDirty();
+      kickLoop();
+    });
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'pill lead-overlay-mini lead-overlay-mini--danger';
+    removeBtn.textContent = '–';
+    removeBtn.title = 'Remove lead';
+
+    if (ranges.length <= 1) removeBtn.disabled = true;
+
+    removeBtn.addEventListener('click', () => {
+      markUserTouchedConfig();
+      tryRemoveLeadAt(i);
+      syncAfterLeadModelChange();
+      markDirty();
+      kickLoop();
+    });
+
+    row.appendChild(lbl);
+    row.appendChild(colorInp);
+    row.appendChild(hex);
+    row.appendChild(firstWrap);
+    row.appendChild(lastWrap);
+    row.appendChild(addBtn);
+    row.appendChild(removeBtn);
+
+    leadOverlayColors.appendChild(row);
+  }
+}
+
+function syncLeadOverlayControlsUI() {
+  try {
+    if (leadOverlayToggle) leadOverlayToggle.checked = !!state.leadOverlayEnabled;
+  } catch (_) {}
+  rebuildLeadOverlayEditorUI();
+}
+
+function normalizeLeadOverlayStateAfterRows() {
+  normalizeLeadOverlayColorsForCurrentLeadCount();
+  syncLeadOverlayControlsUI();
+}
+// v019_p01_lead_overlay =========================================================
+
+
+function inferLeadLenRowsFromRows(rows, stage) {
+  // Deterministic heuristic: use treble-leading rows as candidate lead boundaries.
+  // diff >= stage avoids tiny diffs (e.g. adjacent treble-leading rows in hunt-style sequences).
+  try { stage = clampInt(stage, 1, 999, 0); } catch (_) {}
+  if (!Array.isArray(rows) || !isFinite(stage) || stage <= 0) return 0;
+  if (rows.length < stage * 2) return 0;
+
+  function trebleLeads(row) {
+    if (!row) return false;
+    if (typeof row === 'string') {
+      const ch = row[0];
+      if (ch === '1') return true;
+      try { return glyphToBell(ch) === 1; } catch (_) { return false; }
+    }
+    if (Array.isArray(row)) return row.length && row[0] === 1;
+    return false;
+  }
+
+  // Use the end of any consecutive run of treble-leading rows to avoid off-by-one lead lengths.
+  const idxs = [];
+  let prevLead = false;
+  for (let i = 1; i < rows.length; i++) {
+    const lead = trebleLeads(rows[i]);
+    if (lead) {
+      if (prevLead && idxs.length) idxs[idxs.length - 1] = i;
+      else idxs.push(i);
+    }
+    prevLead = lead;
+  }
+  if (idxs.length < 2) return 0;
+
+  const freq = Object.create(null);
+  let best = 0, bestCount = 0, tie = false;
+  const maxDiff = Math.floor(rows.length / 2);
+
+  for (let j = 1; j < idxs.length; j++) {
+    const d = idxs[j] - idxs[j - 1];
+    if (d < stage || d > maxDiff) continue; // diff >= stage avoids tiny diffs like 1.
+    const k = String(d);
+    freq[k] = (freq[k] || 0) + 1;
+    const c = freq[k];
+    if (c > bestCount) { bestCount = c; best = d; tie = false; }
+    else if (c === bestCount && d !== best) { tie = true; }
+  }
+
+  if (!best || tie) return 0;
+
+  const cand = Math.max(1, Math.floor(best));
+  const m = Math.max(0, rows.length - 1);
+  if (m <= 0) return 0;
+
+  const lc = Math.round(m / cand);
+  if (!isFinite(lc) || lc < 1) return 0;
+  const err = Math.abs(m - (lc * cand));
+
+  // Prefer exact alignment; allow +/-1 row at most.
+  if (err === 0 || (err === 1 && lc > 1)) return cand;
+  return 0;
+}
+
+function ensureMethodMetaLeadCountAfterRows() {
+  let mm = (state && isPlainObject(state.methodMeta)) ? state.methodMeta : null;
+  const existing = (mm && isFinite(mm.leadCount)) ? Number(mm.leadCount) : 0;
+  if (existing >= 1) {
+    try { mm.leadCount = Math.max(1, Math.floor(existing)); } catch (_) {}
+    return;
+  }
+
+  // Built-in generators: makeLibraryRows(...) uses makePlainHunt(stage, 5).
+  if (state && state.methodSource === 'built_in') {
+    try { if (!mm) { state.methodMeta = {}; mm = state.methodMeta; } } catch (_) {}
+    try { if (mm) mm.leadCount = 5; } catch (_) {}
+    return;
+  }
+
+  // Custom TXT / unknown custom sources: attempt to infer from repetition structure.
+  const rows = (state && Array.isArray(state.rows)) ? state.rows : null;
+  const stage = state ? state.stage : null;
+  const leadLen = inferLeadLenRowsFromRows(rows, stage);
+  if (leadLen > 0 && rows && rows.length > 1) {
+    const m = rows.length - 1;
+    const lc = Math.round(m / leadLen);
+    if (isFinite(lc) && lc > 1) {
+      try { if (!mm) { state.methodMeta = {}; mm = state.methodMeta; } } catch (_) {}
+      try { if (mm) mm.leadCount = Math.max(1, Math.floor(lc)); } catch (_) {}
+    }
+  }
+}
+
+function computeRows() {
     if (state.method === 'custom' && state.customRows) state.rows = state.customRows.slice();
     else state.rows = makeLibraryRows(state.method, state.stage);
+
+    // v019_p06_lead_detection_all_methods: ensure leadCount works across all method sources (fail-open).
+    try { ensureMethodMetaLeadCountAfterRows(); } catch (_) {}
 
     // v09_p01_home_logo_step_method: reset Home logo method-step pointer when rows rebuild.
     homeMethodStepIndex = 0;
@@ -12729,7 +16923,10 @@ function refreshDrone() {
     ui.notationFollow = true;
     ui.notationPage = 0;
     syncNotationPagingUI();
+    // v019_p08_lead_range_editor: normalize persisted manual lead ranges after row rebuild (depends on rowCount).
+    try { normalizeV19LeadAndProfileStateAfterRows(); } catch (_) {}
   }
+
 
 
   function cccbGetElements(root, localName) {
@@ -13549,6 +17746,11 @@ function refreshDrone() {
       try {
         const gen = await cccbRowsFromPnFullCycleAsync(stage, m.pn, CCCBR_PLAY_MAX_ROWS, CCCBR_PLAY_MAX_LEADS, opts);
         rows = (gen && gen.rows) ? gen.rows : null;
+        try {
+          const lc = (gen && isFinite(gen.leadsDone) && gen.leadsDone > 0) ? Math.floor(gen.leadsDone) : 1;
+          if (state.methodMeta) state.methodMeta.leadCount = Math.max(1, lc);
+        } catch (_) {}
+
         if (gen && gen.capped && !gen.done) {
           const warn = '⚠ Method truncated (limit reached); may not be a complete cycle.';
           try { if (state.methodMeta) state.methodMeta.cycleWarning = warn; } catch (_) {}
@@ -13724,7 +17926,9 @@ function refreshDrone() {
   }
 
   // === Scale -> bell frequencies ===
-  function getScaleDef() { return SCALE_LIBRARY.find(s => s.key === state.scaleKey) || SCALE_LIBRARY[0]; }
+  function getScaleDef() {
+    return SCALE_LIBRARY.find(s => s.key === state.scaleKey) || getFallbackScaleDef();
+  }
 
   function downsampleIntervals(intervals, stage) {
     if (stage <= 1) return [intervals[0]];
@@ -13775,9 +17979,50 @@ function getBellPitchOffsetsDiatonic(stage) {
     const def = getScaleDefByKey(state.scaleKey) || SCALE_LIBRARY[0];
     intervals = (def && def.intervals) ? def.intervals : [0,2,4,5,7,9,11,12];
   } else {
-    // "Custom (Hz)" keeps diatonic intervals (major) while allowing a custom root frequency.
-    const def0 = SCALE_LIBRARY[0] || { intervals: [0,2,4,5,7,9,11,12] };
-    intervals = def0.intervals || [0,2,4,5,7,9,11,12];
+    // "Custom (Hz)" uses the selected mode/flavor intervals while allowing a custom root frequency.
+    const fallbackKey = (SCALE_LIBRARY.find(s => s.key === 'Fs_major')
+      ? 'Fs_major'
+      : (SCALE_LIBRARY[0] ? SCALE_LIBRARY[0].key : 'Fs_major'));
+
+    const effKey = (isValidScaleKey(state.bellLastKeyScaleKey) && state.bellLastKeyScaleKey !== 'custom_hz')
+      ? String(state.bellLastKeyScaleKey || '')
+      : fallbackKey;
+
+    const defC = getScaleDefByKey(effKey) || SCALE_LIBRARY[0] || { intervals: [0,2,4,5,7,9,11,12] };
+    intervals = (defC && defC.intervals) ? defC.intervals : [0,2,4,5,7,9,11,12];
+  }
+
+  
+  // Degrees (modal) mapping: map 7-degree scale across the stage coherently.
+  const mapMode = coerceBellPitchDiatonicMap(state.bellPitchDiatonicMap);
+  if (mapMode === 'degrees') {
+    let base = Array.isArray(intervals) ? intervals.slice() : [0];
+    // Drop terminal octave (12) if present so stage <= 7 uses unique degrees only.
+    if (base.length && Number(base[base.length - 1]) === 12) base.pop();
+    if (!base.length) base = [0];
+
+    const need = stage;
+    let octavesNeeded = Math.ceil(need / base.length);
+    if (String(state.bellPitchSpan || 'compact') === 'extended') octavesNeeded = Math.max(octavesNeeded, 2);
+
+    const lowToHigh = [];
+    for (let o = 0; o < octavesNeeded; o++) {
+      for (let i = 0; i < base.length; i++) {
+        lowToHigh.push(Number(base[i]) + 12 * o);
+      }
+    }
+    // Safety: add one more octave pass if still short.
+    if (lowToHigh.length < need) {
+      const o = octavesNeeded;
+      for (let i = 0; i < base.length; i++) {
+        lowToHigh.push(Number(base[i]) + 12 * o);
+      }
+    }
+
+    const trimmed = lowToHigh.slice(0, need);
+    const offsets = [];
+    for (let bell = 1; bell <= stage; bell++) offsets.push(trimmed[stage - bell] || 0); // bell 1 highest
+    return offsets;
   }
 
   const span = String(state.bellPitchSpan || 'compact');
@@ -13862,18 +18107,18 @@ function getBellPitchOffsetsPartials(stage) {
   return offsets;
 }
 
-function rebuildBellFrequencies() {
+function rebuildBellFrequencies(silent) {
   const rootFreq = getBellRootFrequency();
   const stage = clamp(parseInt(state.stage, 10) || 1, 1, 12);
   const offsets = getBellPitchOffsets(stage) || [];
+  const allowUnequal = (coerceBellPitchFamily(state.bellPitchFamily) !== 'partials');
   const freq = [];
   for (let bell = 1; bell <= stage; bell++) {
     const off = (offsets[bell - 1] != null) ? Number(offsets[bell - 1]) : 0;
-    freq.push(rootFreq * Math.pow(2, off / 12));
+    freq.push(rootFreq * tunedRatioFromSemis(off, state.temperamentKey, allowUnequal));
   }
   state.bellFreq = freq;
-  try { syncBellOverridesEffectiveUI(); } catch (_) {}
-}
+  if (!silent) { try { syncBellOverridesEffectiveUI(); } catch (_) {} }}
 
 
   // v08_p05_sound_per_bell_overrides: per-bell sound overrides (UI + persistence)
@@ -14417,10 +18662,38 @@ function rebuildBellFrequencies() {
   }
 
   function scaleKeyLabel(key) {
-    const k = String(key || '');
+    const k = String(key || '').trim();
     if (k === 'custom_hz') return 'Custom (Hz)';
-    const def = SCALE_LIBRARY.find(s => s.key === k);
-    return def ? def.label : k;
+
+    // Fast path: library-defined label (covers all known keys).
+    const def = SCALE_LIBRARY.find(s => s && s.key === k);
+    if (def && def.label) return String(def.label);
+
+    // Fallback formatting for unknown keys (fail-open).
+    const parts = k.split('_');
+    if (parts.length >= 2) {
+      const prefix = parts[0];
+      const suffix = parts.slice(1).join('_');
+
+      const PREFIX_TO_ROOT = { C:'C', Cs:'C#', D:'D', Ef:'Eb', E:'E', F:'F', Fs:'F#', G:'G', Af:'Ab', A:'A', Bf:'Bb', B:'B' };
+      const SUFFIX_TO_LABEL = {
+        major: 'major (Ionian)',
+        minor: 'minor (Aeolian)',
+        dorian: 'Dorian',
+        phrygian: 'Phrygian',
+        lydian: 'Lydian',
+        mixolydian: 'Mixolydian',
+        locrian: 'Locrian',
+        harmonic_minor: 'Harmonic Minor',
+        melodic_minor: 'Melodic Minor'
+      };
+
+      const root = PREFIX_TO_ROOT[prefix] || prefix;
+      const modeLabel = SUFFIX_TO_LABEL[suffix] || suffix;
+      return root + ' ' + modeLabel;
+    }
+
+    return k;
   }
 
 
@@ -14430,21 +18703,33 @@ function rebuildBellFrequencies() {
   const PIANO_NOTE_TO_PREFIX = { 'C':'C', 'C#':'Cs', 'D':'D', 'Eb':'Ef', 'E':'E', 'F':'F', 'F#':'Fs', 'G':'G', 'Ab':'Af', 'A':'A', 'Bb':'Bf', 'B':'B' };
 
   function scaleModeFromScaleKey(key) {
-    const k = String(key || '');
-    if (k.endsWith('_minor')) return 'minor';
-    return 'major';
+    // Preserve the current scale "flavor" suffix (major/minor/dorian/harmonic_minor/etc.).
+    const k = String(key || '').trim();
+    const i = k.indexOf('_');
+    if (i < 0) return 'major';
+    const suffix = k.slice(i + 1);
+    return suffix ? suffix : 'major';
   }
 
-  function scaleKeyFromPianoNote(note, mode) {
-    const n = String(note || '');
+
+function scaleKeyFromPianoNote(note, mode) {
+    const n = String(note || '').trim();
     const pref = PIANO_NOTE_TO_PREFIX[n];
     if (!pref) return '';
-    const m = (mode === 'minor') ? 'minor' : 'major';
-    const key = pref + '_' + m;
-    return SCALE_LIBRARY.some(s => s.key === key) ? key : '';
+    const suffix = String(mode || 'major').trim() || 'major';
+
+    const candidate = `${pref}_${suffix}`;
+    if (SCALE_LIBRARY.some(s => s && s.key === candidate)) return candidate;
+
+    const fallback = `${pref}_major`;
+    if (SCALE_LIBRARY.some(s => s && s.key === fallback)) return fallback;
+
+    // Ultimate fail-open: return the global fallback (Fs_major or first _major).
+    try { return getFallbackScaleDef().key; } catch (_) { return fallback; }
   }
 
-  function pianoNoteFromScaleKey(key) {
+
+function pianoNoteFromScaleKey(key) {
     const k = String(key || '');
     if (!k || k === 'custom_hz') return '';
     const def = SCALE_LIBRARY.find(s => s.key === k);
@@ -16755,7 +21040,14 @@ function rebuildBellFrequencies() {
     const now = perfNow();
     syncWakeLockForRun();
     markRung(bell, now);
-    playBellAt(bell, now);
+        // v019_p04_runtime_switch_by_lead: live ringing reflects the current lead's profile during Play/Demo runs.
+    try {
+      if (state.phase === 'running' || state.phase === 'countdown') {
+        const profIdx = resolveRuntimeProfileIndexForNowMs(now);
+        applySoundProfileRuntime(profIdx);
+      }
+    } catch (_) {}
+playBellAt(bell, now);
     // v09_p09_p01_first_hit_window_fix: during the countdown→running boundary,
     // the first scoring window can begin before state.phase flips to 'running'.
     // Let scoreHit decide eligibility based on the timing reference.
@@ -17194,7 +21486,21 @@ function rebuildBellFrequencies() {
         sctx.fillStyle = faded ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.05)';
         sctx.strokeStyle = 'rgba(255,255,255,0.08)';
         roundRect(sctx, 0, 0, W - padX * 2, rowBlockH, 12);
-        sctx.fill(); sctx.stroke();
+        sctx.fill();
+
+        if (state.leadOverlayEnabled) {
+          const lc = getLeadOverlayColorForRow(absRowIdx);
+          if (lc) {
+            sctx.save();
+            sctx.globalAlpha = LEAD_OVERLAY_ALPHA_SPOTLIGHT;
+            sctx.fillStyle = lc;
+            roundRect(sctx, 0, 0, W - padX * 2, rowBlockH, 12);
+            sctx.fill();
+            sctx.restore();
+          }
+        }
+
+        sctx.stroke();
 
         let fontSize = Math.max(16, Math.min(34, Math.floor(rowBlockH * 0.58)));
         if (stage >= 10) {
@@ -17599,7 +21905,29 @@ function rebuildBellFrequencies() {
     dctx.fillStyle = 'rgba(255,255,255,0.03)';
     dctx.strokeStyle = 'rgba(255,255,255,0.08)';
     roundRect(dctx, 14, 12, W - 28, H - 24, 16);
-    dctx.fill(); dctx.stroke();
+    dctx.fill();
+
+    if (state.leadOverlayEnabled) {
+      let activeRowIdx = 0;
+      try {
+        const stage = clampInt(state.stage, 1, 12, 6);
+        const totalBeats = (state.rows && state.rows.length ? state.rows.length : 0) * stage;
+        const strikeIdx = clamp((state.execBeatIndex - 1), 0, Math.max(0, totalBeats - 1));
+        activeRowIdx = Math.floor(strikeIdx / stage);
+      } catch (_) { activeRowIdx = 0; }
+
+      const lc = getLeadOverlayColorForRow(activeRowIdx);
+      if (lc) {
+        dctx.save();
+        dctx.globalAlpha = LEAD_OVERLAY_ALPHA_DISPLAY;
+        dctx.fillStyle = lc;
+        roundRect(dctx, 14, 12, W - 28, H - 24, 16);
+        dctx.fill();
+        dctx.restore();
+      }
+    }
+
+    dctx.stroke();
     dctx.restore();
 
     if (state.displayLiveBellsOnly) {
@@ -18017,6 +22345,18 @@ function rebuildBellFrequencies() {
         const y = contentTop + i * lineH + lineH / 2;
         const isActive = (rowIdx === highlightRowIdx);
 
+if (state.leadOverlayEnabled) {
+  const lc = getLeadOverlayColorForRow(rowIdx);
+  if (lc) {
+    nctx.save();
+    nctx.globalAlpha = LEAD_OVERLAY_ALPHA_NOTATION;
+    nctx.fillStyle = lc;
+    roundRect(nctx, x0 + 8, y - lineH / 2 + 2, w0 - 16, lineH - 4, 10);
+    nctx.fill();
+    nctx.restore();
+  }
+}
+
         if (isActive) {
           nctx.fillStyle = 'rgba(249,199,79,0.14)';
           roundRect(nctx, x0 + 8, y - lineH / 2 + 2, w0 - 16, lineH - 4, 10);
@@ -18202,6 +22542,18 @@ function rebuildBellFrequencies() {
         const y = contentTop + i * lineH + lineH / 2;
         const isActive = (rowIdx === highlightRowIdx);
 
+if (state.leadOverlayEnabled) {
+  const lc = getLeadOverlayColorForRow(rowIdx);
+  if (lc) {
+    nctx.save();
+    nctx.globalAlpha = LEAD_OVERLAY_ALPHA_NOTATION;
+    nctx.fillStyle = lc;
+    roundRect(nctx, x0 + 8, y - lineH / 2 + 2, w0 - 16, lineH - 4, 10);
+    nctx.fill();
+    nctx.restore();
+  }
+}
+
         if (isActive) {
           nctx.fillStyle = 'rgba(249,199,79,0.14)';
           roundRect(nctx, x0 + 8, y - lineH / 2 + 2, w0 - 16, lineH - 4, 10);
@@ -18308,6 +22660,18 @@ function rebuildBellFrequencies() {
           const row = rows[rowIdx];
           const y = peekContentTop + i * lineH + lineH / 2;
           const isActive = (rowIdx === highlightRowIdx);
+
+if (state.leadOverlayEnabled) {
+  const lc = getLeadOverlayColorForRow(rowIdx);
+  if (lc) {
+    nctx.save();
+    nctx.globalAlpha = LEAD_OVERLAY_ALPHA_NOTATION;
+    nctx.fillStyle = lc;
+    roundRect(nctx, x0 + 8, y - lineH / 2 + 2, w0 - 16, lineH - 4, 10);
+    nctx.fill();
+    nctx.restore();
+  }
+}
 
           if (isActive) {
             nctx.fillStyle = 'rgba(249,199,79,0.14)';
@@ -18675,6 +23039,10 @@ function rebuildBellFrequencies() {
     try { stopPolyrhythmTest(); } catch (_) {}
 
 
+    // v019_p05_runtime_switch_drones_master: reset runtime-applied profile cache at run start.
+    try { ui._runtimeAppliedProfileIndex = 0; } catch (_) {}
+
+
     // v08_p04_demo_profile_defaults: any run (Play or Demo) means the session is no longer pristine.
     ui.hasRunStartedThisSession = true;
 
@@ -18722,6 +23090,29 @@ function rebuildBellFrequencies() {
       syncDronePauseBtnUI();
     }
     if (state.mode === 'play' && state.micEnabled && !state.micActive && getMicControlledBells().length) startMicCapture();
+
+    // v021_p08_drone_volume_countin_fix: commit current sound snapshot into selected profile at run start
+    // This prevents applySoundProfileRuntime(...) from re-applying a stale snapshot after count-in.
+    try {
+      if (state.soundProfilesV1 && Array.isArray(state.soundProfilesV1.profiles) && state.soundProfilesV1.profiles.length) {
+        const sp = state.soundProfilesV1;
+        const sel = clampInt(sp.selectedProfileIndex, 1, sp.profiles.length, 1);
+        const idx = sel - 1;
+        const prev = (sp.profiles[idx] && isPlainObject(sp.profiles[idx])) ? sp.profiles[idx] : null;
+        const snap = sanitizeSoundProfileSnapshot(captureCurrentSoundConfigSnapshot());
+        // polyScope 'global' must not overwrite per-profile polyrhythm snapshots parked in sound profiles
+        if (coercePolyScope(state.polyScope) === 'global') {
+          try {
+            if (prev && Object.prototype.hasOwnProperty.call(prev, 'polyrhythm')) {
+              snap.polyrhythm = deepCloneJsonable(prev.polyrhythm);
+            } else {
+              delete snap.polyrhythm;
+            }
+          } catch (_) {}
+        }
+        sp.profiles[idx] = snap;
+      }
+    } catch (_) {}
 
     const now = perfNow();
 
@@ -18891,6 +23282,18 @@ function rebuildBellFrequencies() {
       applyDroneMasterGain();
       syncDronePauseBtnUI();
     }
+
+
+    // v019_p05_runtime_switch_drones_master: restore the user's selected edit profile snapshot after a run
+    // (keeps the Sound UI consistent without stopping the run early or writing to localStorage).
+    try { ui._runtimeAppliedProfileIndex = 0; } catch (_) {}
+    try {
+      const sp = (state && isPlainObject(state.soundProfilesV1)) ? state.soundProfilesV1 : null;
+      const profs = (sp && Array.isArray(sp.profiles)) ? sp.profiles : null;
+      const k = Math.max(1, Math.min(MAX_SAFE_PROFILES, (profs && profs.length) ? profs.length : 1));
+      const sel = clampInt(sp ? sp.selectedProfileIndex : 1, 1, k, 1);
+      applySoundProfileRuntime(sel);
+    } catch (_) {}
 
     syncWakeLockForRun();
 
@@ -19120,14 +23523,181 @@ function rebuildBellFrequencies() {
         if (ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r' || ch === ',') continue;
 
         const up = ch.toUpperCase();
-        if (up >= '1' && up <= '9') steps.push(parseInt(up, 10));
-        else if (up === '0') steps.push(10);
-        else if (up === 'E') steps.push(11);
-        else if (up === 'T') steps.push(12);
-        else steps.push(0); // rest
+        let token = 0;
+        let isTok = false;
+
+        if (up >= '1' && up <= '9') { token = parseInt(up, 10); isTok = true; }
+        else if (up === '0') { token = 10; isTok = true; }
+        else if (up === 'E') { token = 11; isTok = true; }
+        else if (up === 'T') { token = 12; isTok = true; }
+        else if (up === 'R') { token = 0; isTok = true; }
+        else { token = 0; isTok = false; }
+
+        steps.push(token);
+
+        // Skip optional duration spec (and optional dot/double-dot) so advanced
+        // notation doesn't create extra rest steps in legacy step parsing.
+        if (isTok) {
+          let j = i + 1;
+          let consumed = false;
+
+          if (j < s.length) {
+            const c = s[j];
+            const low = c.toLowerCase();
+            if ((low === 'w' || low === 'h' || low === 'q' || low === 'e' || low === 's' || low === 't' || low === 'x') && c !== 'E' && c !== 'T') {
+              consumed = true;
+              j++;
+            } else if (c === '/') {
+              let k = j + 1;
+              let ds = '';
+              while (k < s.length && ds.length < 2) {
+                const dch = s[k];
+                if (dch >= '0' && dch <= '9') { ds += dch; k++; } else break;
+              }
+              const denom = parseInt(ds, 10);
+              if (ds && (denom === 1 || denom === 2 || denom === 4 || denom === 8 || denom === 16 || denom === 32 || denom === 64)) {
+                consumed = true;
+                j = k;
+              }
+            }
+          }
+
+          if (consumed) {
+            if (j < s.length && s[j] === '.') {
+              if (j + 1 < s.length && s[j + 1] === '.') j += 2;
+              else j += 1;
+            }
+            i = j - 1;
+          }
+        }
       }
       return steps;
     }
+
+    function parsePolyPhrasePlan(phrase, defaultDurBeats) {
+      const s = String(phrase || '');
+      const base = Number(defaultDurBeats);
+      const baseDur = (Number.isFinite(base) && base > 0) ? base : 1;
+
+      const events = [];
+      const prefixBeats = [];
+      let sumBeats = 0;
+      let minDur = Infinity;
+
+      for (let i = 0; i < s.length; i++) {
+        const ch = s[i];
+        if (ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r' || ch === ',') continue;
+
+        const up = ch.toUpperCase();
+        let token = 0;
+        let isTok = false;
+
+        if (up >= '1' && up <= '9') { token = parseInt(up, 10); isTok = true; }
+        else if (up === '0') { token = 10; isTok = true; }
+        else if (up === 'E') { token = 11; isTok = true; }
+        else if (up === 'T') { token = 12; isTok = true; }
+        else if (up === 'R') { token = 0; isTok = true; }
+        else { token = 0; isTok = false; } // fail-open rest
+
+        let durBeats = baseDur;
+        let j = i + 1;
+        let consumed = false;
+
+        if (isTok && j < s.length) {
+          const c = s[j];
+          const low = c.toLowerCase();
+
+          // Letter suffix duration (avoid consuming token letters 'E'/'T' when uppercase).
+          if ((low === 'w' || low === 'h' || low === 'q' || low === 'e' || low === 's' || low === 't' || low === 'x') && c !== 'E' && c !== 'T') {
+            if (low === 'w') durBeats = 4;
+            else if (low === 'h') durBeats = 2;
+            else if (low === 'q') durBeats = 1;
+            else if (low === 'e') durBeats = 1 / 2;
+            else if (low === 's') durBeats = 1 / 4;
+            else if (low === 't') durBeats = 1 / 8;
+            else if (low === 'x') durBeats = 1 / 16;
+            consumed = true;
+            j++;
+          } else if (c === '/') {
+            // Denominator form: /1,/2,/4,/8,/16,/32,/64
+            let k = j + 1;
+            let ds = '';
+            while (k < s.length && ds.length < 2) {
+              const dch = s[k];
+              if (dch >= '0' && dch <= '9') { ds += dch; k++; } else break;
+            }
+            const denom = parseInt(ds, 10);
+            if (ds && (denom === 1 || denom === 2 || denom === 4 || denom === 8 || denom === 16 || denom === 32 || denom === 64)) {
+              durBeats = 4 / denom;
+              consumed = true;
+              j = k;
+            }
+          }
+
+          // Dotted / double-dotted durations: only after an explicit duration spec.
+          if (consumed) {
+            if (j < s.length && s[j] === '.') {
+              if (j + 1 < s.length && s[j + 1] === '.') { durBeats *= 1.75; j += 2; }
+              else { durBeats *= 1.5; j += 1; }
+            }
+            i = j - 1;
+          }
+        }
+
+        const d = Number(durBeats);
+        const finalDur = (Number.isFinite(d) && d > 0) ? d : baseDur;
+
+        prefixBeats.push(sumBeats);
+        events.push({ token: token, durBeats: finalDur });
+        sumBeats += finalDur;
+        if (finalDur < minDur) minDur = finalDur;
+      }
+
+      return {
+        events: events,
+        prefixBeats: prefixBeats,
+        cycleBeats: sumBeats,
+        minDurBeats: (minDur !== Infinity) ? minDur : 0,
+      };
+    }
+
+    function polyPhraseBeatOffsetForIndex(plan, idx) {
+      const ev = plan && plan.events;
+      const n = (ev && ev.length) ? ev.length : 0;
+      const cycleBeats = Number(plan && plan.cycleBeats);
+      const pref = plan && plan.prefixBeats;
+      if (!n || !(cycleBeats > 0) || !Array.isArray(pref) || pref.length !== n) return 0;
+      const i = Math.max(0, Math.floor(Number(idx) || 0));
+      const cycle = Math.floor(i / n);
+      const local = i - cycle * n;
+      return cycle * cycleBeats + (Number(pref[local]) || 0);
+    }
+
+    function polyComputeNextPhraseIndex(nowMs, anchorMs, beatMs, offsetBeats, plan) {
+      const ev = plan && plan.events;
+      const n = (ev && ev.length) ? ev.length : 0;
+      const cycleBeats = Number(plan && plan.cycleBeats);
+      const pref = plan && plan.prefixBeats;
+      if (!(beatMs > 0) || !(cycleBeats > 0) || !n || !Array.isArray(pref) || pref.length !== n) return 0;
+
+      const firstMs = anchorMs + offsetBeats * beatMs;
+      if (nowMs < firstMs) return 0;
+
+      const beatsSinceStart = (nowMs - firstMs) / beatMs;
+      if (!(beatsSinceStart >= 0)) return 0;
+
+      const eps = 1e-9;
+      let cycle = Math.floor(beatsSinceStart / cycleBeats);
+      if (cycle < 0) cycle = 0;
+      const beatsIn = beatsSinceStart - cycle * cycleBeats;
+
+      for (let i = 0; i < n; i++) {
+        const off = Number(pref[i]) || 0;
+        if (off > beatsIn + eps) return cycle * n + i;
+      }
+      return (cycle + 1) * n;
+    }
+
 
     function polyComputeNextIndex(nowMs, anchorMs, beatMs, intervalBeats, offsetBeats) {
       if (!(beatMs > 0) || !(intervalBeats > 0)) return 0;
@@ -19145,7 +23715,17 @@ function rebuildBellFrequencies() {
         if (!layer || !layer.id) continue;
         const intervalBeats = polyIntervalBeats(layer.interval);
         const offsetBeats = polyFracToBeats(layer.offset);
-        polySchedNextById[layer.id] = polyComputeNextIndex(nowMs, anchorMs, beatMs, intervalBeats, offsetBeats);
+
+        if ((layer.type || 'pulse') === 'phrase') {
+          const plan = parsePolyPhrasePlan(layer.phrase, intervalBeats);
+          if (plan && plan.events && plan.events.length && (Number(plan.cycleBeats) > 0)) {
+            polySchedNextById[layer.id] = polyComputeNextPhraseIndex(nowMs, anchorMs, beatMs, offsetBeats, plan);
+          } else {
+            polySchedNextById[layer.id] = polyComputeNextIndex(nowMs, anchorMs, beatMs, intervalBeats, offsetBeats);
+          }
+        } else {
+          polySchedNextById[layer.id] = polyComputeNextIndex(nowMs, anchorMs, beatMs, intervalBeats, offsetBeats);
+        }
       }
     }
 
@@ -19155,6 +23735,12 @@ function rebuildBellFrequencies() {
 
       const runActive = polyIsRunActive();
       if (!polyTestActive && !runActive) return;
+
+      // v019_p04_runtime_switch_by_lead: polyrhythm uses the current lead's assigned profile (no per-strike churn).
+      if (runActive && !polyTestActive) {
+        const profIdx = resolveRuntimeProfileIndexForNowMs(nowMs);
+        applySoundProfileRuntime(profIdx);
+      }
 
       const layers = Array.isArray(state.polyLayers) ? state.polyLayers : [];
       if (!layers.length) return;
@@ -19168,6 +23754,12 @@ function rebuildBellFrequencies() {
       const maxPerPass = isDemo ? 1200 : 360;
 
       const totalBeats = (state.rows && state.rows.length) ? (state.rows.length * state.stage) : 0;
+
+      // v021_p04_poly_global_row_gating: global-only row gating (N>1)
+      const polyRowCycleN = (runActive && !polyTestActive && (coercePolyScope(state.polyScope) === 'global'))
+        ? clampInt(state.polyRowCycleLen, 1, 32, 1)
+        : 1;
+      const polyRowGatingActive = (polyRowCycleN > 1);
 
       let scheduledCount = 0;
 
@@ -19184,20 +23776,29 @@ function rebuildBellFrequencies() {
         // In demo, never schedule infinitely far ahead for fast intervals.
         const layerHorizonMs = Math.min(horizonMs, intervalBeats * beatMs * DEMO_MAX_AHEAD_STRIKES);
 
-        let next = polySchedNextById[layer.id];
-        if (!Number.isFinite(next) || next < 0) {
-          next = polyComputeNextIndex(nowMs, anchorMs, beatMs, intervalBeats, offsetBeats);
-        }
-
         const type = layer.type || 'pulse';
         const sound = layer.sound || 'bell';
         const soundCtx = (sound === 'bell') ? polyBuildBellSoundCtx(layer) : null;
 
-        // Pre-parse phrase once per pass per layer (cheap but avoids per-strike work).
-        const phraseSteps = (type === 'phrase') ? parsePolyPhraseSteps(layer.phrase) : null;
+        // Pre-parse phrase plan once per pass per layer.
+        const phrasePlan = (type === 'phrase') ? parsePolyPhrasePlan(layer.phrase, intervalBeats) : null;
+        const phraseEvents = (phrasePlan && phrasePlan.events) ? phrasePlan.events : null;
+        const phraseLen = (phraseEvents && phraseEvents.length) ? phraseEvents.length : 0;
+
+        let next = polySchedNextById[layer.id];
+        if (!Number.isFinite(next) || next < 0) {
+          if (type === 'phrase' && phraseLen && (Number(phrasePlan.cycleBeats) > 0)) {
+            next = polyComputeNextPhraseIndex(nowMs, anchorMs, beatMs, offsetBeats, phrasePlan);
+          } else {
+            next = polyComputeNextIndex(nowMs, anchorMs, beatMs, intervalBeats, offsetBeats);
+          }
+        }
 
         while (scheduledCount < maxPerPass) {
-          const tMs = anchorMs + (offsetBeats + next * intervalBeats) * beatMs;
+          const tMs = (type === 'phrase' && phraseLen && (Number(phrasePlan.cycleBeats) > 0))
+            ? (anchorMs + (offsetBeats + polyPhraseBeatOffsetForIndex(phrasePlan, next)) * beatMs)
+            : (anchorMs + (offsetBeats + next * intervalBeats) * beatMs);
+
           if (tMs > nowMs + layerHorizonMs) break;
 
           let doSound = false;
@@ -19207,11 +23808,13 @@ function rebuildBellFrequencies() {
             doSound = true;
             bellToken = clamp(parseInt(layer.token, 10) || 1, 1, 12);
           } else if (type === 'phrase') {
-            if (phraseSteps && phraseSteps.length) {
-              bellToken = phraseSteps[next % phraseSteps.length] || 0;
+            if (phraseLen) {
+              bellToken = clamp(parseInt(phraseEvents[next % phraseLen].token, 10) || 0, 0, 12);
               doSound = (bellToken > 0);
             } else {
-              doSound = false;
+              // Back-compat / fail-open: empty phrase falls back to repeating layer.token.
+              doSound = true;
+              bellToken = clamp(parseInt(layer.token, 10) || 1, 1, 12);
             }
           } else if (type === 'method_current') {
             if (totalBeats > 0) {
@@ -19219,6 +23822,26 @@ function rebuildBellFrequencies() {
               doSound = true;
             }
           }
+
+          // v021_p04_poly_global_row_gating: treat inactive rows as rests (scheduler index still advances)
+          if (polyRowGatingActive && doSound) {
+            try {
+              if (Number.isFinite(tMs)) {
+                const rowIdx = resolveRuntimeRowIdxAtMs(tMs);
+                const slot = (rowIdx % polyRowCycleN) + 1; // 1-based
+                const ra = layer.rowsActive;
+                if (Array.isArray(ra) && ra.length) {
+                  let isActive = false;
+                  for (let k = 0; k < ra.length; k++) {
+                    const v = parseInt(ra[k], 10);
+                    if ((Number.isFinite(v) ? v : 0) === slot) { isActive = true; break; }
+                  }
+                  if (!isActive) doSound = false;
+                }
+              }
+            } catch (_) {}
+          }
+
 
           if (doSound) {
             try {
@@ -19264,6 +23887,14 @@ function rebuildBellFrequencies() {
     while (state.schedBeatIndex < totalBeats) {
       const tMs = state.methodStartMs + state.schedBeatIndex * beatMs;
       if (tMs <= nowMs + horizonMs && (!isDemo || schedThisPass < DEMO_SCHED_MAX_PER_PASS)) {
+        // v019_p04_runtime_switch_by_lead: apply lead-assigned sound profile at row boundary (before scheduling the row).
+        if (state.schedBeatIndex % state.stage === 0) {
+          const rowIdx = Math.floor(state.schedBeatIndex / state.stage);
+          const leadIdx = leadIndexForRow(rowIdx);
+          const profIdx = resolveRuntimeProfileIndexForLeadIdx(leadIdx);
+          applySoundProfileRuntime(profIdx);
+        }
+
         const bell = getBellForStrikeIndex(state.schedBeatIndex);
         if (state.mode === 'demo' || !liveSet.has(bell)) playBellAt(bell, tMs);
         state.schedBeatIndex += 1;
@@ -19857,7 +24488,15 @@ function rebuildBellFrequencies() {
     state.spotlightShowN2 = true;
     state.notationSwapsOverlay = true;
     state.displayLiveBellsOnly = true;
+// v019_p08_lead_range_editor: reset lead ranges to auto detection
+state.leadsV1 = { mode: 'auto', ranges: [] };
+try { normalizeLeadsV1AfterRows(); } catch (_) {}
 
+// v019_p01_lead_overlay: reset lead overlay (enabled off, colors to defaults for current method)
+state.leadOverlayEnabled = false;
+try { state.leadOverlayColors = getDefaultLeadOverlayColors(getLeadCount()); } catch (_) { state.leadOverlayColors = []; }
+
+    try { normalizeV19LeadAndProfileStateAfterRows(); } catch (_) {}
     state.accuracyDotsEnabled = true;
     state.accuracyDotsDisplay = true;
     state.accuracyDotsNotation = true;
@@ -19871,6 +24510,8 @@ function rebuildBellFrequencies() {
     try { if (spotlightShowN2) spotlightShowN2.checked = true; } catch (_) {}
     try { if (notationSwapsOverlay) notationSwapsOverlay.checked = true; } catch (_) {}
     try { if (displayLiveOnly) displayLiveOnly.checked = true; } catch (_) {}
+
+    try { syncLeadOverlayControlsUI(); } catch (_) {}
 
     try { syncLayoutPresetUI(); } catch (_) {}
     try { syncNotationLayoutUI(); } catch (_) {}
@@ -19893,6 +24534,8 @@ function rebuildBellFrequencies() {
       safeDelLS(LS_BELL_VOL_OVERRIDE);
       safeDelLS(LS_BELL_KEY_OVERRIDE);
       safeDelLS(LS_BELL_OCT_OVERRIDE);
+      safeDelLS(LS_TEMPERAMENT_KEY);
+      safeDelLS(LS_BELL_PITCH_DIATONIC_MAP);
       safeDelLS(LS_BELL_TIMBRE_OVERRIDES);
       safeDelLS(LS_BELL_CHORD_OVERRIDES);
       safeDelLS(LS_BELL_TIMBRE_GLOBAL);
@@ -19906,6 +24549,8 @@ function rebuildBellFrequencies() {
       safeDelLS(LS_DRONE_VARIANTS);
       safeDelLS(LS_DRONE_LAYERS);
       safeDelLS(LS_POLYRHYTHM);
+      safeDelLS(LS_POLYRHYTHM_GLOBAL);
+      safeDelLS(LS_POLY_SCOPE);
       // Legacy drone inference keys (boot migration). Clear so "Off" is truly default.
       safeDelLS('rg_drone_type_v1');
       safeDelLS('rg_drone_type');
@@ -19914,11 +24559,14 @@ function rebuildBellFrequencies() {
     // Pitch + bell master defaults.
     try {
       state.scaleKey = 'Fs_major';
+      state.bellLastKeyScaleKey = 'Fs_major';
       state.octaveC = 4;
+      state.temperamentKey = 'equal';
       state.bellCustomHz = 440;
       state.bellPitchFamily = 'diatonic';
       state.bellPitchSpan = 'compact';
       state.bellPitchSpanUser = false;
+      state.bellPitchDiatonicMap = 'smooth';
       state.bellPitchPentVariant = 'major_pent';
       state.bellPitchChromaticDirection = 'descending';
       state.bellPitchFifthsType = 'fifths';
@@ -19957,6 +24605,9 @@ function rebuildBellFrequencies() {
       state.droneOn = false;
       state.droneType = 'single';
       state.droneScaleKey = 'Fs_major';
+      state.droneLastKeyScaleKey = (SCALE_LIBRARY.find(s => s.key === 'Fs_major')
+        ? 'Fs_major'
+        : (SCALE_LIBRARY[0] ? SCALE_LIBRARY[0].key : 'Fs_major'));
       state.droneOctaveC = 3;
       state.droneCustomHz = 440;
       state.droneVolume = 50;
@@ -20002,7 +24653,9 @@ function rebuildBellFrequencies() {
     // Update key UI controls + audio engine (best-effort).
     try { if (scaleSelect) scaleSelect.value = state.scaleKey; } catch (_) {}
     try { if (octaveSelect) octaveSelect.value = String(state.octaveC); } catch (_) {}
+    try { if (temperamentSelect) temperamentSelect.value = String(state.temperamentKey || 'equal'); } catch (_) {}
     try { syncBellCustomHzUI(); } catch (_) {}
+    try { syncBellRootModeAndToggleUIFromState(); } catch (_) {}
     try { if (bellVolume) bellVolume.value = String(state.bellVolume); } catch (_) {}
     try { syncBellTimbreUI(); } catch (_) {}
     try { syncBellPitchFamilyUI(); } catch (_) {}
@@ -20015,6 +24668,17 @@ function rebuildBellFrequencies() {
 
     try { rebuildSoundTestInstrumentRow(); } catch (_) {}
     try { rebuildSoundQuickBellRow(); } catch (_) {}
+
+
+    // v019_p02_sound_profiles_tabs: defaults reset -> single Profile 1 snapshot
+    try {
+      const snap = captureCurrentSoundConfigSnapshot();
+      let leadAssignments = [];
+      try { leadAssignments = normalizeSoundLeadAssignmentsArray([], getLeadCount(), 1); } catch (_) { leadAssignments = [1]; }
+      state.soundProfilesV1 = { profiles: [sanitizeSoundProfileSnapshot(snap)], selectedProfileIndex: 1, leadAssignments };
+      try { ui._runtimeAppliedProfileIndex = 0; } catch (_) {}
+    } catch (_) {}
+    try { syncSoundProfilesUI(); } catch (_) {}
 
     markDirty();
     kickLoop();
@@ -20256,7 +24920,52 @@ function rebuildBellFrequencies() {
     });
   }
 
-  // Spotlight swaps view + row controls
+
+// v019_p01_lead_overlay: Lead overlay controls
+if (leadOverlayToggle) {
+  leadOverlayToggle.addEventListener('change', () => {
+    markUserTouchedConfig();
+    state.leadOverlayEnabled = !!leadOverlayToggle.checked;
+    syncLeadOverlayControlsUI();
+    syncViewMenuSelectedUI();
+    markDirty();
+    kickLoop();
+  });
+}
+if (resetLeadColorsBtn) {
+  resetLeadColorsBtn.addEventListener('click', () => {
+    markUserTouchedConfig();
+    state.leadOverlayColors = getDefaultLeadOverlayColors(getLeadCount());
+    syncLeadOverlayControlsUI();
+    markDirty();
+    kickLoop();
+  });
+}
+
+  
+
+// v019_p08_lead_range_editor: reset/clear lead ranges
+if (resetLeadsBtn) {
+  resetLeadsBtn.addEventListener('click', () => {
+    markUserTouchedConfig();
+    clearLeadOverlayEditorNote();
+    setLeadsV1Auto();
+    syncAfterLeadModelChange();
+    markDirty();
+    kickLoop();
+  });
+}
+if (clearLeadsBtn) {
+  clearLeadsBtn.addEventListener('click', () => {
+    markUserTouchedConfig();
+    clearLeadOverlayEditorNote();
+    setLeadsV1ManualSingle();
+    syncAfterLeadModelChange();
+    markDirty();
+    kickLoop();
+  });
+}
+// Spotlight swaps view + row controls
   if (spotlightSwapsView) {
     spotlightSwapsView.addEventListener('change', () => {
       markUserTouchedConfig();
@@ -21293,17 +26002,149 @@ function rebuildBellFrequencies() {
     restoreSoundDefaults();
   });
 
-  scaleSelect.addEventListener('change', () => {
+  // v019_p02_sound_profiles_tabs: Sound Profiles tab actions
+  if (soundProfilesTabs) soundProfilesTabs.addEventListener('change', () => {
+    try { ensureSoundProfilesV1Exists(); } catch (_) {}
+    const sp = (state && isPlainObject(state.soundProfilesV1)) ? state.soundProfilesV1 : null;
+    const profs = (sp && Array.isArray(sp.profiles)) ? sp.profiles : [];
+    const k = Math.max(1, Math.min(MAX_SAFE_PROFILES, profs.length || 1));
+    const idx = clampInt(parseInt(soundProfilesTabs.value, 10) || 0, 1, k, 1);
     markUserTouchedConfig();
-    state.scaleKey = scaleSelect.value;
-    syncBellCustomHzUI();
-    rebuildBellFrequencies();
-    onBellTuningChanged();
-    syncBellPitchSummaryUI();
-
-    // v014_p04_multi_drone_layers: refresh any drone layers that follow the bell key.
-    if (state.droneOn) refreshDrone();
+    switchSoundProfileTab(idx);
   });
+
+  if (soundProfilesAddBtn) soundProfilesAddBtn.addEventListener('click', () => {
+    markUserTouchedConfig();
+    addSoundProfileFromCurrent();
+  });
+
+
+  if (soundProfilesDuplicateBtn) soundProfilesDuplicateBtn.addEventListener('click', () => {
+    markUserTouchedConfig();
+    duplicateSelectedSoundProfile();
+  });
+  if (soundProfilesRemoveBtn) soundProfilesRemoveBtn.addEventListener('click', () => {
+    markUserTouchedConfig();
+    removeSelectedSoundProfile();
+  });
+
+  if (soundLeadAssignmentsList) soundLeadAssignmentsList.addEventListener('change', (ev) => {
+    const sel = ev && ev.target ? ev.target.closest('select[data-sound-lead-assign]') : null;
+    if (!sel) return;
+
+    try { ensureSoundProfilesV1Exists(); } catch (_) {}
+    const sp = (state && isPlainObject(state.soundProfilesV1)) ? state.soundProfilesV1 : null;
+    if (!sp) return;
+
+    const profiles = (sp && Array.isArray(sp.profiles)) ? sp.profiles : [];
+    const k = Math.max(1, Math.min(MAX_SAFE_PROFILES, profiles.length || 1));
+
+    let lc = 1;
+    try { lc = Math.max(1, clampInt(getLeadCount(), 1, 999, 1)); } catch (_) { lc = 1; }
+
+    const leadIdx = clampInt(parseInt(sel.dataset.soundLeadAssign, 10) || 0, 1, lc, 1);
+    const v = clampInt(parseInt(sel.value, 10) || 0, 1, k, 1);
+
+    try { sp.leadAssignments = normalizeSoundLeadAssignmentsArray(sp.leadAssignments, lc, k); } catch (_) {}
+    if (!Array.isArray(sp.leadAssignments)) sp.leadAssignments = [];
+    sp.leadAssignments[leadIdx - 1] = v;
+
+    try { sel.value = String(sp.leadAssignments[leadIdx - 1] || 1); } catch (_) {}
+
+    markUserTouchedConfig();
+  });
+
+
+  scaleSelect.addEventListener('change', () => {
+    applyBellScaleKey(scaleSelect.value, {fromUI:true});
+    syncBellRootModeAndToggleUIFromState();
+  });
+
+// v020_p02_bell_tuning_segmented_root_mode: segmented toggle + Root/Mode selectors (scaleKey remains canonical)
+if (bellTuningKeyBtn) {
+  bellTuningKeyBtn.addEventListener('click', () => {
+    if (state.scaleKey === 'custom_hz') {
+      const restoreKey = (isValidScaleKey(state.bellLastKeyScaleKey) && state.bellLastKeyScaleKey !== 'custom_hz')
+        ? state.bellLastKeyScaleKey
+        : 'Fs_major';
+      applyBellScaleKey(restoreKey, {fromUI:true});
+    } else {
+      syncBellRootModeAndToggleUIFromState();
+    }
+  });
+}
+
+if (bellTuningCustomHzBtn) {
+  bellTuningCustomHzBtn.addEventListener('click', () => {
+    applyBellScaleKey('custom_hz', {fromUI:true});
+  });
+}
+
+if (bellRootSelect) {
+  bellRootSelect.addEventListener('change', () => {
+    if (state.scaleKey === 'custom_hz') {
+      const restoreKey = (isValidScaleKey(state.bellLastKeyScaleKey) && state.bellLastKeyScaleKey !== 'custom_hz')
+        ? state.bellLastKeyScaleKey
+        : 'Fs_major';
+      applyBellScaleKey(restoreKey, {fromUI:true});
+    }
+    const nextKey = composeScaleKey(String(bellRootSelect.value || ''), String(bellModeSelect ? bellModeSelect.value : 'major'));
+    applyBellScaleKey(nextKey, {fromUI:true});
+  });
+}
+
+if (bellModeSelect) {
+  bellModeSelect.addEventListener('change', () => {
+    if (state.scaleKey === 'custom_hz') {
+      // In Custom Hz, keep scaleKey='custom_hz' and apply the selected mode/flavor via bellLastKeyScaleKey's suffix.
+      markUserTouchedConfig();
+
+      const fallbackKey = (SCALE_LIBRARY.find(s => s.key === 'Fs_major')
+        ? 'Fs_major'
+        : (SCALE_LIBRARY[0] ? SCALE_LIBRARY[0].key : 'Fs_major'));
+
+      const baseKey = (isValidScaleKey(state.bellLastKeyScaleKey) && state.bellLastKeyScaleKey !== 'custom_hz')
+        ? String(state.bellLastKeyScaleKey || '')
+        : fallbackKey;
+
+      const parsed = parseScaleKey(baseKey) || parseScaleKey(fallbackKey);
+      const suf = String(bellModeSelect.value || 'major');
+      const candidate = parsed ? composeScaleKey(parsed.rootPrefix, suf) : fallbackKey;
+
+      if (isValidScaleKey(candidate) && candidate !== 'custom_hz') state.bellLastKeyScaleKey = candidate;
+      else state.bellLastKeyScaleKey = fallbackKey;
+
+      // Match applyBellScaleKey side effects (order preserved) without changing state.scaleKey.
+      syncBellCustomHzUI();
+      rebuildBellFrequencies();
+      onBellTuningChanged();
+      syncBellPitchSummaryUI();
+
+      // v014_p04_multi_drone_layers: refresh any drone layers that follow the bell key.
+      if (state.droneOn) refreshDrone();
+
+      syncBellRootModeAndToggleUIFromState();
+      return;
+    }
+
+    const nextKey = composeScaleKey(String(bellRootSelect ? bellRootSelect.value : ''), String(bellModeSelect.value || 'major'));
+    applyBellScaleKey(nextKey, {fromUI:true});
+  });
+}
+
+if (temperamentSelect) {
+    temperamentSelect.addEventListener('change', () => {
+      markUserTouchedConfig();
+      state.temperamentKey = coerceTemperamentKey(temperamentSelect.value);
+      saveTemperamentKeyToLS();
+      rebuildBellFrequencies();
+      onBellTuningChanged();
+      syncBellPitchSummaryUI();
+
+      // v014_p04_multi_drone_layers: refresh any drone layers that follow the bell key.
+      if (state.droneOn) refreshDrone();
+    });
+  }
 
   octaveSelect.addEventListener('change', () => {
     markUserTouchedConfig();
@@ -21626,6 +26467,16 @@ if (spatialDepthModeSelect) {
   droneScaleSelect.addEventListener('change', () => {
     markUserTouchedConfig();
     state.droneScaleKey = droneScaleSelect.value;
+    if (String(state.droneScaleKey || '') !== 'custom_hz') {
+      state.droneLastKeyScaleKey = String(state.droneScaleKey || '');
+    } else {
+      const fallbackKey = (SCALE_LIBRARY.find(s => s.key === 'Fs_major')
+        ? 'Fs_major'
+        : (SCALE_LIBRARY[0] ? SCALE_LIBRARY[0].key : 'Fs_major'));
+      if (!isValidScaleKey(state.droneLastKeyScaleKey) || state.droneLastKeyScaleKey === 'custom_hz') {
+        state.droneLastKeyScaleKey = fallbackKey;
+      }
+    }
     syncDroneCustomHzUI();
 
     // v014_p04_multi_drone_layers: keep Layer 1 + layers persistence in sync.
@@ -21634,7 +26485,60 @@ if (spatialDepthModeSelect) {
     rebuildDroneLayersUI();
 
     if (state.droneOn) refreshDrone();
+    try { syncDroneRootModeUIFromState(); } catch (_) {}
   });
+
+
+  if (droneRootSelect) {
+    droneRootSelect.addEventListener('change', () => {
+      if (!droneScaleSelect) return;
+      const rootVal = String(droneRootSelect.value || 'Fs');
+      if (rootVal === 'custom_hz') {
+        try { droneScaleSelect.value = 'custom_hz'; } catch (_) {}
+        try { droneScaleSelect.dispatchEvent(new Event('change')); } catch (_) {}
+        return;
+      }
+      const nextKey = composeScaleKey(rootVal, String(droneModeSelect ? (droneModeSelect.value || 'major') : 'major'));
+      try { droneScaleSelect.value = nextKey; } catch (_) {}
+      try { droneScaleSelect.dispatchEvent(new Event('change')); } catch (_) {}
+    });
+  }
+
+  if (droneModeSelect) {
+    droneModeSelect.addEventListener('change', () => {
+      if (!droneScaleSelect) return;
+      const rootVal = String(droneRootSelect ? (droneRootSelect.value || 'Fs') : 'Fs');
+      const modeVal = String(droneModeSelect.value || 'major');
+
+      if (rootVal === 'custom_hz') {
+        markUserTouchedConfig();
+
+        const fallbackKey = (SCALE_LIBRARY.find(s => s.key === 'Fs_major')
+          ? 'Fs_major'
+          : (SCALE_LIBRARY[0] ? SCALE_LIBRARY[0].key : 'Fs_major'));
+
+        const prevLast = (isValidScaleKey(state.droneLastKeyScaleKey) && state.droneLastKeyScaleKey !== 'custom_hz')
+          ? String(state.droneLastKeyScaleKey || '')
+          : fallbackKey;
+        const parsedPrev = parseScaleKey(prevLast) || parseScaleKey(fallbackKey) || parseScaleKey('Fs_major');
+        const rp = (parsedPrev && parsedPrev.rootPrefix) ? parsedPrev.rootPrefix : 'Fs';
+        state.droneLastKeyScaleKey = composeScaleKey(String(rp), modeVal);
+
+        // v014_p04_multi_drone_layers: keep Layer 1 + layers persistence in sync.
+        syncLayer1FromLegacyDroneState();
+        saveDroneLayersToLS();
+        rebuildDroneLayersUI();
+
+        if (state.droneOn) refreshDrone();
+        try { syncDroneRootModeUIFromState(); } catch (_) {}
+        return;
+      }
+
+      const nextKey = composeScaleKey(rootVal, modeVal);
+      try { droneScaleSelect.value = nextKey; } catch (_) {}
+      try { droneScaleSelect.dispatchEvent(new Event('change')); } catch (_) {}
+    });
+  }
 
   droneOctaveSelect.addEventListener('change', () => {
     markUserTouchedConfig();
@@ -21782,7 +26686,7 @@ if (spatialDepthModeSelect) {
           state.stage = clamp(m.stage, 4, 12);
 
           state.methodSource = 'custom_rows';
-          state.methodMeta = { fileName: name || '', title: m.title || '' };
+          state.methodMeta = { fileName: name || '', title: m.title || '', leadCount: 5 };
 
           if (bellCountSelect) bellCountSelect.value = String(state.stage);
 
@@ -22049,6 +26953,11 @@ if (spatialDepthModeSelect) {
 
     loadMicPrefs();
 
+    loadTemperamentKeyFromLS();
+    loadBellPitchDiatonicMapFromLS();
+    try { syncBellPitchDiatonicMapUI(); } catch (_) {}
+    try { if (temperamentSelect) temperamentSelect.value = String(state.temperamentKey || 'equal'); } catch (_) {}
+
     loadBellOverridesFromLS();
     loadBellChordOverridesFromLS();
     loadBellTimbreOverridesFromLS();
@@ -22085,39 +26994,99 @@ if (spatialDepthModeSelect) {
     syncSpotlightSwapRowTogglesUI();
     syncSpotlightRowPrefsFromUI();
 
-    scaleSelect.innerHTML = '';
-    {
-      const opt = document.createElement('option');
-      opt.value = 'custom_hz';
-      opt.textContent = 'Custom (Hz)';
-      scaleSelect.appendChild(opt);
+    function populateScaleSelectWithGroups(sel) {
+      sel.innerHTML = '';
+      // Custom (Hz) remains ungrouped at the top
+      {
+        const opt = document.createElement('option');
+        opt.value = 'custom_hz';
+        opt.textContent = 'Custom (Hz)';
+        sel.appendChild(opt);
+      }
+
+      const ROOTS = [
+        { prefix: 'C',  label: 'C' },
+        { prefix: 'Cs', label: 'C#' },
+        { prefix: 'D',  label: 'D' },
+        { prefix: 'Ef', label: 'Eb' },
+        { prefix: 'E',  label: 'E' },
+        { prefix: 'F',  label: 'F' },
+        { prefix: 'Fs', label: 'F#' },
+        { prefix: 'G',  label: 'G' },
+        { prefix: 'Af', label: 'Ab' },
+        { prefix: 'A',  label: 'A' },
+        { prefix: 'Bf', label: 'Bb' },
+        { prefix: 'B',  label: 'B' }
+      ];
+
+      function mkGroup(label) {
+        const g = document.createElement('optgroup');
+        g.label = label;
+        sel.appendChild(g);
+        return g;
+      }
+
+      function addOpt(parent, value, text) {
+        const opt = document.createElement('option');
+        opt.value = value;
+        opt.textContent = text;
+        parent.appendChild(opt);
+      }
+
+      const gMajorMinor = mkGroup('Major / Minor');
+      const gModes = mkGroup('Modes');
+      const gMinorVariants = mkGroup('Minor variants');
+
+      for (const r of ROOTS) {
+        addOpt(gMajorMinor, r.prefix + '_major', r.label + ' major (Ionian)');
+        addOpt(gMajorMinor, r.prefix + '_minor', r.label + ' minor (Aeolian)');
+      }
+
+      const MODES = [
+        { suf: 'dorian', label: 'Dorian' },
+        { suf: 'phrygian', label: 'Phrygian' },
+        { suf: 'lydian', label: 'Lydian' },
+        { suf: 'mixolydian', label: 'Mixolydian' },
+        { suf: 'locrian', label: 'Locrian' }
+      ];
+      for (const r of ROOTS) {
+        for (const m of MODES) {
+          addOpt(gModes, r.prefix + '_' + m.suf, r.label + ' ' + m.label);
+        }
+      }
+
+      const MINOR_VARIANTS = [
+        { suf: 'harmonic_minor', label: 'Harmonic Minor' },
+        { suf: 'melodic_minor', label: 'Melodic Minor' }
+      ];
+      for (const r of ROOTS) {
+        for (const m of MINOR_VARIANTS) {
+          addOpt(gMinorVariants, r.prefix + '_' + m.suf, r.label + ' ' + m.label);
+        }
+      }
     }
-    for (const s of SCALE_LIBRARY) {
-      const opt = document.createElement('option');
-      opt.value = s.key;
-      opt.textContent = s.label;
-      scaleSelect.appendChild(opt);
-    }
+
+    populateScaleSelectWithGroups(scaleSelect);
+
     // Sound defaults (non-persisted)
     state.scaleKey = (SCALE_LIBRARY.find(s => s.key === 'Fs_major') ? 'Fs_major' : SCALE_LIBRARY[0].key);
     scaleSelect.value = state.scaleKey;
 
+    // v020_p02_bell_tuning_segmented_root_mode
+    populateBellRootSelect();
+    populateBellModeSelect();
+    state.bellLastKeyScaleKey = (state.scaleKey && state.scaleKey !== 'custom_hz' && isValidScaleKey(state.scaleKey)) ? state.scaleKey : 'Fs_major';
+    syncBellRootModeAndToggleUIFromState();
+
     // Drone scale (same option set as bells)
-    droneScaleSelect.innerHTML = '';
-    {
-      const opt = document.createElement('option');
-      opt.value = 'custom_hz';
-      opt.textContent = 'Custom (Hz)';
-      droneScaleSelect.appendChild(opt);
-    }
-    for (const s of SCALE_LIBRARY) {
-      const opt = document.createElement('option');
-      opt.value = s.key;
-      opt.textContent = s.label;
-      droneScaleSelect.appendChild(opt);
-    }
+    populateScaleSelectWithGroups(droneScaleSelect);
     state.droneScaleKey = (SCALE_LIBRARY.find(s => s.key === 'Fs_major') ? 'Fs_major' : state.scaleKey);
     droneScaleSelect.value = state.droneScaleKey;
+
+    // Drone root/mode selectors (accessible alternative to the combined key list)
+    populateDroneRootSelect();
+    populateDroneModeSelect();
+    syncDroneRootModeUIFromState();
 
     octaveSelect.innerHTML = '';
     for (let o = 1; o <= 6; o++) {
@@ -22203,6 +27172,9 @@ if (spatialDepthModeSelect) {
     syncDroneVariantsUI();
     loadMasterFxFromLS();
     syncMasterFxUI();
+    // v021_p03_polyrhythm_scope
+    loadPolyScopeFromLS();
+
     // v017_p01_polyrhythm_core
     loadPolyrhythmFromLS();
     rebuildPolyrhythmUI();
@@ -22218,7 +27190,9 @@ if (spatialDepthModeSelect) {
 
     // Custom Hz controls
     syncBellCustomHzUI();
+    try { syncBellRootModeAndToggleUIFromState(); } catch (_) {}
     syncDroneCustomHzUI();
+    try { syncDroneRootModeUIFromState(); } catch (_) {}
     rebuildDroneLayersUI();
 
     // Start/stop drone based on current preference (no gameplay side effects).
@@ -22308,6 +27282,11 @@ if (spatialDepthModeSelect) {
     try { syncBellPitchSpanUI(); } catch (_) {}
     try { syncBellPitchFamilyUI(); } catch (_) {}
     try { syncBellPitchSummaryUI(); } catch (_) {}
+
+    // v019_p02_sound_profiles_tabs: ensure profile container exists on startup
+    try { ensureSoundProfilesV1Exists(); } catch (_) {}
+    try { syncSoundProfilesUI(); } catch (_) {}
+
 
     ui.isBooting = false;
   }
