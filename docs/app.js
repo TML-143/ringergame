@@ -75,7 +75,7 @@
   // === Analytics (GA4) ===
   const GA_MEASUREMENT_ID = 'G-7TEG531231';
   const GA_ID = GA_MEASUREMENT_ID;
-  const SITE_VERSION = 'v021_p10_poly_reset_layers_transpose_quick_access';
+  const SITE_VERSION = 'v021_p13_poly_ui_presets_optgroup_contrast_perbell_labels';
 
   function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
   function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
@@ -3035,6 +3035,10 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
               volume: clamp(Number(layer.volume) || 0, 0, 100),
               token: clamp(parseInt(layer.token, 10) || 1, 1, 12),
               phrase: String(layer.phrase || ''),
+
+              timeSigNum: clampInt(layer.timeSigNum, 1, 32, 4),
+
+              timeSigDen: ((layer.timeSigDen === 1 || layer.timeSigDen === 2 || layer.timeSigDen === 4 || layer.timeSigDen === 8 || layer.timeSigDen === 16) ? layer.timeSigDen : 4),
               bellSound: polyBellSoundToJSON(layer.bellSound),
             // v018_p01_poly_synth_core
             synthPreset: String(layer.synthPreset || ''),
@@ -8669,6 +8673,9 @@ if (oe.pitch || oe.timbre || oe.chords || hasSpatial) {
       volume: 80,
       token: 1,      // 1..12 (pulse)
       phrase: '',    // (phrase)
+      // v021_p12_poly_layer_time_signature_phrase_durations: per-layer time signature (fail-open)
+      timeSigNum: 4,
+      timeSigDen: 4,
       bellSound: polyBellSoundDefaults(),
       // v018_p01_poly_synth_core
       synthPreset: 'tone_sine',
@@ -9234,6 +9241,9 @@ if (oe.pitch || oe.timbre || oe.chords || hasSpatial) {
       const g = groups[gi];
       const og = document.createElement('optgroup');
       og.label = g;
+      // Improve optgroup label contrast (some browsers render optgroup labels on a light background).
+      og.style.color = '#111';
+      og.style.fontWeight = '700';
       const items = byGroup[g] || [];
       for (let i = 0; i < items.length; i++) {
         const p = items[i];
@@ -9347,6 +9357,11 @@ function coercePolyLayer(raw, fallbackIdx = 0) {
     const token = clamp(parseInt(r.token ?? (fallbackIdx + 1), 10) || 1, 1, 12);
     const phrase = (r.phrase == null) ? '' : String(r.phrase);
 
+    // v021_p12_poly_layer_time_signature_phrase_durations: per-layer time signature (fail-open)
+    const timeSigNum = clampInt(r.timeSigNum, 1, 32, 4);
+    let timeSigDen = clampInt(r.timeSigDen, 1, 16, 4);
+    if (timeSigDen !== 1 && timeSigDen !== 2 && timeSigDen !== 4 && timeSigDen !== 8 && timeSigDen !== 16) timeSigDen = 4;
+
 
     // v018_p01_poly_synth_core: per-layer synth/perc config (fail-open)
     const synthPreset = (typeof r.synthPreset === 'string' && r.synthPreset.trim()) ? r.synthPreset.trim() : 'tone_sine';
@@ -9374,7 +9389,7 @@ function coercePolyLayer(raw, fallbackIdx = 0) {
       if (tmp.length) tmp.sort((a, b) => a - b);
       rowsActive = tmp.length ? tmp : null;
     }
-    return { id, enabled: r.enabled !== false, type, sound, interval, offset, rowsActive, volume, token, phrase, bellSound, synthPreset, pitchSource, pitchBase, pitchHz, synthParams, synthParamsAdvanced, tokenOverrides, percPreset, percParams };
+    return { id, enabled: r.enabled !== false, type, sound, interval, offset, rowsActive, volume, token, phrase, timeSigNum, timeSigDen, bellSound, synthPreset, pitchSource, pitchBase, pitchHz, synthParams, synthParamsAdvanced, tokenOverrides, percPreset, percParams };
   }
 
   
@@ -9573,6 +9588,10 @@ function loadPolyrhythmFromLS() {
             volume: clamp(Number(layer.volume) || 0, 0, 100),
             token: clamp(parseInt(layer.token, 10) || 1, 1, 12),
             phrase: String(layer.phrase || ''),
+
+            timeSigNum: clampInt(layer.timeSigNum, 1, 32, 4),
+
+            timeSigDen: ((layer.timeSigDen === 1 || layer.timeSigDen === 2 || layer.timeSigDen === 4 || layer.timeSigDen === 8 || layer.timeSigDen === 16) ? layer.timeSigDen : 4),
             bellSound: polyBellSoundToJSON(layer.bellSound),
             // v018_p01_poly_synth_core
             synthPreset: String(layer.synthPreset || ''),
@@ -10505,6 +10524,50 @@ const testCtl = mkControl('Test', testArea);
       const tokenCtl = mkControl('Token', tokenSel);
       controls.appendChild(tokenCtl);
 
+      // Time sig (Phrase)
+      const timeSigNumInput = document.createElement('input');
+      timeSigNumInput.type = 'number';
+      timeSigNumInput.min = '1';
+      timeSigNumInput.max = '32';
+      timeSigNumInput.step = '1';
+      timeSigNumInput.addEventListener('input', () => {
+        layer.timeSigNum = clampInt(timeSigNumInput.value, 1, 32, 4);
+        savePolyrhythmToLS();
+      });
+      timeSigNumInput.addEventListener('change', () => {
+        layer.timeSigNum = clampInt(timeSigNumInput.value, 1, 32, 4);
+        savePolyrhythmToLS();
+        polyResyncActiveNow();
+        syncPolyrhythmUI();
+      });
+
+      const timeSigDenSel = mkSelect([
+        { value: 1, label: '1' },
+        { value: 2, label: '2' },
+        { value: 4, label: '4' },
+        { value: 8, label: '8' },
+        { value: 16, label: '16' },
+      ]);
+      timeSigDenSel.addEventListener('change', () => {
+        const d = parseInt(timeSigDenSel.value, 10);
+        layer.timeSigDen = (d === 1 || d === 2 || d === 4 || d === 8 || d === 16) ? d : 4;
+        savePolyrhythmToLS();
+        polyResyncActiveNow();
+        syncPolyrhythmUI();
+      });
+
+      const timeSigWrap = document.createElement('div');
+      timeSigWrap.className = 'rg-poly-time-sig';
+      timeSigWrap.appendChild(timeSigNumInput);
+      const timeSigSlash = document.createElement('span');
+      timeSigSlash.className = 'rg-poly-time-sig-slash';
+      timeSigSlash.textContent = '/';
+      timeSigWrap.appendChild(timeSigSlash);
+      timeSigWrap.appendChild(timeSigDenSel);
+      const timeSigCtl = mkControl('Time sig', timeSigWrap);
+      timeSigCtl.classList.add('rg-poly-time-sig-ctl');
+      controls.appendChild(timeSigCtl);
+
       // Phrase (Phrase)
       const phraseInput = document.createElement('input');
       phraseInput.type = 'text';
@@ -10521,7 +10584,7 @@ const testCtl = mkControl('Test', testArea);
       const phraseCtl = mkControl('Phrase', phraseInput);
       const phraseHelp = document.createElement('div');
       phraseHelp.className = 'control-note rg-muted';
-      phraseHelp.textContent = 'How to write: tokens like 1234 0ET..; use R for rests; add durations like 2q.4e or 2/4, and R/8.';
+      phraseHelp.textContent = 'How to write: tokens like 1234 0ET..; use R for rests; add durations like 2q.4e or 2/4, and R/8. Duration symbols scale with the layer time sig (e.g., in 6/4, w is 6 beats).';
       phraseCtl.appendChild(phraseHelp);
       controls.appendChild(phraseCtl);
       // v017_p02_polyrhythm_layer_sound: per-layer bell sound profile UI (Bell layers only)
@@ -11130,6 +11193,17 @@ const testCtl = mkControl('Test', testArea);
         return { g, cb, body };
       }
 
+      function mkPerBellField(labelText, inputEl) {
+        const w = document.createElement('div');
+        w.className = 'rg-poly-perbell-field';
+        const lab = document.createElement('div');
+        lab.className = 'rg-poly-perbell-field-label';
+        lab.textContent = String(labelText || '');
+        w.appendChild(lab);
+        w.appendChild(inputEl);
+        return w;
+      }
+
       for (let b = 1; b <= 12; b++) {
         const row = document.createElement('div');
         row.className = 'rg-poly-perbell-row';
@@ -11168,8 +11242,8 @@ const testCtl = mkControl('Test', testArea);
         pitchHz.step = '0.01';
         pitchHz.placeholder = 'Hz (optional)';
         pitchHz.title = 'Hz override (optional)';
-        pitchG.body.appendChild(pitchSemis);
-        pitchG.body.appendChild(pitchHz);
+        pitchG.body.appendChild(mkPerBellField('Transpose (semis)', pitchSemis));
+        pitchG.body.appendChild(mkPerBellField('Hz override', pitchHz));
         rowCtrls.appendChild(pitchG.g);
 
         // Timbre override
@@ -11192,9 +11266,9 @@ const testCtl = mkControl('Test', testArea);
         timbreHD.max = '1';
         timbreHD.step = '0.01';
         timbreHD.placeholder = 'Hard';
-        timbreG.body.appendChild(timbreRL);
-        timbreG.body.appendChild(timbreBR);
-        timbreG.body.appendChild(timbreHD);
+        timbreG.body.appendChild(mkPerBellField('Ring', timbreRL));
+        timbreG.body.appendChild(mkPerBellField('Bright', timbreBR));
+        timbreG.body.appendChild(mkPerBellField('Hard', timbreHD));
         rowCtrls.appendChild(timbreG.g);
 
         // Chord override
@@ -11239,9 +11313,9 @@ spatialVolMul.max = '100';
 spatialVolMul.step = '1';
 spatialVolMul.placeholder = 'Vol %';
 spatialVolMul.title = 'Volume multiplier (0..100%)';
-spatialG.body.appendChild(spatialPan);
-spatialG.body.appendChild(spatialDepth);
-spatialG.body.appendChild(spatialVolMul);
+spatialG.body.appendChild(mkPerBellField('Pan', spatialPan));
+spatialG.body.appendChild(mkPerBellField('Depth', spatialDepth));
+spatialG.body.appendChild(mkPerBellField('Vol %', spatialVolMul));
 rowCtrls.appendChild(spatialG.g);
 
 // Data wiring
@@ -11593,7 +11667,7 @@ perBellUi[b] = {
 
       P.layerUiById[layer.id] = {
         card, enabled, typeSel, soundSel, intervalSel, offsetSel, rowsCtl, rowSlotBtns, volRange, testCtl, testArea, testTickBtn, testPercBtn, testKbWrap, testKbBtns,
-        tokenSel, phraseInput, tokenCtl, phraseCtl, methodNote,
+        tokenSel, phraseInput, timeSigNumInput, timeSigDenSel, tokenCtl, phraseCtl, timeSigCtl, methodNote,
         soundDetails, soundProfileSel, soundBadge, soundCustomWrap,
         // v018_p01_poly_synth_core
         soundBellControls: soundControls, soundProfileCtl,
@@ -11683,12 +11757,19 @@ perBellUi[b] = {
       lu.tokenSel.value = String(clamp(parseInt(layer.token, 10) || 1, 1, 12));
       lu.phraseInput.value = String(layer.phrase || '');
 
+      if (lu.timeSigNumInput) lu.timeSigNumInput.value = String(clampInt(layer.timeSigNum, 1, 32, 4));
+      if (lu.timeSigDenSel) {
+        const den = (layer.timeSigDen === 1 || layer.timeSigDen === 2 || layer.timeSigDen === 4 || layer.timeSigDen === 8 || layer.timeSigDen === 16) ? layer.timeSigDen : 4;
+        lu.timeSigDenSel.value = String(den);
+      }
+
       const isPulse = layer.type === 'pulse';
       const isPhrase = layer.type === 'phrase';
       const isMethod = layer.type === 'method_current';
 
       setVisible(lu.tokenCtl, isPulse);
       setVisible(lu.phraseCtl, isPhrase);
+      setVisible(lu.timeSigCtl, isPhrase);
       setVisible(lu.methodNote, isMethod);
       // v017_p02_polyrhythm_layer_sound: per-layer sound UI (Bell/Synth/Perc)
       const isBell = (layer.sound === 'bell');
@@ -12658,6 +12739,22 @@ function getDroneLayerRootFrequency(layer) {
   return midiToFreq(rootMidi);
 }
 
+function getDroneLayerVoicingScaleKey(layer, layerIndex) {
+  // v021_p11_drone_mode_temperament_diatonic_voicing: scale/mode key used for diatonic chord voicing
+  try {
+    if (layer && layer.followBellKey) return state.scaleKey;
+
+    const key = layer ? layer.key : state.droneScaleKey;
+    if (key !== 'custom_hz') return key;
+
+    const idx = Number.isFinite(layerIndex) ? layerIndex : 0;
+    // custom Hz root: use remembered mode key
+    if (idx === 0) return state.droneLastKeyScaleKey;
+    return layer ? layer.lastKeyScaleKey : null;
+  } catch (_) {}
+  return null;
+}
+
 function getEffectiveTemperamentForDroneLayer(layer) {
   if (layer && layer.temperamentOverrideKey && layer.temperamentOverrideKey !== 'inherit') return layer.temperamentOverrideKey;
   return state.temperamentKey;
@@ -12708,6 +12805,7 @@ function computeDroneLayerEffectiveConfigs() {
       clusterWidth: layer.variants && layer.variants.clusterWidth,
       noiseTilt: layer.variants && layer.variants.noiseTilt,
       noiseQ: layer.variants && layer.variants.noiseQ,
+      voicingScaleKey: getDroneLayerVoicingScaleKey(layer, i),
 
       customIntervals: layer.customIntervals
     };
@@ -12737,6 +12835,7 @@ function computeDroneLayerEffectiveConfigs() {
           clusterWidth: layer.variants && layer.variants.clusterWidth,
           noiseTilt: layer.variants && layer.variants.noiseTilt,
           noiseQ: layer.variants && layer.variants.noiseQ,
+          voicingScaleKey: getDroneLayerVoicingScaleKey(layer, i),
 
           customIntervals: layer.customIntervals
         };
@@ -12857,6 +12956,7 @@ function startDroneLayer(layerIndex, effCfg) {
     clusterWidth: layer.variants && layer.variants.clusterWidth,
     noiseTilt: layer.variants && layer.variants.noiseTilt,
     noiseQ: layer.variants && layer.variants.noiseQ,
+    voicingScaleKey: getDroneLayerVoicingScaleKey(layer, layerIndex),
 
     customIntervals: layer.customIntervals
   };
@@ -13136,6 +13236,7 @@ function refreshDroneLayer(layerIndex, effCfg) {
     clusterWidth: layer.variants && layer.variants.clusterWidth,
     noiseTilt: layer.variants && layer.variants.noiseTilt,
     noiseQ: layer.variants && layer.variants.noiseQ,
+    voicingScaleKey: getDroneLayerVoicingScaleKey(layer, layerIndex),
 
     customIntervals: layer.customIntervals
   };
@@ -14858,6 +14959,38 @@ function stopDrone() {
       };
     }
 
+    // v021_p11_drone_mode_temperament_diatonic_voicing: mode-aware diatonic chord voicing for chord-like drone types
+    const voicingScaleKey = (v && typeof v.voicingScaleKey === 'string') ? String(v.voicingScaleKey) : null;
+    const tryDiatonicSemis = (degrees) => {
+      try {
+        if (!voicingScaleKey || voicingScaleKey === 'custom_hz') return null;
+        if (!isValidScaleKey(voicingScaleKey)) return null;
+
+        const def = getScaleDefByKey(voicingScaleKey);
+        const ints = (def && Array.isArray(def.intervals)) ? def.intervals : null;
+        if (!ints || !ints.length) return null;
+
+        const out = [];
+        for (let i = 0; i < degrees.length; i++) {
+          const deg = Number(degrees[i]);
+          const idx = Math.round(deg) - 1;
+          if (!(idx >= 0 && idx < ints.length)) return null;
+          const semi = Number(ints[idx]);
+          if (!Number.isFinite(semi)) return null;
+          out.push(semi);
+        }
+        return out;
+      } catch (_) {}
+      return null;
+    };
+    const diatonicRatiosOrNull = (degrees) => {
+      const semis = tryDiatonicSemis(degrees);
+      if (!semis) return null;
+      const ratios = new Array(semis.length);
+      for (let i = 0; i < semis.length; i++) ratios[i] = et(semis[i]);
+      return ratios;
+    };
+
     switch (type) {
       case 'single':
         return { kind: 'tonal', voices: tonal([1], [1], [0], 'sine', DRONE_TONAL_LEVEL), noise: null };
@@ -14865,20 +14998,28 @@ function stopDrone() {
       case 'octaves':
         return { kind: 'tonal', voices: tonal([0.5, 1, 2], [0.7, 1.0, 0.7], [0, 0, 0], 'sine', DRONE_TONAL_LEVEL), noise: null };
 
-      case 'root5':
-        return { kind: 'tonal', voices: tonal([1, et(7)], [1.0, 0.85], [0, 0], 'sine', DRONE_TONAL_LEVEL), noise: null };
+      case 'root5': {
+        const ratios = diatonicRatiosOrNull([1, 5]);
+        return { kind: 'tonal', voices: tonal(ratios || [1, et(7)], [1.0, 0.85], [0, 0], 'sine', DRONE_TONAL_LEVEL), noise: null };
+      }
 
-      case 'fifth':
-        return { kind: 'tonal', voices: tonal([1, et(7), 2], [1, 1, 1], [0, 2, -2], 'sine', DRONE_TONAL_LEVEL), noise: null };
+      case 'fifth': {
+        const ratios = diatonicRatiosOrNull([1, 5, 8]);
+        return { kind: 'tonal', voices: tonal(ratios || [1, et(7), 2], [1, 1, 1], [0, 2, -2], 'sine', DRONE_TONAL_LEVEL), noise: null };
+      }
 
-      case 'majtriad':
-        return { kind: 'tonal', voices: tonal([1, et(4), et(7)], [1.0, 0.9, 0.85], [0, 0, 0], 'sine', DRONE_TONAL_LEVEL), noise: null };
+      case 'majtriad': {
+        const ratios = diatonicRatiosOrNull([1, 3, 5]);
+        return { kind: 'tonal', voices: tonal(ratios || [1, et(4), et(7)], [1.0, 0.9, 0.85], [0, 0, 0], 'sine', DRONE_TONAL_LEVEL), noise: null };
+      }
 
       case 'mintriad':
         return { kind: 'tonal', voices: tonal([1, et(3), et(7)], [1.0, 0.9, 0.85], [0, 0, 0], 'sine', DRONE_TONAL_LEVEL), noise: null };
 
-      case 'seventh':
-        return { kind: 'tonal', voices: tonal([1, et(4), et(7), et(11)], [1, 1, 1, 1], [0, -2, 1, 2], 'sine', DRONE_TONAL_LEVEL), noise: null };
+      case 'seventh': {
+        const ratios = diatonicRatiosOrNull([1, 3, 5, 7]);
+        return { kind: 'tonal', voices: tonal(ratios || [1, et(4), et(7), et(11)], [1, 1, 1, 1], [0, -2, 1, 2], 'sine', DRONE_TONAL_LEVEL), noise: null };
+      }
 
       case 'custom': {
         const raw = (v && v.customIntervals != null) ? v.customIntervals : null;
@@ -23574,10 +23715,15 @@ if (state.leadOverlayEnabled) {
       return steps;
     }
 
-    function parsePolyPhrasePlan(phrase, defaultDurBeats) {
+    function parsePolyPhrasePlan(phrase, defaultDurBeats, timeSigNum, timeSigDen) {
       const s = String(phrase || '');
       const base = Number(defaultDurBeats);
       const baseDur = (Number.isFinite(base) && base > 0) ? base : 1;
+
+      const tsN = clampInt(timeSigNum, 1, 32, 4);
+      let tsD = clampInt(timeSigDen, 1, 16, 4);
+      if (tsD !== 1 && tsD !== 2 && tsD !== 4 && tsD !== 8 && tsD !== 16) tsD = 4;
+      const barBeats = tsN * (4 / tsD);
 
       const events = [];
       const prefixBeats = [];
@@ -23609,13 +23755,13 @@ if (state.leadOverlayEnabled) {
 
           // Letter suffix duration (avoid consuming token letters 'E'/'T' when uppercase).
           if ((low === 'w' || low === 'h' || low === 'q' || low === 'e' || low === 's' || low === 't' || low === 'x') && c !== 'E' && c !== 'T') {
-            if (low === 'w') durBeats = 4;
-            else if (low === 'h') durBeats = 2;
-            else if (low === 'q') durBeats = 1;
-            else if (low === 'e') durBeats = 1 / 2;
-            else if (low === 's') durBeats = 1 / 4;
-            else if (low === 't') durBeats = 1 / 8;
-            else if (low === 'x') durBeats = 1 / 16;
+            if (low === 'w') durBeats = barBeats;
+            else if (low === 'h') durBeats = barBeats / 2;
+            else if (low === 'q') durBeats = barBeats / 4;
+            else if (low === 'e') durBeats = barBeats / 8;
+            else if (low === 's') durBeats = barBeats / 16;
+            else if (low === 't') durBeats = barBeats / 32;
+            else if (low === 'x') durBeats = barBeats / 64;
             consumed = true;
             j++;
           } else if (c === '/') {
@@ -23628,7 +23774,7 @@ if (state.leadOverlayEnabled) {
             }
             const denom = parseInt(ds, 10);
             if (ds && (denom === 1 || denom === 2 || denom === 4 || denom === 8 || denom === 16 || denom === 32 || denom === 64)) {
-              durBeats = 4 / denom;
+              durBeats = barBeats / denom;
               consumed = true;
               j = k;
             }
@@ -23717,7 +23863,7 @@ if (state.leadOverlayEnabled) {
         const offsetBeats = polyFracToBeats(layer.offset);
 
         if ((layer.type || 'pulse') === 'phrase') {
-          const plan = parsePolyPhrasePlan(layer.phrase, intervalBeats);
+          const plan = parsePolyPhrasePlan(layer.phrase, intervalBeats, layer.timeSigNum, layer.timeSigDen);
           if (plan && plan.events && plan.events.length && (Number(plan.cycleBeats) > 0)) {
             polySchedNextById[layer.id] = polyComputeNextPhraseIndex(nowMs, anchorMs, beatMs, offsetBeats, plan);
           } else {
@@ -23781,7 +23927,7 @@ if (state.leadOverlayEnabled) {
         const soundCtx = (sound === 'bell') ? polyBuildBellSoundCtx(layer) : null;
 
         // Pre-parse phrase plan once per pass per layer.
-        const phrasePlan = (type === 'phrase') ? parsePolyPhrasePlan(layer.phrase, intervalBeats) : null;
+        const phrasePlan = (type === 'phrase') ? parsePolyPhrasePlan(layer.phrase, intervalBeats, layer.timeSigNum, layer.timeSigDen) : null;
         const phraseEvents = (phrasePlan && phrasePlan.events) ? phrasePlan.events : null;
         const phraseLen = (phraseEvents && phraseEvents.length) ? phraseEvents.length : 0;
 

@@ -2715,6 +2715,15 @@ select option { background-color: #0b1026; color: #e8eeff; }
   min-width:220px;
 }
 
+#screenSound .rg-poly-presets-panel select optgroup{
+  color:#111;
+  font-weight:700;
+  opacity:1;
+}
+#screenSound .rg-poly-presets-panel select optgroup option{
+  font-weight:400;
+}
+
 #screenSound .rg-poly-hb-builder{
   flex-basis:100%;
   width:100%;
@@ -2778,6 +2787,13 @@ select option { background-color: #0b1026; color: #e8eeff; }
 }
 #screenSound .rg-poly-layer-controls .control{ min-width:140px; }
 #screenSound .rg-poly-layer-controls input[type="text"]{ width:260px; max-width:100%; }
+
+/* v021_p12_poly_layer_time_signature_phrase_durations: compact time sig control */
+#screenSound .rg-poly-layer-controls .control.rg-poly-time-sig-ctl{ min-width:0; }
+#screenSound .rg-poly-time-sig{ display:flex; align-items:center; gap:6px; }
+#screenSound .rg-poly-time-sig input[type="number"]{ width:56px; }
+#screenSound .rg-poly-time-sig select{ width:68px; }
+#screenSound .rg-poly-time-sig-slash{ opacity:0.85; }
 
 #screenSound .rg-poly-test-area{
   display:flex;
@@ -2972,6 +2988,19 @@ select option { background-color: #0b1026; color: #e8eeff; }
 }
 #screenSound .rg-poly-perbell-group-body input[type="number"]{
   width:92px;
+}
+#screenSound .rg-poly-perbell-group-body .rg-poly-perbell-field{
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+  min-width:92px;
+}
+#screenSound .rg-poly-perbell-group-body .rg-poly-perbell-field-label{
+  font-size:10px;
+  line-height:1.1;
+  opacity:0.85;
+  font-weight:650;
+  white-space:nowrap;
 }
 #screenSound .rg-poly-perbell-group-body select{
   min-width:150px;
