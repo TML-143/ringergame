@@ -33,11 +33,11 @@
       <div id="rgHamburgerDropdown" class="rg-hamburger-dropdown hidden" aria-hidden="true" role="menu" aria-label="Navigation">
         <button class="rg-hamburger-item" type="button" data-ham="home" role="menuitem">Home</button>
         <button class="rg-hamburger-item" type="button" data-ham="setup" role="menuitem">Setup</button>
-        <button class="rg-hamburger-item" type="button" data-ham="view" role="menuitem">View</button>
-        <button class="rg-hamburger-item" type="button" data-ham="sound" role="menuitem">Sound</button>
+        <button class="rg-hamburger-item" type="button" data-ham="view" role="menuitem">Visual</button>
+        <button class="rg-hamburger-item" type="button" data-ham="sound" role="menuitem">Audio</button>
         <button class="rg-hamburger-item" type="button" data-ham="load" role="menuitem">Load</button>
         <button class="rg-hamburger-item" type="button" data-ham="demo" role="menuitem">Demo</button>
-        <button class="rg-hamburger-item" type="button" data-ham="play" role="menuitem">Play</button>
+        <button class="rg-hamburger-item" type="button" data-ham="play" role="menuitem">Game</button>
         <div class="rg-hamburger-divider" role="separator" aria-orientation="horizontal"></div>
         <button class="rg-hamburger-item" type="button" data-ham="start" role="menuitem">Start</button>
         <button class="rg-hamburger-item" type="button" data-ham="pause" role="menuitem">Pause/Resume</button>
@@ -116,13 +116,13 @@
               </div>
               <div class="rg-home-menu" aria-label="Home navigation">
                 <button id="homeBtnPlay" class="pill" type="button">Setup</button>
-                <button id="homeBtnView" class="pill" type="button">View</button>
-                <button id="homeBtnSound" class="pill" type="button">Sound</button>
+                <button id="homeBtnView" class="pill" type="button">Visual</button>
+                <button id="homeBtnSound" class="pill" type="button">Audio</button>
                 <button id="homeBtnLoad" class="pill" type="button">Load</button>
               </div>
               <div class="rg-home-bottom" aria-label="Quick start">
                 <button id="homeBtnDemo" class="pill" type="button">Demo</button>
-                <button id="homeBtnBegin" class="pill" type="button">Play</button>
+                <button id="homeBtnBegin" class="pill" type="button">Game</button>
               </div>
             </div>
           </div>
@@ -165,6 +165,18 @@
                 <div class="rg-setup-block-head"><div class="rg-setup-block-title">Method</div></div>
                 <div id="setupBlockMethodBody" class="rg-setup-block-body rg-controls"></div>
               </div>
+
+              <!-- v022_p13_view_menu_reorg_defaults_and_setup_notation_browser: Setup Notation browser (collapsible) -->
+              <details id="setupNotationDetails" class="rg-setup-block rg-setup-block--collapsible" aria-label="Notation">
+                <summary class="rg-setup-block-head rg-setup-block-summaryline" aria-controls="setupNotationDetailsBody">
+                  <span class="rg-setup-block-title">Notation</span>
+                  <span class="rg-setup-block-caret" aria-hidden="true"></span>
+                </summary>
+                <div id="setupNotationDetailsBody" class="rg-setup-block-body">
+                  <div id="setupNotationLineMount" class="rg-controls" aria-label="Line controls"></div>
+                  <div id="setupNotationMount" aria-label="Notation browser mount"></div>
+                </div>
+              </details>
               <div id="setupBlockTempo" class="rg-setup-block">
                 <div class="rg-setup-block-head"><div class="rg-setup-block-title">Tempo</div></div>
                 <div id="setupBlockTempoBody" class="rg-setup-block-body rg-controls"></div>
@@ -178,12 +190,18 @@
                 <div id="setupBlockMicBody" class="rg-setup-block-body rg-controls"></div>
               </div>
             </div>
+
+
+      <footer class="footer">
+        <p id="hint">Keys 1–9 (and 0/E/T for 10/11/12) ring bells by default. Use Keybindings to rebind scored bells (and Space/Enter when you have a single scored bell). Tap/click bells in the Display. Non-scored bells are rung by bots. Only your selected scored bells count toward your score.</p>
+      </footer>
+    
 <div class="rg-nav">
               <button class="pill" type="button" data-go-screen="home">Home</button>
               <button class="pill" type="button" data-go-screen="play">Setup</button>
-              <button class="pill" type="button" data-go-screen="view">View</button>
-              <button class="pill" type="button" data-go-screen="sound">Sound</button>
-              <button id="playBtnEnterGame" class="pill" type="button">Play</button>
+              <button class="pill" type="button" data-go-screen="view">Visual</button>
+              <button class="pill" type="button" data-go-screen="sound">Audio</button>
+              <button id="playBtnEnterGame" class="pill" type="button">Game</button>
               <button id="playBtnDemo" class="pill" type="button">Demo</button>
             </div>
           </div>
@@ -192,12 +210,12 @@
 
       <div id="screenView" class="rg-screen" aria-hidden="true">
         <section class="pane rg-splash">
-          <div class="pane-title"><span>View</span></div>
+          <div class="pane-title"><span>Visual</span></div>
           <div class="rg-screen-body">
             <div id="viewMenuControls" class="rg-controls" aria-label="View controls">
               <div class="control">
                 <label>Defaults</label>
-                <button id="restoreViewDefaultsBtn" class="pill" type="button">Restore View defaults</button>
+                <button id="restoreViewDefaultsBtn" class="pill" type="button">Restore Visual defaults</button>
               </div>
 
               <div class="control">
@@ -240,9 +258,9 @@
             <div class="rg-nav">
               <button class="pill" type="button" data-go-screen="home">Home</button>
               <button class="pill" type="button" data-go-screen="play">Setup</button>
-              <button class="pill" type="button" data-go-screen="view">View</button>
-              <button class="pill" type="button" data-go-screen="sound">Sound</button>
-              <button id="viewBtnEnterGame" class="pill" type="button">Play</button>
+              <button class="pill" type="button" data-go-screen="view">Visual</button>
+              <button class="pill" type="button" data-go-screen="sound">Audio</button>
+              <button id="viewBtnEnterGame" class="pill" type="button">Game</button>
               <button id="viewBtnDemo" class="pill" type="button">Demo</button>
             </div>
           </div>
@@ -274,13 +292,19 @@
 
               <h3>Load codes</h3>
               <p>You can export and import your setup using human-readable Load codes.</p>
-              <p>Load codes may include configuration, sound and input settings, and scoring data you choose to generate or append.</p>
+              <p>Load codes may include configuration, sound and input settings, method data, and scoring data you choose to generate or append.</p>
               <p>Load codes are created, processed, saved, and shared entirely by you, in your browser.</p>
+
+              <h3>MIDI output</h3>
+              <p>You may choose to export a MIDI file from Ringer Game.</p>
+              <p>MIDI files are generated entirely in your browser based on your current setup (such as the loaded method, sound profiles, and polyrhythm settings).</p>
+              <p>No MIDI data is uploaded, transmitted, or stored by Ringer Game.</p>
+              <p>Exported MIDI files exist only as files you choose to download and save. What you do with those files is entirely under your control.</p>
 
               <h3>Audience measurement (optional)</h3>
               <p>Audience measurement is off by default.</p>
               <p>If enabled, Ringer Game uses Google Analytics 4 to measure general site usage (such as page views and approximate region).</p>
-              <p>No gameplay actions, scores, or timing data are sent to analytics.</p>
+              <p>No gameplay actions, scores, timing data, methods, load codes, or MIDI data are sent to analytics.</p>
               <p>You can turn this on or off at any time from the Privacy page.</p>
 
               <h3>Optional third-party content</h3>
@@ -289,10 +313,10 @@
 
               <h3>Contact</h3>
               <p>ringergame143@gmail.com</p>
-            </div>
+              </div>
             <div class="rg-nav">
               <button class="pill" type="button" data-go-screen="home">Home</button>
-              <button class="pill" type="button" data-go-screen="game">Play</button>
+              <button class="pill" type="button" data-go-screen="game">Game</button>
               <button id="privacyBtnDemo" class="pill" type="button">Demo</button>
             </div>
           </div>
@@ -301,12 +325,16 @@
 
 <div id="screenSound" class="rg-screen" aria-hidden="true">
         <section class="pane rg-splash">
-          <div class="pane-title"><span>Sound</span></div>
+          <div class="pane-title"><span>Audio</span></div>
           <div class="rg-screen-body">
             <div class="rg-controls rg-sound-defaults" aria-label="Sound defaults">
               <div class="control">
                 <label>Defaults</label>
-                <button id="restoreSoundDefaultsBtn" class="pill" type="button">Restore Sound defaults</button>
+                <button id="restoreSoundDefaultsBtn" class="pill" type="button">Restore Audio defaults</button>
+                <div class="toggles toggles--mini" role="group" aria-label="Run audio mute toggles">
+                  <label class="toggle"><input id="muteMethodBellsChk" type="checkbox" /> Mute method (bots)</label>
+                  <label class="toggle"><input id="muteUserBellsChk" type="checkbox" /> Mute user bells</label>
+                </div>
               </div>
             </div>
 
@@ -315,6 +343,8 @@
               <summary class="rg-sound-block-summaryline" aria-controls="soundProfilesBar">
 
                 <span class="rg-sound-block-title">PROFILES</span>
+
+                <span id="soundProfilesSummary" class="rg-sound-block-summary rg-muted"></span>
 
                 <span class="rg-sound-block-caret" aria-hidden="true"></span>
 
@@ -352,6 +382,8 @@
 
                 <span class="rg-sound-block-title">DRONE LAYERS</span>
 
+                <span id="soundDroneSummary" class="rg-sound-block-summary rg-muted"></span>
+
                 <span class="rg-sound-block-caret" aria-hidden="true"></span>
 
               </summary>
@@ -363,6 +395,8 @@
               <summary class="rg-sound-block-summaryline" aria-controls="soundMenuControls">
 
                 <span class="rg-sound-block-title">BELL SOUND</span>
+
+                <span id="soundBellSoundSummary" class="rg-sound-block-summary rg-muted"></span>
 
                 <span class="rg-sound-block-caret" aria-hidden="true"></span>
 
@@ -475,7 +509,7 @@
             <!-- v011_p04_bell_pitch_collapsible_blocks: BELL PITCH block (collapsed-by-default) -->
             <details id="soundPitchBlock" class="rg-sound-block rg-sound-block--collapsible" aria-label="Bell pitch">
               <summary class="rg-sound-block-summaryline" aria-controls="soundPitchControls">
-                <span class="rg-sound-block-title">Bell Pitch</span>
+                <span class="rg-sound-block-title">BELL PITCH</span>
                 <span id="soundPitchSummary" class="rg-sound-block-summary rg-muted">Diatonic — F♯ Major — Compact</span>
                 <span class="rg-sound-block-caret" aria-hidden="true"></span>
               </summary>
@@ -488,7 +522,9 @@
 <details id="soundPolyrhythmBlock" class="rg-sound-block rg-sound-block--collapsible" aria-label="Polyrhythm">
   <summary class="rg-sound-block-summaryline" aria-controls="soundPolyrhythmControls">
 
-    <span class="rg-sound-block-title">Polyrhythm</span>
+    <span class="rg-sound-block-title">POLYRHYTHM</span>
+
+    <span id="soundPolyrhythmSummary" class="rg-sound-block-summary rg-muted"></span>
 
     <span class="rg-sound-block-caret" aria-hidden="true"></span>
 
@@ -499,7 +535,9 @@
 <details id="soundMasterFxBlock" class="rg-sound-block rg-sound-block--collapsible" aria-label="Master / Output">
   <summary class="rg-sound-block-summaryline" aria-controls="soundMasterFxControls">
 
-    <span class="rg-sound-block-title">Master / Output</span>
+    <span class="rg-sound-block-title">MASTER / OUTPUT</span>
+
+    <span id="soundMasterFxSummary" class="rg-sound-block-summary rg-muted"></span>
 
     <span class="rg-sound-block-caret" aria-hidden="true"></span>
 
@@ -545,9 +583,9 @@
 <div class="rg-nav">
               <button class="pill" type="button" data-go-screen="home">Home</button>
               <button class="pill" type="button" data-go-screen="play">Setup</button>
-              <button class="pill" type="button" data-go-screen="view">View</button>
-              <button class="pill" type="button" data-go-screen="sound">Sound</button>
-              <button id="soundBtnEnterGame" class="pill" type="button">Play</button>
+              <button class="pill" type="button" data-go-screen="view">Visual</button>
+              <button class="pill" type="button" data-go-screen="sound">Audio</button>
+              <button id="soundBtnEnterGame" class="pill" type="button">Game</button>
               <button id="soundBtnDemo" class="pill" type="button">Demo</button>
             </div>
           </div>
@@ -565,6 +603,7 @@
                 <button id="loadBtnGenerate" class="pill" type="button">Generate</button>
                 <button id="loadBtnCopy" class="pill" type="button">Copy code</button>
                 <button id="loadBtnSaveFile" class="pill" type="button">Save file</button>
+                <button id="loadBtnOutputMIDI" class="pill" type="button">Output MIDI</button>
                 <button id="loadBtnAppendRun" class="pill" type="button" disabled>Append run to loaded code</button>
               </div>
               <textarea id="loadCodeTextarea" class="rg-load-textarea rg-mono" rows="14" spellcheck="false" aria-label="Load code"></textarea>
@@ -573,9 +612,9 @@
             <div class="rg-nav">
               <button class="pill" type="button" data-go-screen="home">Home</button>
               <button class="pill" type="button" data-go-screen="play">Setup</button>
-              <button class="pill" type="button" data-go-screen="view">View</button>
-              <button class="pill" type="button" data-go-screen="sound">Sound</button>
-              <button id="loadBtnEnterGame" class="pill" type="button">Play</button>
+              <button class="pill" type="button" data-go-screen="view">Visual</button>
+              <button class="pill" type="button" data-go-screen="sound">Audio</button>
+              <button id="loadBtnEnterGame" class="pill" type="button">Game</button>
               <button id="loadBtnDemo" class="pill" type="button">Demo</button>
             </div>
           </div>
@@ -627,7 +666,7 @@
                     <div id="libraryNotes" class="rg-library-section"></div>
 
                     <div class="rg-library-actions">
-                      <button id="libraryPlaySelectedBtn" class="pill" type="button" disabled>Play</button>
+                      <button id="libraryPlaySelectedBtn" class="pill" type="button" disabled>Game</button>
                       <button id="libraryDemoSelectedBtn" class="pill" type="button" disabled>Demo</button>
                     </div>
 
@@ -655,9 +694,9 @@
             </div>
             <div class="rg-nav">
               <button class="pill" type="button" data-go-screen="play">Setup</button>
-              <button class="pill" type="button" data-go-screen="view">View</button>
-              <button class="pill" type="button" data-go-screen="sound">Sound</button>
-              <button id="libraryBtnEnterGame" class="pill" type="button">Play</button>
+              <button class="pill" type="button" data-go-screen="view">Visual</button>
+              <button class="pill" type="button" data-go-screen="sound">Audio</button>
+              <button id="libraryBtnEnterGame" class="pill" type="button">Game</button>
               <button id="libraryBtnDemo" class="pill" type="button">Demo</button>
             </div>
           </div>
@@ -760,6 +799,11 @@
           <div class="control">
             <label>Drone</label>
             <button id="droneOnOffBtn" class="pill" type="button">Drone On</button>
+          </div>
+
+          <div class="control">
+            <label>Drone layers</label>
+            <button id="resetDronesBtn" class="pill" type="button">Reset drones</button>
           </div>
 
           <div class="control">
@@ -979,6 +1023,21 @@
             <input id="fileInput" type="file" accept=".txt,.xml" />
           </div>
 
+<div class="control">
+  <label for="methodPnInput">Place notation</label>
+  <textarea id="methodPnInput" spellcheck="false" placeholder="e.g., x16x16x16,12"></textarea>
+</div>
+
+<div class="control">
+  <label for="methodLhInput">Lead head</label>
+  <textarea id="methodLhInput" spellcheck="false" placeholder="e.g., 135264"></textarea>
+</div>
+
+<div class="control">
+  <label for="methodInputBtn">Manual method input</label>
+  <button id="methodInputBtn" type="button">Input</button>
+</div>
+
           <div class="control rg-file-input-offscreen">
             <label for="xmlInput">CCCBR XML / ZIP</label>
             <input id="xmlInput" type="file" accept=".xml,.zip" multiple />
@@ -1003,8 +1062,8 @@
           </div>
           <div class="rg-menu-buttons">
             <button id="rgMenuGoPlay" type="button">Setup</button>
-            <button id="rgMenuGoView" type="button">View</button>
-            <button id="rgMenuGoSound" type="button">Sound</button>
+            <button id="rgMenuGoView" type="button">Visual</button>
+            <button id="rgMenuGoSound" type="button">Audio</button>
           </div>
         </div>
       </div>
@@ -1060,11 +1119,6 @@
           </div>
         </section>
       </main>
-
-      <footer class="footer">
-        <p id="hint">Keys 1–9 (and 0/E/T for 10/11/12) ring bells by default. Use Keybindings to rebind scored bells (and Space/Enter when you have a single scored bell). Tap/click bells in the Display. Non-scored bells are rung by bots. Only your selected scored bells count toward your score.</p>
-      </footer>
-    
       </div>
 </div>
 

@@ -75,7 +75,7 @@
   // === Analytics (GA4) ===
   const GA_MEASUREMENT_ID = 'G-7TEG531231';
   const GA_ID = GA_MEASUREMENT_ID;
-  const SITE_VERSION = 'v021_p13_poly_ui_presets_optgroup_contrast_perbell_labels';
+  const SITE_VERSION = 'v022_p20_stats_render_throttle_raf';
 
   function safeJsonParse(txt) { try { return JSON.parse(txt); } catch (_) { return null; } }
   function safeGetLS(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
@@ -359,6 +359,16 @@ Contact: ringergame143@gmail.com`;
   const notationPrevBtn = document.getElementById('notationPrevBtn');
   const notationNextBtn = document.getElementById('notationNextBtn');
 
+  // v022_p13_view_menu_reorg_defaults_and_setup_notation_browser: Setup Notation browser (Setup)
+  const setupNotationDetails = document.getElementById('setupNotationDetails');
+  const setupNotationLineMount = document.getElementById('setupNotationLineMount');
+  const setupNotationMount = document.getElementById('setupNotationMount');
+
+  // v022_p13_view_menu_reorg_defaults_and_setup_notation_browser: docking anchors (avoid duplicate IDs)
+  let notationPaneHomeParent = null;
+  let notationPaneHomeNextSibling = null;
+
+
   const methodSelect = document.getElementById('methodSelect');
   const bellCountSelect = document.getElementById('bellCount');
   const scaleSelect = document.getElementById('scaleSelect');
@@ -483,6 +493,9 @@ const spatialDepthModeSelect = document.getElementById('spatialDepthModeSelect')
   const micPaneStatus = document.getElementById('micPaneStatus');
 
   const fileInput = document.getElementById('fileInput');
+  const methodPnInput = document.getElementById('methodPnInput');
+  const methodLhInput = document.getElementById('methodLhInput');
+  const methodInputBtn = document.getElementById('methodInputBtn');
   const xmlInput  = document.getElementById('xmlInput');
   const startBtn = document.getElementById('startBtn');
   const pauseBtn = document.getElementById('pauseBtn');
@@ -792,6 +805,10 @@ const spatialDepthModeSelect = document.getElementById('spatialDepthModeSelect')
   const ui = {
     screen: 'home',
     _runtimeAppliedProfileIndex: 0, // v019_p04_runtime_switch_by_lead: runtime cache (non-persisted)
+    _profilesFallbackMuteMethodBells: null, // v022_p12_profiles_per_profile_mutes_and_glyphs: session fallback (non-persisted)
+    _profilesFallbackMuteUserBells: null, // v022_p12_profiles_per_profile_mutes_and_glyphs: session fallback (non-persisted)
+    _profilesFallbackGlyphBindings: null, // v022_p12_profiles_per_profile_mutes_and_glyphs: session fallback (non-persisted)
+    _profilesFallbackGlyphStyle: null, // v022_p12_profiles_per_profile_mutes_and_glyphs: session fallback (non-persisted)
     notationPage: 0,
     notationFollow: true,
     // v06_p15_notation_single_page_mode
@@ -811,6 +828,11 @@ const spatialDepthModeSelect = document.getElementById('spatialDepthModeSelect')
     spotlightDragPointerId: null,
     spotlightDragLastKey: null,
 
+
+    // v022_p01_game_ui_footer_privacy_display_drag
+    displayDragActive: false,
+    displayDragPointerId: null,
+    displayDragLastBell: null,
     // v10_p04_sound_quick_bell_row
     soundQuickRowDragActive: false,
     soundQuickRowDragPointerId: null,
@@ -848,6 +870,9 @@ const spatialDepthModeSelect = document.getElementById('spatialDepthModeSelect')
     loadedStatsHistory: [],
     // v015_p04_stats_export_import_and_compare: most recent completed run stats snapshot for export preview
     lastRunStatsSnapshot: null,
+    // v022_p20_stats_render_throttle_raf: UI-only render throttling for Stats pane (DOM-heavy table)
+    lastStatsRenderMs: 0,
+    lastStatsBeatKey: null,
     // v015_p04_stats_export_import_and_compare: last-loaded settings JSON (session-only, for append-only history)
     loadedCodeRoot: null,
     loadedCodePayload: null,
@@ -891,6 +916,15 @@ const next = (nn === 'home' || nn === 'play' || nn === 'view' || nn === 'sound' 
 
     ui.screen = next;
 
+    // v022_p13_view_menu_reorg_defaults_and_setup_notation_browser: dock Setup Notation browser
+    try { syncSetupNotationDocking(next); } catch (_) {}
+
+    // v022_p01_game_ui_footer_privacy_display_drag: hide privacy footer on Play/Demo screen only.
+    try {
+      const pf = document.querySelector('.rg-footer-privacy');
+      if (pf) pf.classList.toggle('hidden', next === 'game');
+    } catch (_) {}
+
     // v09_p04b_hamburger_header_anchor
     try { syncHamburgerUIForScreen(next); } catch (_) {}
 
@@ -917,6 +951,8 @@ const next = (nn === 'home' || nn === 'play' || nn === 'view' || nn === 'sound' 
       try { rebuildSoundQuickBellRow(); } catch (_) {}
       // v019_p02_sound_profiles_tabs: refresh Sound Profiles tabs + lead count
       try { syncSoundProfilesUI(); } catch (_) {}
+      // v022_p04_mute_method_and_optional_mute_user_bells
+      try { syncSoundMuteTogglesUI(); } catch (_) {}
     }
 
     if (next === 'game') {
@@ -1146,8 +1182,8 @@ const next = (nn === 'home' || nn === 'play' || nn === 'view' || nn === 'sound' 
     const out = [];
     out.push('<div class="rg-library-section-title">Class glossary</div>');
     out.push('<div class="rg-library-section-body">');
-    out.push('<div><span class="rg-muted">Selected:</span> <b>' + cls.replace(/</g,'&lt;') + '</b></div>');
-    out.push('<div class="rg-library-mt6">' + def.replace(/</g,'&lt;') + '</div>');
+    out.push('<div><span class="rg-muted">Selected:</span> <b>' + escapeHtml(cls) + '</b></div>');
+    out.push('<div class="rg-library-mt6">' + escapeHtml(def) + '</div>');
 
     // Optional: other class terms present on this stage (collapsible)
     const st = (ui.libraryIndex && ui.libraryIndex.stageMap) ? ui.libraryIndex.stageMap[stage] : null;
@@ -1167,7 +1203,7 @@ const next = (nn === 'home' || nn === 'play' || nn === 'view' || nn === 'sound' 
       for (let i = 0; i < max; i++) {
         const n = unique[i];
         const d = (n === '(Unclassified)') ? 'No class descriptor set in CCCBR metadata.' : libClassDefinition(n);
-        out.push('<div class="rg-library-mt6"><b>' + n.replace(/</g,'&lt;') + ':</b> ' + d.replace(/</g,'&lt;') + '</div>');
+        out.push('<div class="rg-library-mt6"><b>' + escapeHtml(n) + ':</b> ' + escapeHtml(d) + '</div>');
       }
       if (unique.length > max) {
         out.push('<div class="rg-library-mt6 rg-muted">(' + (unique.length - max) + ' more…)</div>');
@@ -1245,9 +1281,54 @@ const next = (nn === 'home' || nn === 'play' || nn === 'view' || nn === 'sound' 
     if (librarySelectedMeta) {
       const lines = [];
       lines.push('<div><span class="rg-muted">Stage:</span> ' + stage + ' (' + stageWord + ')</div>');
-      lines.push('<div><span class="rg-muted">Class:</span> ' + (cls || '(Unclassified)') + '</div>');
-      if (fam) lines.push('<div><span class="rg-muted">Family:</span> ' + fam + '</div>');
-      if (lh) lines.push('<div><span class="rg-muted">Lead head:</span> ' + lh + '</div>');
+      lines.push('<div><span class="rg-muted">Class:</span> ' + escapeHtml(cls || '(Unclassified)') + '</div>');
+if (m && m.rowsCapped) {
+  const cap = (m.rowsCap && isFinite(m.rowsCap)) ? Math.floor(m.rowsCap) : 0;
+  const gen = (m.rowsGenerated && isFinite(m.rowsGenerated)) ? Math.floor(m.rowsGenerated) : 0;
+  let msg = '⚠ Rows were capped';
+  if (cap > 0) msg += ' at ' + cap;
+  if (gen > 0) msg += ' (generated ' + gen + ')';
+  msg += '; method may be incomplete.';
+  lines.push('<div class="rg-inline-warn">' + escapeHtml(msg) + '</div>');
+}
+
+      if (fam) lines.push('<div><span class="rg-muted">Family:</span> ' + escapeHtml(fam) + '</div>');
+      if (lh) lines.push('<div><span class="rg-muted">Lead head:</span> ' + escapeHtml(lh) + '</div>');
+
+      // Extra attribution metadata (only show fields that exist)
+      const addAttr = function(label, val) {
+        const v = (val == null ? '' : String(val)).trim();
+        if (!v) return;
+        lines.push('<div><span class="rg-muted">' + escapeHtml(label) + ':</span> ' + escapeHtml(v) + '</div>');
+      };
+
+      const perfPretty = function(t) {
+        const s = (t == null ? '' : String(t)).trim();
+        if (!s) return '';
+        return s.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, function(c) { return c.toUpperCase(); });
+      };
+
+      addAttr('Composer', m.attributionComposer);
+      addAttr('Author', m.attributionAuthor);
+      addAttr('Arranger', m.attributionArranger);
+      addAttr('Provenance', m.attributionProvenance);
+
+      addAttr('Source', m.attributionSource);
+      addAttr('RW ref', m.attributionRWRef);
+      addAttr('BN ref', m.attributionBNRef);
+      addAttr('CB ref', m.attributionCBRef);
+
+      const perf = perfPretty(m.attributionPerformanceType);
+      if (perf) addAttr('First', perf);
+
+      if (m.attributionDate) addAttr('Date', m.attributionDate);
+      else addAttr('Year', m.attributionYear);
+
+      addAttr('Place', m.attributionPlace);
+      addAttr('Society', m.attributionSociety);
+      addAttr('CCCBR ID', m.attributionCCCBRId);
+      addAttr('CCCBR URL', m.attributionCCCBRUrl);
+
       librarySelectedMeta.innerHTML = lines.join('');
     }
 
@@ -1271,7 +1352,7 @@ const next = (nn === 'home' || nn === 'play' || nn === 'view' || nn === 'sound' 
       gl.push('<div><span class="rg-muted">Stage</span> is the bell-count word: <b>' + libStageMeaning(stage) + '</b>.</div>');
       gl.push('<div class="rg-library-mt6"><span class="rg-muted">Class</span> (in CCCBR metadata) is a short category for the method type (e.g., Plain, Treble Bob, Surprise).</div>');
       if (parsed && parsed.name) {
-        gl.push('<div class="rg-library-mt6"><span class="rg-muted">Name:</span> ' + (parsed.name || '') + '</div>');
+        gl.push('<div class="rg-library-mt6"><span class="rg-muted">Name:</span> ' + escapeHtml(parsed.name || '') + '</div>');
         gl.push('<div><span class="rg-muted">Stage:</span> ' + stageWord + ' (' + stage + ' bells)</div>');
       }
       gl.push('</div>');
@@ -1291,7 +1372,7 @@ const next = (nn === 'home' || nn === 'play' || nn === 'view' || nn === 'sound' 
       notes.push('<div class="rg-library-section-title">Notes</div>');
       notes.push('<div class="rg-library-section-body">');
       if (pn) {
-        notes.push('<div><span class="rg-muted">Place notation:</span> <span class="rg-library-mono">' + pn.replace(/</g,'&lt;') + '</span></div>');
+        notes.push('<div><span class="rg-muted">Place notation:</span> <span class="rg-library-mono">' + escapeHtml(pn) + '</span></div>');
       } else {
         notes.push('<div><span class="rg-muted">Place notation:</span> (not provided)</div>');
       }
@@ -1398,11 +1479,11 @@ const next = (nn === 'home' || nn === 'play' || nn === 'view' || nn === 'sound' 
 
   function libPreviewFormatRowHtml(rowStr, hiliteChar) {
     if (!rowStr) return '';
-    const safe = rowStr.replace(/</g, '&lt;');
+    const safe = escapeHtml(rowStr);
     if (!hiliteChar) return safe;
     const pos = safe.indexOf(hiliteChar);
     if (pos < 0) return safe;
-    return safe.slice(0, pos) + '<span class="lineHilite">' + hiliteChar + '</span>' + safe.slice(pos + 1);
+    return safe.slice(0, pos) + '<span class="lineHilite">' + safe.slice(pos, pos + hiliteChar.length) + '</span>' + safe.slice(pos + hiliteChar.length);
   }
 
   function libPreviewRenderSpread(p) {
@@ -1944,6 +2025,59 @@ const next = (nn === 'home' || nn === 'play' || nn === 'view' || nn === 'sound' 
     destEl.appendChild(controlEl);
   }
 
+
+  // v022_p13_view_menu_reorg_defaults_and_setup_notation_browser: Setup Notation browser docking
+  function syncSetupNotationDocking(nextScreen) {
+    const next = String(nextScreen || '').toLowerCase();
+
+    // Capture original location once (stable restore).
+    try {
+      if (!notationPaneHomeParent && notationPane) {
+        notationPaneHomeParent = notationPane.parentNode;
+        notationPaneHomeNextSibling = notationPane.nextSibling;
+      }
+    } catch (_) {}
+
+    if (next === 'play') {
+      // Dock notation + line controls into Setup Notation pane.
+      try { if (setupNotationMount && notationPane) setupNotationMount.appendChild(notationPane); } catch (_) {}
+      try { if (setupNotationLineMount) moveControlByChildId('pathNoneBtn', setupNotationLineMount); } catch (_) {}
+
+      // If open, ensure we draw immediately.
+      try {
+        if (setupNotationDetails && setupNotationDetails.open) {
+          syncNotationPagingUI();
+          markDirty();
+          kickLoop();
+        }
+      } catch (_) {}
+      try { syncManualMethodInputsFromState(); } catch (_) {}
+      return;
+    }
+
+    // Restore notation pane to its original home (Game screen).
+    try {
+      if (notationPane && notationPaneHomeParent) {
+        if (notationPaneHomeNextSibling && notationPaneHomeNextSibling.parentNode === notationPaneHomeParent) {
+          notationPaneHomeParent.insertBefore(notationPane, notationPaneHomeNextSibling);
+        } else {
+          notationPaneHomeParent.appendChild(notationPane);
+        }
+      }
+    } catch (_) {}
+
+    // Keep Line controls (and lead overlay ordering) in View menu for non-Setup screens.
+    try {
+      const viewDest = document.getElementById('viewMenuControls');
+      if (viewDest) {
+        moveControlByChildId('pathNoneBtn', viewDest);
+        // Keep lead options below Line.
+        moveControlByChildId('leadOverlayToggle', viewDest);
+      }
+    } catch (_) {}
+  }
+
+
 // v011_p04_bell_pitch_collapsible_blocks: Bell Pitch UI blocks + summary
 function coerceBellPitchFamily(raw) {
   const v = String(raw || '').trim();
@@ -2073,6 +2207,93 @@ function syncBellPitchSummaryUI() {
   const el = document.getElementById('soundPitchSummary');
   if (!el) return;
   el.textContent = getBellPitchSummaryText();
+}
+
+function getSoundProfilesSummaryText() {
+  try {
+    const sp = state.soundProfilesV1;
+    const profiles = (sp && Array.isArray(sp.profiles)) ? sp.profiles : [];
+    const k = Math.max(1, Math.min(MAX_SAFE_PROFILES, profiles.length || 1));
+    const sel = clampInt(sp ? sp.selectedProfileIndex : 1, 1, k, 1);
+    return 'Profile ' + sel + '/' + k;
+  } catch (_) { return 'Profile 1/1'; }
+}
+
+function syncSoundProfilesSummaryUI() {
+  const el = document.getElementById('soundProfilesSummary');
+  if (!el) return;
+  try { el.textContent = getSoundProfilesSummaryText(); } catch (_) { el.textContent = ''; }
+}
+
+function getSoundDroneSummaryText() {
+  try {
+    const live = (!!state.droneOn && !state.dronePaused);
+    const status = live ? 'Live' : 'Paused';
+    const layers = Array.isArray(state.droneLayers) ? state.droneLayers : [];
+    const n = layers.length;
+    let unmuted = 0;
+    let follow = false;
+    for (let i = 0; i < layers.length; i++) {
+      const l = layers[i];
+      if (!l) continue;
+      if (!l.muted) unmuted++;
+      if (l.followBellKey) follow = true;
+    }
+    let s = status + ' — Layers ' + n + ' (unmuted ' + unmuted + ')';
+    if (follow) s += ' — Follow key';
+    return s;
+  } catch (_) { return 'Paused — Layers 0 (unmuted 0)'; }
+}
+
+function syncSoundDroneSummaryUI() {
+  const el = document.getElementById('soundDroneSummary');
+  if (!el) return;
+  try { el.textContent = getSoundDroneSummaryText(); } catch (_) { el.textContent = ''; }
+}
+
+function getSoundBellSoundSummaryText() {
+  try {
+    const cfg = state.globalChord || {};
+    const on = !!cfg.enabled;
+    const preset = String(cfg.preset || 'unison');
+    return 'Chords: ' + (on ? 'On' : 'Off') + ' — Preset: ' + preset;
+  } catch (_) { return 'Chords: Off — Preset: unison'; }
+}
+
+function syncSoundBellSoundSummaryUI() {
+  const el = document.getElementById('soundBellSoundSummary');
+  if (!el) return;
+  try { el.textContent = getSoundBellSoundSummaryText(); } catch (_) { el.textContent = ''; }
+}
+
+function getSoundPolyrhythmSummaryText() {
+  try {
+    const runs = !!state.polyEnabledForRuns;
+    const layers = Array.isArray(state.polyLayers) ? state.polyLayers : [];
+    const n = layers.length;
+    const vol = Math.round(clamp(Number(state.polyMasterVolume) || 0, 0, 100));
+    return 'Runs: ' + (runs ? 'On' : 'Off') + ' — Layers ' + n + ' — Vol ' + vol + '%';
+  } catch (_) { return 'Runs: Off — Layers 0 — Vol 0%'; }
+}
+
+function syncSoundPolyrhythmSummaryUI() {
+  const el = document.getElementById('soundPolyrhythmSummary');
+  if (!el) return;
+  try { el.textContent = getSoundPolyrhythmSummaryText(); } catch (_) { el.textContent = ''; }
+}
+
+function getSoundMasterFxSummaryText() {
+  try {
+    const master = Math.round(clamp(Number(state.bellVolume) || 0, 0, 100));
+    const lim = !!state.fxLimiterEnabled;
+    return 'Master ' + master + '% — Limiter: ' + (lim ? 'On' : 'Off');
+  } catch (_) { return 'Master 0%'; }
+}
+
+function syncSoundMasterFxSummaryUI() {
+  const el = document.getElementById('soundMasterFxSummary');
+  if (!el) return;
+  try { el.textContent = getSoundMasterFxSummaryText(); } catch (_) { el.textContent = ''; }
 }
 
 function setBellPitchUiSelection(family) {
@@ -2475,12 +2696,25 @@ function ensureBellPitchPatternBlocks(destEl) {
     const setupBellsDest = document.getElementById('setupBlockBellsBody') || playDest;
     const setupMicDest = document.getElementById('setupBlockMicBody') || playDest;
 
+    // v022_p18_stage_dropdown_in_method_pane: prefer "Stage" label for bellCount.
+    try {
+      const lbl = document.querySelector('label[for="bellCount"]');
+      if (lbl) {
+        lbl.textContent = 'Stage (number of bells)';
+        lbl.title = 'Stage = number of bells (4–12).';
+      }
+    } catch (_) {}
+
+    // v022_p18_stage_dropdown_in_method_pane: Stage is part of method definition.
     moveControlByChildId('methodSelect', setupMethodDest);
+    moveControlByChildId('bellCount', setupMethodDest);
     moveControlByChildId('fileInput', setupMethodDest);
+    moveControlByChildId('methodPnInput', setupMethodDest);
+    moveControlByChildId('methodLhInput', setupMethodDest);
+    moveControlByChildId('methodInputBtn', setupMethodDest);
 
     moveControlByChildId('bpmInput', setupTempoDest);
 
-    moveControlByChildId('bellCount', setupBellsDest);
     moveControlByChildId('liveCount', setupBellsDest);
     moveControlByChildId('bellPicker', setupBellsDest);
     moveControlByChildId('keybindPanel', setupBellsDest);
@@ -2531,7 +2765,11 @@ function ensureBellPitchPatternBlocks(destEl) {
     moveControlByChildId('accuracyDotsEnabled', viewDest);
     moveControlByChildId('spotlightSwapsView', viewDest);
     moveControlByChildId('notationSwapsOverlay', viewDest);
-    moveControlByChildId('pathNoneBtn', viewDest);    // SOUND
+    moveControlByChildId('pathNoneBtn', viewDest);
+    // v022_p13_view_menu_reorg_defaults_and_setup_notation_browser: keep leads below Line option
+    moveControlByChildId('leadOverlayToggle', viewDest);
+
+    // SOUND
     const droneUI = ensureDroneLayersScaffold(soundDroneDest);
     const droneGlobal = (droneUI && droneUI.globalEl) ? droneUI.globalEl : soundDroneDest;
     const droneLayer1Body = (droneUI && droneUI.cards && droneUI.cards[0] && droneUI.cards[0].body) ? droneUI.cards[0].body : soundDroneDest;
@@ -2539,6 +2777,7 @@ function ensureBellPitchPatternBlocks(destEl) {
     // Global drone controls
     moveControlByChildId('droneOnOffBtn', droneGlobal);
     moveControlByChildId('droneVolume', droneGlobal);
+    moveControlByChildId('resetDronesBtn', droneGlobal);
 
     // Layer 1 (legacy controls)
     moveControlByChildId('droneTypeSelect', droneLayer1Body);
@@ -2584,6 +2823,9 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
   const restoreSetupDefaultsBtn = document.getElementById('restoreSetupDefaultsBtn');
   const restoreViewDefaultsBtn = document.getElementById('restoreViewDefaultsBtn');
   const restoreSoundDefaultsBtn = document.getElementById('restoreSoundDefaultsBtn');
+  const muteMethodBellsChk = document.getElementById('muteMethodBellsChk');
+  const muteUserBellsChk = document.getElementById('muteUserBellsChk');
+  const resetDronesBtn = document.getElementById('resetDronesBtn');
 
   // v019_p02_sound_profiles_tabs: Sound Profiles UI (editing only; no per-lead assignment here)
   const MAX_SAFE_PROFILES = 200; // safety cap to prevent UI/memory blowups
@@ -2610,6 +2852,7 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
   const loadBtnGenerate = document.getElementById('loadBtnGenerate');
   const loadBtnCopy = document.getElementById('loadBtnCopy');
   const loadBtnSaveFile = document.getElementById('loadBtnSaveFile');
+  const loadBtnOutputMIDI = document.getElementById('loadBtnOutputMIDI');
   const loadBtnAppendRun = document.getElementById('loadBtnAppendRun');
   const loadCodeTextarea = document.getElementById('loadCodeTextarea');
 
@@ -2935,7 +3178,8 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
 
       leadOverlay: {
       enabled: !!state.leadOverlayEnabled,
-      colors: Array.isArray(state.leadOverlayColors) ? state.leadOverlayColors.slice() : []
+      colors: Array.isArray(state.leadOverlayColors) ? state.leadOverlayColors.slice() : [],
+      paletteKey: normalizeLeadOverlayPaletteKey(state.leadOverlayPaletteKey)
     }
 };
 
@@ -2949,6 +3193,8 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
     // Sound settings (bells + drones + master FX)
     // Note: per-bell overrides are stored as sparse bell-number maps for readability.
     const sound = {
+      muteMethodBells: !!state.muteMethodBells,
+      muteUserBells: !!state.muteUserBells,
       pitch: {
         scaleKey: String(state.scaleKey || ''),
         bellLastKeyScaleKey: String(state.bellLastKeyScaleKey || ''),
@@ -3120,6 +3366,11 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
       const liveSnap = (() => {
         const s = deepCloneJsonable(sound);
         try { delete s.leadProfilesV1; } catch (_) {}
+        // v022_p12_profiles_per_profile_mutes_and_glyphs: include glyph state in sound profile snapshots
+        try {
+          s.glyphBindings = (state && state.glyphBindings && typeof state.glyphBindings === 'object') ? deepCloneJsonable(state.glyphBindings) : {};
+          s.glyphStyle = (state && state.glyphStyle && typeof state.glyphStyle === 'object') ? deepCloneJsonable(state.glyphStyle) : { defaultColor: '', bellColors: {}, colorOnly: {} };
+        } catch (_) {}
         return s;
       })();
 
@@ -3256,7 +3507,114 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
     return 'fnv1a32:' + fnv1a32Hex(raw);
   }
 
-  function buildScoringSignatureFromState() {
+  
+  // v022_p13a_loaded_stats_append_signature_fix_profiles: stable multi-profile mute pattern signature across setups.
+  function normalizeMuteProfilesV1String(v) {
+    const s = (v == null) ? '' : String(v);
+    if (!s) return '';
+    if (!/^[0-3]+$/.test(s)) return '';
+    // Compress uniform patterns for stability (e.g., "0000" -> "0").
+    for (let i = 1; i < s.length; i++) {
+      if (s[i] !== s[0]) return s;
+    }
+    return s[0];
+  }
+
+  function buildMuteProfilesV1FromState() {
+    // Deterministic representation of per-lead mute flags derived from the setup (soundProfilesV1).
+    // Each lead encodes as base-4 digit: 0:none, 1:method, 2:user, 3:both.
+    try {
+      const fallbackMM = !!state.muteMethodBells;
+      const fallbackMU = !!state.muteUserBells;
+
+      const sp = (state && isPlainObject(state.soundProfilesV1)) ? state.soundProfilesV1 : null;
+      const profiles = (sp && Array.isArray(sp.profiles)) ? sp.profiles : null;
+      const k = Math.max(1, Math.min(MAX_SAFE_PROFILES, (profiles && profiles.length) ? profiles.length : 1));
+
+      let lc = 1;
+      try { lc = Math.max(1, clampInt(getLeadCount(), 1, 999, 1)); } catch (_) { lc = 1; }
+
+      const assignsRaw = (sp && Array.isArray(sp.leadAssignments)) ? sp.leadAssignments : [];
+      let digits = '';
+      for (let i = 0; i < lc; i++) {
+        let idx = 1;
+        if (assignsRaw && i < assignsRaw.length) idx = parseInt(assignsRaw[i], 10) || 1;
+        idx = clampInt(idx, 1, k, 1);
+
+        const p = (profiles && profiles[idx - 1] && isPlainObject(profiles[idx - 1])) ? profiles[idx - 1] : null;
+        const mm = (p && Object.prototype.hasOwnProperty.call(p, 'muteMethodBells')) ? !!p.muteMethodBells : fallbackMM;
+        const mu = (p && Object.prototype.hasOwnProperty.call(p, 'muteUserBells')) ? !!p.muteUserBells : fallbackMU;
+
+        digits += String((mm ? 1 : 0) + (mu ? 2 : 0));
+      }
+
+      if (!digits) digits = String((fallbackMM ? 1 : 0) + (fallbackMU ? 2 : 0));
+      return normalizeMuteProfilesV1String(digits);
+    } catch (_) {
+      const mm = !!state.muteMethodBells;
+      const mu = !!state.muteUserBells;
+      return String((mm ? 1 : 0) + (mu ? 2 : 0));
+    }
+  }
+
+  function deriveMuteBooleansFromMuteProfilesV1(mpv1) {
+    const s = normalizeMuteProfilesV1String(mpv1);
+    if (!s) return { muteMethodBells: false, muteUserBells: false };
+    // Uniform: decode directly.
+    if (s.length === 1) {
+      const d = clampInt(parseInt(s, 10) || 0, 0, 3, 0);
+      return { muteMethodBells: !!(d & 1), muteUserBells: !!(d & 2) };
+    }
+    // Mixed: stable summary (OR across the cycle).
+    let mm = false;
+    let mu = false;
+    for (let i = 0; i < s.length; i++) {
+      const c = s.charCodeAt(i) - 48; // '0'->0 ... '3'->3
+      if (c & 1) mm = true;
+      if (c & 2) mu = true;
+      if (mm && mu) break;
+    }
+    return { muteMethodBells: mm, muteUserBells: mu };
+  }
+
+  function scoringSignatureEqualsIgnoreMutes(a, b) {
+    // Compare scoring signatures ignoring mute fields (muteMethodBells/muteUserBells/muteProfilesV1).
+    if (!a || !b) return false;
+    const am = a.method || {};
+    const bm = b.method || {};
+    if (String(am.key || '') !== String(bm.key || '')) return false;
+    if (String(am.source || '') !== String(bm.source || '')) return false;
+    if (Number(a.stage) !== Number(b.stage)) return false;
+    if (Number(am.stage) !== Number(bm.stage)) return false;
+    if (Number(a.tempoBpm) !== Number(b.tempoBpm)) return false;
+
+    const as = a.scored || {};
+    const bs = b.scored || {};
+    const ab = Array.isArray(as.bells) ? as.bells : [];
+    const bb = Array.isArray(bs.bells) ? bs.bells : [];
+    if (ab.length !== bb.length) return false;
+    for (let i = 0; i < ab.length; i++) {
+      if (Number(ab[i]) !== Number(bb[i])) return false;
+    }
+    if (Number(as.liveCount) !== Number(bs.liveCount)) return false;
+
+    // If either side includes extra method identity fields, require a match.
+    const at = (am.title != null) ? String(am.title) : '';
+    const bt = (bm.title != null) ? String(bm.title) : '';
+    if ((at || bt) && at !== bt) return false;
+
+    const afn = (am.fileName != null) ? String(am.fileName) : '';
+    const bfn = (bm.fileName != null) ? String(bm.fileName) : '';
+    if ((afn || bfn) && afn !== bfn) return false;
+
+    const arh = (am.rowsHash != null) ? String(am.rowsHash) : '';
+    const brh = (bm.rowsHash != null) ? String(bm.rowsHash) : '';
+    if ((arh || brh) && arh !== brh) return false;
+
+    return true;
+  }
+
+function buildScoringSignatureFromState() {
     const stage = clampInt(state.stage, 1, 12, 6);
     const bpm = clampInt(state.bpm, 1, 240, 120);
     const bells = (state.liveBells || []).slice().sort((a, b) => a - b);
@@ -3272,10 +3630,16 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
     if (state.methodMeta && state.methodMeta.fileName) method.fileName = String(state.methodMeta.fileName);
     if (state.method === 'custom' && Array.isArray(state.customRows)) method.rowsHash = hashMethodRows(state.customRows);
 
+    const muteProfilesV1 = buildMuteProfilesV1FromState();
+    const muteBools = deriveMuteBooleansFromMuteProfilesV1(muteProfilesV1);
+
     return {
       method: method,
       tempoBpm: bpm,
       stage: stage,
+      muteMethodBells: !!muteBools.muteMethodBells,
+      muteUserBells: !!muteBools.muteUserBells,
+      muteProfilesV1: muteProfilesV1,
       scored: { liveCount: bells.length, bells: bells }
     };
   }
@@ -3289,6 +3653,27 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
     if (Number(a.stage) !== Number(b.stage)) return false;
     if (Number(am.stage) !== Number(bm.stage)) return false;
     if (Number(a.tempoBpm) !== Number(b.tempoBpm)) return false;
+    // v022_p04_mute_method_and_optional_mute_user_bells: mute flags are part of scoring species/signature.
+    // v022_p13a_loaded_stats_append_signature_fix_profiles: stable multi-profile mute pattern support (muteProfilesV1).
+    const ap = normalizeMuteProfilesV1String(a.muteProfilesV1);
+    const bp = normalizeMuteProfilesV1String(b.muteProfilesV1);
+    if (ap && bp) {
+      if (ap !== bp) return false;
+    } else if (ap || bp) {
+      const p = ap || bp;
+      // Fail-open only when the new pattern is uniform and matches the legacy booleans.
+      if (p.length !== 1) return false;
+      const d = clampInt(parseInt(p, 10) || 0, 0, 3, 0);
+      const mm = !!(d & 1);
+      const mu = !!(d & 2);
+      const oldSide = ap ? b : a;
+      if (!!oldSide.muteMethodBells !== mm) return false;
+      if (!!oldSide.muteUserBells !== mu) return false;
+    } else {
+      if (!!a.muteMethodBells !== !!b.muteMethodBells) return false;
+      if (!!a.muteUserBells !== !!b.muteUserBells) return false;
+    }
+
 
     const as = a.scored || {};
     const bs = b.scored || {};
@@ -3613,6 +3998,36 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
     }
   }
 
+
+  // v022_p06_load_output_midi_demo_with_polyrhythm: download binary file (e.g., MIDI) via Blob URL (client-only)
+  function downloadBinaryFile(filename, u8, mime) {
+    const fn = String(filename || 'ringer_demo.mid');
+    const type = mime || 'application/octet-stream';
+    try {
+      const bytes = (u8 instanceof Uint8Array) ? u8 : new Uint8Array(u8 || []);
+      if (!bytes || !bytes.length) return false;
+      const blob = new Blob([bytes], { type });
+      // IE/Edge legacy
+      if (navigator && navigator.msSaveOrOpenBlob) {
+        navigator.msSaveOrOpenBlob(blob, fn);
+        return true;
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fn;
+      a.rel = 'noopener';
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      window.setTimeout(() => {
+        try { URL.revokeObjectURL(url); } catch (_) {}
+        try { a.remove(); } catch (_) { try { a.parentNode && a.parentNode.removeChild(a); } catch (_) {} }
+      }, 100);
+      return true;
+    } catch (_) { return false; }
+  }
+
   async function copyTextToClipboard(text) {
     const t = String(text == null ? '' : text);
     if (!t) return false;
@@ -3907,6 +4322,627 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
     const ok = downloadTextFile(fn, json, 'application/json');
     if (!ok) alert('Could not download the settings JSON file.');
   }
+
+
+  // v022_p06_load_output_midi_demo_with_polyrhythm: Load screen MIDI export (Demo performance for one full method)
+  async function loadScreenOutputMidiClicked() {
+    try {
+      const rows = (state && Array.isArray(state.rows)) ? state.rows : null;
+      const stage = clampInt(parseInt(state.stage, 10) || 0, 1, 32, 0);
+      const bpm = Number(state.bpm) || 120;
+
+      if (!rows || !rows.length || !(stage > 0)) {
+        alert('No method is loaded yet (missing rows).');
+        return;
+      }
+      const totalBeats = rows.length * stage;
+      if (!(totalBeats > 0)) {
+        alert('No method is loaded yet (empty rows).');
+        return;
+      }
+      if (!Number.isFinite(bpm) || !(bpm > 0)) {
+        alert('Cannot export MIDI: invalid BPM.');
+        return;
+      }
+
+      // Safety caps
+      const MAX_TOTAL_BEATS = 20000;
+      if (totalBeats > MAX_TOTAL_BEATS) {
+        alert('Cannot export MIDI safely: method is too long (' + String(totalBeats) + ' beats).');
+        return;
+      }
+
+      const ppq = 480;
+      const bytes = rgBuildDemoMidiBytes({ ppq, bpm, stage, totalBeats });
+      if (!(bytes instanceof Uint8Array) || !bytes.length) {
+        alert('MIDI export failed.');
+        return;
+      }
+
+      let base = '';
+      try {
+        base = (state.methodMeta && (state.methodMeta.title || state.methodMeta.name)) ? String(state.methodMeta.title || state.methodMeta.name) : String(state.method || '');
+      } catch (_) { base = String(state.method || 'ringer_demo'); }
+      const slug = (typeof fileSlug === 'function') ? fileSlug(base, 'ringer_demo') : 'ringer_demo';
+      const fn = slug + '_demo_method.mid';
+
+      const ok = downloadBinaryFile(fn, bytes, 'audio/midi');
+      if (!ok) alert('Could not download the MIDI file.');
+    } catch (e) {
+      try { console.error('MIDI export failed', e); } catch (_) {}
+      alert('MIDI export failed.');
+    }
+  }
+
+  function rgBuildDemoMidiBytes(opts) {
+    try {
+      const o = opts || {};
+      const ppq = clampInt(parseInt(o.ppq, 10) || 480, 48, 960, 480);
+      const bpm = Number(o.bpm) || 120;
+      const stage = clampInt(parseInt(o.stage, 10) || 0, 1, 32, 6);
+      const totalBeats = clampInt(parseInt(o.totalBeats, 10) || 0, 1, 200000, 0);
+      if (!Number.isFinite(bpm) || !(bpm > 0) || !(totalBeats > 0) || !(stage > 0)) return null;
+
+      // Build tracks (format 1): 0=meta, 1=method/demo bells, 2=polyrhythm
+      const metaTrack = rgMidiBuildMetaTrack({ ppq, bpm, stage, totalBeats });
+      const methodTrack = rgMidiBuildMethodTrack({ ppq, bpm, stage, totalBeats });
+      const polyTrack = rgMidiBuildPolyrhythmTrack({ ppq, bpm, stage, totalBeats });
+
+      const tracks = [metaTrack, methodTrack, polyTrack].filter(Boolean);
+      if (!tracks.length) return null;
+
+      const out = [];
+      // Header: MThd, length=6, format=1, nTracks, division=ppq
+      out.push(0x4d, 0x54, 0x68, 0x64); // MThd
+      out.push(0x00, 0x00, 0x00, 0x06);
+      out.push(0x00, 0x01);
+      out.push((tracks.length >> 8) & 0xff, tracks.length & 0xff);
+      out.push((ppq >> 8) & 0xff, ppq & 0xff);
+
+      for (let i = 0; i < tracks.length; i++) {
+        const t = tracks[i];
+        out.push(0x4d, 0x54, 0x72, 0x6b); // MTrk
+        const n = t.length >>> 0;
+        out.push((n >> 24) & 0xff, (n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff);
+        for (let k = 0; k < t.length; k++) out.push(t[k] & 0xff);
+      }
+
+      return new Uint8Array(out);
+    } catch (_) { return null; }
+  }
+
+  function rgMidiBuildMetaTrack(ctx) {
+    const ppq = ctx.ppq >>> 0;
+    const bpm = Number(ctx.bpm) || 120;
+    const stage = clampInt(parseInt(ctx.stage, 10) || 4, 1, 255, 4);
+    const totalBeats = clampInt(parseInt(ctx.totalBeats, 10) || 1, 1, 200000, 1);
+    const endTick = totalBeats * ppq;
+
+    const events = [];
+    // Track name
+    events.push({ tick: 0, order: 0, bytes: rgMidiMetaText(0x03, 'Ringer Game') });
+    // Tempo
+    const mpqn = Math.max(1, Math.round(60000000 / bpm));
+    events.push({ tick: 0, order: 1, bytes: rgMidiMetaTempo(mpqn) });
+    // Time signature: stage/4 (one row per bar feel)
+    events.push({ tick: 0, order: 2, bytes: rgMidiMetaTimeSig(stage, 4) });
+
+    return rgMidiBuildTrackData(events, endTick);
+  }
+  function rgMidiBuildMethodTrack(ctx) {
+    const ppq = ctx.ppq >>> 0;
+    const bpm = Number(ctx.bpm) || 120;
+    const stage = clampInt(parseInt(ctx.stage, 10) || 6, 1, 32, 6);
+    const totalBeats = clampInt(parseInt(ctx.totalBeats, 10) || 0, 1, 200000, 0);
+    const endTick = totalBeats * ppq;
+
+    const events = [];
+    events.push({ tick: 0, order: 0, bytes: rgMidiMetaText(0x03, 'Method (Demo)') });
+
+    // v022_p13b_midi_export_matches_demo_profiles: per-lead profile pitch + per-profile muteMethodBells
+    let sp = null;
+    let profiles = null;
+    try { sp = (state && isPlainObject(state.soundProfilesV1)) ? state.soundProfilesV1 : null; } catch (_) { sp = null; }
+    try { profiles = (sp && Array.isArray(sp.profiles)) ? sp.profiles : null; } catch (_) { profiles = null; }
+    const hasMultiProfiles = !!(profiles && profiles.length > 1);
+
+    // Respect v022_p04 mute toggle for method bells (bots) in non-profile setups only.
+    if (!hasMultiProfiles && state && state.muteMethodBells) {
+      return rgMidiBuildTrackData(events, endTick);
+    }
+
+    let profBellToMidi = null;
+    let profMuteMethod = null;
+
+    if (hasMultiProfiles) {
+      try {
+        const k = Math.max(1, Math.min(MAX_SAFE_PROFILES, profiles.length || 1));
+        profBellToMidi = new Array(k + 1);
+        profMuteMethod = new Array(k + 1).fill(false);
+
+        const base = {
+          scaleKey: state.scaleKey,
+          octaveC: state.octaveC,
+          temperamentKey: state.temperamentKey,
+          bellCustomHz: state.bellCustomHz,
+          bellPitchFamily: state.bellPitchFamily,
+          bellPitchSpan: state.bellPitchSpan,
+          bellPitchSpanUser: state.bellPitchSpanUser,
+          bellPitchDiatonicMap: state.bellPitchDiatonicMap,
+          bellPitchPentVariant: state.bellPitchPentVariant,
+          bellPitchChromaticDirection: state.bellPitchChromaticDirection,
+          bellPitchFifthsType: state.bellPitchFifthsType,
+          bellPitchFifthsShape: state.bellPitchFifthsShape,
+          bellPitchPartialsShape: state.bellPitchPartialsShape,
+          bellHzOverride: Array.isArray(state.bellHzOverride) ? state.bellHzOverride.slice() : null,
+          bellKeyOverride: Array.isArray(state.bellKeyOverride) ? state.bellKeyOverride.slice() : null,
+          bellOctaveOverride: Array.isArray(state.bellOctaveOverride) ? state.bellOctaveOverride.slice() : null,
+          bellFreq: Array.isArray(state.bellFreq) ? state.bellFreq.slice() : null,
+        };
+
+        const restorePitchState = () => {
+          try { state.scaleKey = base.scaleKey; } catch (_) {}
+          try { state.octaveC = base.octaveC; } catch (_) {}
+          try { state.temperamentKey = base.temperamentKey; } catch (_) {}
+          try { state.bellCustomHz = base.bellCustomHz; } catch (_) {}
+          try { state.bellPitchFamily = base.bellPitchFamily; } catch (_) {}
+          try { state.bellPitchSpan = base.bellPitchSpan; } catch (_) {}
+          try { state.bellPitchSpanUser = base.bellPitchSpanUser; } catch (_) {}
+          try { state.bellPitchDiatonicMap = base.bellPitchDiatonicMap; } catch (_) {}
+          try { state.bellPitchPentVariant = base.bellPitchPentVariant; } catch (_) {}
+          try { state.bellPitchChromaticDirection = base.bellPitchChromaticDirection; } catch (_) {}
+          try { state.bellPitchFifthsType = base.bellPitchFifthsType; } catch (_) {}
+          try { state.bellPitchFifthsShape = base.bellPitchFifthsShape; } catch (_) {}
+          try { state.bellPitchPartialsShape = base.bellPitchPartialsShape; } catch (_) {}
+          try { state.bellHzOverride = base.bellHzOverride ? base.bellHzOverride.slice() : new Array(13).fill(null); } catch (_) {}
+          try { state.bellKeyOverride = base.bellKeyOverride ? base.bellKeyOverride.slice() : new Array(13).fill(null); } catch (_) {}
+          try { state.bellOctaveOverride = base.bellOctaveOverride ? base.bellOctaveOverride.slice() : new Array(13).fill(null); } catch (_) {}
+          try { state.bellFreq = base.bellFreq ? base.bellFreq.slice() : []; } catch (_) {}
+        };
+
+        const applyProfilePitchForMapping = (snap) => {
+          // Apply pitch/temperament/custom Hz as Demo/Play would, but without UI/LS sync.
+          try {
+            const pitch = (snap && isPlainObject(snap.pitch)) ? snap.pitch : {};
+            if (typeof pitch.scaleKey !== 'undefined') {
+              const nextScaleKey = String(pitch.scaleKey || '');
+              if (isValidScaleKey(nextScaleKey)) state.scaleKey = nextScaleKey;
+            }
+            if (typeof pitch.octaveC !== 'undefined') state.octaveC = clampInt(Number(pitch.octaveC), 1, 6, 4);
+            if (typeof pitch.temperamentKey !== 'undefined') state.temperamentKey = coerceTemperamentKey(pitch.temperamentKey);
+            if (typeof pitch.customHz !== 'undefined') state.bellCustomHz = clamp(Number(pitch.customHz) || 440, 20, 20000);
+            if (typeof pitch.bellPitchFamily !== 'undefined') state.bellPitchFamily = coerceBellPitchFamily(String(pitch.bellPitchFamily || 'diatonic'));
+            if (typeof pitch.bellPitchSpan !== 'undefined') state.bellPitchSpan = (String(pitch.bellPitchSpan) === 'extended') ? 'extended' : 'compact';
+            if (typeof pitch.bellPitchSpanUser !== 'undefined') state.bellPitchSpanUser = !!pitch.bellPitchSpanUser;
+            if (typeof pitch.bellPitchDiatonicMap !== 'undefined') state.bellPitchDiatonicMap = coerceBellPitchDiatonicMap(pitch.bellPitchDiatonicMap);
+            if (typeof pitch.bellPitchPentVariant !== 'undefined') state.bellPitchPentVariant = String(pitch.bellPitchPentVariant || 'major_pent');
+            if (typeof pitch.bellPitchChromaticDirection !== 'undefined') state.bellPitchChromaticDirection = String(pitch.bellPitchChromaticDirection || 'descending');
+            if (typeof pitch.bellPitchFifthsType !== 'undefined') state.bellPitchFifthsType = String(pitch.bellPitchFifthsType || 'fifths');
+            if (typeof pitch.bellPitchFifthsShape !== 'undefined') state.bellPitchFifthsShape = String(pitch.bellPitchFifthsShape || 'folded');
+            if (typeof pitch.bellPitchPartialsShape !== 'undefined') state.bellPitchPartialsShape = String(pitch.bellPitchPartialsShape || 'ladder');
+          } catch (_) {}
+          try { rebuildBellFrequencies(true); } catch (_) {}
+
+          // Apply per-bell pitch overrides (hz/key/octave) for this profile.
+          try {
+            state.bellHzOverride = new Array(13).fill(null);
+            state.bellKeyOverride = new Array(13).fill(null);
+            state.bellOctaveOverride = new Array(13).fill(null);
+
+            const bells = (snap && isPlainObject(snap.bells)) ? snap.bells : {};
+            const pbo = (bells && isPlainObject(bells.perBellOverrides)) ? bells.perBellOverrides : null;
+
+            if (pbo) {
+              if (isPlainObject(pbo.hz)) {
+                for (const k0 in pbo.hz) {
+                  if (!Object.prototype.hasOwnProperty.call(pbo.hz, k0)) continue;
+                  const b = parseInt(k0, 10);
+                  if (!Number.isFinite(b) || b < 1 || b > 12) continue;
+                  const v = Number(pbo.hz[k0]);
+                  if (Number.isFinite(v) && v > 0) state.bellHzOverride[b] = clamp(v, 20, 5000);
+                }
+              }
+
+              if (isPlainObject(pbo.key)) {
+                for (const k0 in pbo.key) {
+                  if (!Object.prototype.hasOwnProperty.call(pbo.key, k0)) continue;
+                  const b = parseInt(k0, 10);
+                  if (!Number.isFinite(b) || b < 1 || b > 12) continue;
+                  const v = String(pbo.key[k0] || '').trim();
+                  if (!v) continue;
+                  if (v === 'custom_hz') continue;
+                  if (isValidScaleKey(v)) state.bellKeyOverride[b] = v;
+                }
+              }
+
+              if (isPlainObject(pbo.octave)) {
+                for (const k0 in pbo.octave) {
+                  if (!Object.prototype.hasOwnProperty.call(pbo.octave, k0)) continue;
+                  const b = parseInt(k0, 10);
+                  if (!Number.isFinite(b) || b < 1 || b > 12) continue;
+                  const v = parseInt(pbo.octave[k0], 10);
+                  if (!Number.isFinite(v)) continue;
+                  state.bellOctaveOverride[b] = clampInt(v, 1, 6, null);
+                }
+              }
+            }
+          } catch (_) {}
+        };
+
+        try {
+          for (let pi = 1; pi <= k; pi++) {
+            // Fail-open to profile 1 on invalid snapshot.
+            let snap = (profiles[pi - 1] && isPlainObject(profiles[pi - 1])) ? profiles[pi - 1] : null;
+            if (!snap) snap = (profiles[0] && isPlainObject(profiles[0])) ? profiles[0] : null;
+
+            try {
+              if (snap && Object.prototype.hasOwnProperty.call(snap, 'muteMethodBells')) profMuteMethod[pi] = !!snap.muteMethodBells;
+              else profMuteMethod[pi] = !!(state && state.muteMethodBells);
+            } catch (_) { profMuteMethod[pi] = !!(state && state.muteMethodBells); }
+
+            restorePitchState();
+            applyProfilePitchForMapping(snap);
+
+            const map = new Array(stage + 1);
+            for (let bell = 1; bell <= stage; bell++) {
+              let hz = NaN;
+              try { hz = getBellHz(bell); } catch (_) { hz = NaN; }
+              map[bell] = rgHzToMidiNote(hz, 60 + clampInt(bell, 0, 24, 0));
+            }
+            profBellToMidi[pi] = map;
+          }
+        } finally {
+          restorePitchState();
+        }
+      } catch (_) {
+        profBellToMidi = null;
+        profMuteMethod = null;
+      }
+    }
+
+    const beatMs = 60000 / bpm;
+    const durTicks = Math.max(1, Math.round((110 / beatMs) * ppq));
+    const vel = 96;
+    const ch = 0;
+
+    // Safety cap (note-ons)
+    const MAX_NOTE_ONS = 50000;
+    let noteOns = 0;
+
+    for (let i = 0; i < totalBeats; i++) {
+      if (noteOns >= MAX_NOTE_ONS) return null;
+
+      const rowIdx = (stage > 0) ? Math.floor(i / stage) : 0;
+      let pIdx = 1;
+      if (hasMultiProfiles) {
+        try { pIdx = resolveRuntimeProfileIndexForRowIdx(rowIdx); } catch (_) { pIdx = 1; }
+      }
+      if (hasMultiProfiles && profMuteMethod && profMuteMethod[pIdx]) {
+        continue; // omit method notes for muted-lead segments
+      }
+
+      const bell = getBellForStrikeIndex(i);
+      let note = null;
+      if (hasMultiProfiles && profBellToMidi && profBellToMidi[pIdx] && profBellToMidi[pIdx][bell] != null) {
+        note = profBellToMidi[pIdx][bell];
+      } else {
+        let hz = NaN;
+        try { hz = getBellHz(bell); } catch (_) { hz = NaN; }
+        note = rgHzToMidiNote(hz, 60 + clampInt(bell, 0, 24, 0));
+      }
+
+      const t = i * ppq;
+      rgMidiAddNote(events, t, ch, note, vel, durTicks, 10 + (bell * 2));
+      noteOns++;
+    }
+
+    return rgMidiBuildTrackData(events, endTick);
+  }
+
+  function rgMidiBuildPolyrhythmTrack(ctx) {
+    const ppq = ctx.ppq >>> 0;
+    const bpm = Number(ctx.bpm) || 120;
+    const stage = clampInt(parseInt(ctx.stage, 10) || 6, 1, 32, 6);
+    const totalBeats = clampInt(parseInt(ctx.totalBeats, 10) || 0, 1, 200000, 0);
+    const endTick = totalBeats * ppq;
+
+    const events = [];
+    events.push({ tick: 0, order: 0, bytes: rgMidiMetaText(0x03, 'Polyrhythm') });
+
+    const layers = (state && Array.isArray(state.polyLayers)) ? state.polyLayers : [];
+    const polyEnabled = !!(state && state.polyEnabledForRuns);
+    const masterVol = (state && Number.isFinite(Number(state.polyMasterVolume))) ? clamp(Number(state.polyMasterVolume) || 0, 0, 100) : 0;
+    if (!polyEnabled || masterVol <= 0 || !layers.length) {
+      return rgMidiBuildTrackData(events, endTick);
+    }
+
+    const beatMs = 60000 / bpm;
+    const durLong = Math.max(1, Math.round((110 / beatMs) * ppq));
+    const durShort = Math.max(1, Math.round((50 / beatMs) * ppq));
+
+    // Global row gating (demo/run behavior)
+    const polyRowCycleN = (coercePolyScope(state.polyScope) === 'global')
+      ? clampInt(state.polyRowCycleLen, 1, 32, 1)
+      : 1;
+    const polyRowGatingActive = (polyRowCycleN > 1);
+
+    // Safety caps (note-ons)
+    const MAX_NOTE_ONS = 50000;
+    const MAX_LAYER_EVENTS = 30000;
+    let noteOns = 0;
+
+    for (let i = 0; i < layers.length; i++) {
+      const layer = layers[i];
+      if (!layer || layer.enabled === false) continue;
+
+      let intervalBeats = 0;
+      try { intervalBeats = polyIntervalBeats(layer.interval); } catch (_) { intervalBeats = 0; }
+      if (!(intervalBeats > 0)) continue;
+
+      let offsetBeats = 0;
+      try { offsetBeats = polyFracToBeats(layer.offset); } catch (_) { offsetBeats = 0; }
+
+      const layerVol = clamp((Number(layer.volume) || 0) / 100, 0, 1);
+      const eff = clamp((masterVol / 100) * layerVol, 0, 1);
+      const vel = clampInt(Math.round(110 * eff), 1, 127, 90);
+      if (eff <= 0) continue;
+
+      const type = layer.type || 'pulse';
+      const sound = layer.sound || 'bell';
+      const soundCtx = (sound === 'bell') ? rgPolyBuildBellSoundCtxNoMutate(layer) : null;
+
+      // Phrase plan (optional)
+      let phrasePlan = null;
+      let phraseEvents = null;
+      let phraseLen = 0;
+      let phraseCycleBeats = 0;
+      if (type === 'phrase') {
+        try {
+          phrasePlan = parsePolyPhrasePlan(layer.phrase, intervalBeats, layer.timeSigNum, layer.timeSigDen);
+          phraseEvents = (phrasePlan && phrasePlan.events) ? phrasePlan.events : null;
+          phraseLen = (phraseEvents && phraseEvents.length) ? phraseEvents.length : 0;
+          phraseCycleBeats = (phrasePlan && Number.isFinite(Number(phrasePlan.cycleBeats))) ? Number(phrasePlan.cycleBeats) : 0;
+        } catch (_) {
+          phrasePlan = null; phraseEvents = null; phraseLen = 0; phraseCycleBeats = 0;
+        }
+      }
+
+      let next = 0;
+      let layerEvents = 0;
+
+      while (layerEvents < MAX_LAYER_EVENTS) {
+        // Compute beat position for this event
+        let tBeats = 0;
+        if (type === 'phrase' && phraseLen && (phraseCycleBeats > 0) && phrasePlan) {
+          try { tBeats = offsetBeats + polyPhraseBeatOffsetForIndex(phrasePlan, next); }
+          catch (_) { tBeats = offsetBeats + next * intervalBeats; }
+        } else {
+          tBeats = offsetBeats + next * intervalBeats;
+        }
+
+        // Stop once we're past the method
+        if (tBeats >= totalBeats) break;
+
+        let doSound = false;
+        let token = 0;
+
+        if (type === 'pulse') {
+          doSound = true;
+          token = clamp(parseInt(layer.token, 10) || 1, 1, 12);
+        } else if (type === 'phrase') {
+          if (phraseLen) {
+            try { token = clamp(parseInt(phraseEvents[next % phraseLen].token, 10) || 0, 0, 12); } catch (_) { token = 0; }
+            doSound = (token > 0);
+          } else {
+            doSound = true;
+            token = clamp(parseInt(layer.token, 10) || 1, 1, 12);
+          }
+        } else if (type === 'method_current') {
+          if (totalBeats > 0) {
+            token = getBellForStrikeIndex(next % totalBeats);
+            doSound = true;
+          }
+        }
+
+        // Global row gating: treat inactive rows as rests
+        if (polyRowGatingActive && doSound) {
+          try {
+            const rowIdx = Math.max(0, Math.floor((tBeats / stage)));
+            const slot = (rowIdx % polyRowCycleN) + 1; // 1-based
+            const ra = layer.rowsActive;
+            if (Array.isArray(ra) && ra.length) {
+              let isActive = false;
+              for (let k = 0; k < ra.length; k++) {
+                const v = parseInt(ra[k], 10);
+                if ((Number.isFinite(v) ? v : 0) === slot) { isActive = true; break; }
+              }
+              if (!isActive) doSound = false;
+            }
+          } catch (_) {}
+        }
+
+        if (doSound && tBeats >= 0) {
+          if (noteOns >= MAX_NOTE_ONS) return null;
+
+          const tick = Math.max(0, Math.round(tBeats * ppq));
+
+          if (sound === 'tick') {
+            const n = 37; // side stick / click
+            rgMidiAddNote(events, tick, 9, n, vel, durShort, 10000 + i * 10);
+            noteOns++;
+          } else if (sound === 'perc') {
+            const n = rgMidiPercNoteForPreset(layer && layer.percPreset);
+            rgMidiAddNote(events, tick, 9, n, vel, durShort, 11000 + i * 10);
+            noteOns++;
+          } else if (sound === 'synth') {
+            let hz = NaN;
+            try { hz = polySynthTokenToHz(token, layer); } catch (_) { hz = NaN; }
+            const n = rgHzToMidiNote(hz, 60 + clampInt(token, 0, 24, 0));
+            rgMidiAddNote(events, tick, 2, n, vel, durLong, 12000 + i * 10);
+            noteOns++;
+          } else {
+            // bell (default)
+            let hz = NaN;
+            try { hz = getPolyBellHz(token, soundCtx); } catch (_) { hz = NaN; }
+            const n = rgHzToMidiNote(hz, 60 + clampInt(token, 0, 24, 0));
+            rgMidiAddNote(events, tick, 1, n, vel, durLong, 13000 + i * 10);
+            noteOns++;
+          }
+          layerEvents++;
+        }
+
+        next++;
+        if (next > 200000) break; // absolute safety
+      }
+    }
+
+    return rgMidiBuildTrackData(events, endTick);
+  }
+
+  function rgPolyBuildBellSoundCtxNoMutate(layer) {
+    try {
+      const l = (layer && typeof layer === 'object') ? layer : null;
+      if (!l) return null;
+
+      const bsRaw = l.bellSound;
+      const looksOk = !!(bsRaw && typeof bsRaw === 'object'
+        && (bsRaw.profile === 'custom' || bsRaw.profile === 'mirror')
+        && bsRaw.timbre && typeof bsRaw.timbre === 'object'
+        && bsRaw.chords && typeof bsRaw.chords === 'object'
+        && bsRaw.pitch && typeof bsRaw.pitch === 'object'
+        && bsRaw.perBell && (typeof bsRaw.perBell === 'object'));
+
+      const s = looksOk ? bsRaw : sanitizePolyBellSound(bsRaw);
+
+      if (!s || typeof s !== 'object') return null;
+      if (s.profile !== 'custom') return { profile: 'mirror', bs: s, layerId: l.id };
+      return { profile: 'custom', ignoreGlobalChordAdvanced: true, bs: s, layerId: l.id };
+    } catch (_) { return null; }
+  }
+
+  function rgHzToMidiNote(hz, fallbackNote) {
+    const f = Number(hz);
+    if (!Number.isFinite(f) || !(f > 0)) return clampInt(parseInt(fallbackNote, 10) || 60, 0, 127, 60);
+    const n = Math.round(69 + 12 * Math.log2(f / 440));
+    return clampInt(n, 0, 127, clampInt(parseInt(fallbackNote, 10) || 60, 0, 127, 60));
+  }
+
+  function rgMidiPercNoteForPreset(preset) {
+    const s = String(preset || '').toLowerCase();
+    if (s.includes('kick') || s.includes('bass')) return 36;
+    if (s.includes('snare')) return 38;
+    if (s.includes('clap')) return 39;
+    if (s.includes('hat') || s.includes('hihat')) return 42;
+    if (s.includes('click') || s.includes('block') || s.includes('met')) return 37;
+    return 37;
+  }
+
+  function rgMidiVarLen(n) {
+    let v = (Number.isFinite(n) ? n : 0) >>> 0;
+    let buffer = v & 0x7f;
+    const out = [];
+    while ((v >>= 7) > 0) {
+      buffer <<= 8;
+      buffer |= ((v & 0x7f) | 0x80);
+    }
+    while (true) {
+      out.push(buffer & 0xff);
+      if (buffer & 0x80) buffer >>= 8;
+      else break;
+    }
+    return out;
+  }
+
+  function rgMidiMetaText(typeByte, text) {
+    const b = rgMidiTextBytes(String(text || ''));
+    const out = [0xff, typeByte & 0xff];
+    const len = rgMidiVarLen(b.length >>> 0);
+    for (let i = 0; i < len.length; i++) out.push(len[i]);
+    for (let i = 0; i < b.length; i++) out.push(b[i] & 0xff);
+    return out;
+  }
+
+  function rgMidiTextBytes(text) {
+    const s = String(text || '');
+    try {
+      if (typeof TextEncoder !== 'undefined') {
+        const u8 = new TextEncoder().encode(s);
+        const a = new Array(u8.length);
+        for (let i = 0; i < u8.length; i++) a[i] = u8[i] & 0xff;
+        return a;
+      }
+    } catch (_) {}
+    const out = [];
+    for (let i = 0; i < s.length; i++) out.push(s.charCodeAt(i) & 0x7f);
+    return out;
+  }
+
+  function rgMidiMetaTempo(mpqn) {
+    const v = Math.max(1, Math.min(0xffffff, (mpqn >>> 0)));
+    return [0xff, 0x51, 0x03, (v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff];
+  }
+
+  function rgMidiMetaTimeSig(numer, denom) {
+    const nn = clampInt(parseInt(numer, 10) || 4, 1, 255, 4);
+    const d = clampInt(parseInt(denom, 10) || 4, 1, 64, 4);
+    // denominator is expressed as log2(d)
+    let dd = 0;
+    let v = d;
+    while (v > 1) { v >>= 1; dd++; if (dd > 7) break; }
+    dd = clampInt(dd, 0, 7, 2);
+    return [0xff, 0x58, 0x04, nn & 0xff, dd & 0xff, 24, 8];
+  }
+
+  function rgMidiAddNote(events, tick, ch, note, vel, durTicks, orderBase) {
+    const tOn = clampInt(parseInt(tick, 10) || 0, 0, 0x7fffffff, 0);
+    const d = clampInt(parseInt(durTicks, 10) || 1, 1, 0x7fffffff, 1);
+    const tOff = tOn + d;
+    const c = clampInt(parseInt(ch, 10) || 0, 0, 15, 0);
+    const n = clampInt(parseInt(note, 10) || 0, 0, 127, 60);
+    const v = clampInt(parseInt(vel, 10) || 0, 1, 127, 96);
+    const ob = clampInt(parseInt(orderBase, 10) || 0, 0, 100000000, 0);
+
+    // Note-off first if same-tick collisions occur (lower order)
+    events.push({ tick: tOff, order: 100 + c * 128 + n + ob, bytes: [0x80 | c, n, 0] });
+    events.push({ tick: tOn, order: 1000 + c * 128 + n + ob, bytes: [0x90 | c, n, v] });
+  }
+
+  function rgMidiBuildTrackData(events, endTick) {
+    const ev = Array.isArray(events) ? events.slice() : [];
+    ev.sort((a, b) => {
+      const ta = (a && Number.isFinite(a.tick)) ? a.tick : 0;
+      const tb = (b && Number.isFinite(b.tick)) ? b.tick : 0;
+      if (ta !== tb) return ta - tb;
+      const oa = (a && Number.isFinite(a.order)) ? a.order : 0;
+      const ob = (b && Number.isFinite(b.order)) ? b.order : 0;
+      if (oa !== ob) return oa - ob;
+      return 0;
+    });
+
+    const out = [];
+    let last = 0;
+
+    for (let i = 0; i < ev.length; i++) {
+      const e = ev[i];
+      if (!e || !Array.isArray(e.bytes)) continue;
+      let t = Number.isFinite(e.tick) ? (e.tick >>> 0) : 0;
+      if (t < last) t = last;
+      const dt = (t - last) >>> 0;
+      const d = rgMidiVarLen(dt);
+      for (let k = 0; k < d.length; k++) out.push(d[k]);
+      for (let k = 0; k < e.bytes.length; k++) out.push(e.bytes[k] & 0xff);
+      last = t;
+    }
+
+    let et = Number.isFinite(endTick) ? (endTick >>> 0) : 0;
+    if (et < last) et = last;
+    const d2 = rgMidiVarLen((et - last) >>> 0);
+    for (let k = 0; k < d2.length; k++) out.push(d2[k]);
+    out.push(0xff, 0x2f, 0x00); // End of track
+
+    return out;
+  }
+
 
   async function loadScreenCopyClicked() {
     let text = '';
@@ -4487,6 +5523,8 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
       if (micPresent) recordImportSkip('mic', new Error('Invalid mic prefs; reset to defaults'), false);
     }
 
+    try { loadLeadOverlayPrefs(); } catch (_) {}
+
     loadMicPrefs();
     if (mic && typeof mic.enabled !== 'undefined') setMicEnabled(!!mic.enabled, { source: 'import' });
     } catch (e) {
@@ -4509,6 +5547,20 @@ moveControlByChildId('scaleSelect', soundPitchRootDest);
     try {
 // --- Sound ---
     sound = isPlainObject(cfg.sound) ? cfg.sound : {};
+
+    // v022_p04_mute_method_and_optional_mute_user_bells: fail-open + no-leak import behavior.
+    try {
+      safeDelLS(LS_MUTE_METHOD_BELLS);
+      safeDelLS(LS_MUTE_USER_BELLS);
+    } catch (_) {}
+    loadSoundMuteTogglesFromLS();
+
+    const muteMethodPresent = Object.prototype.hasOwnProperty.call(sound, 'muteMethodBells');
+    const muteUserPresent = Object.prototype.hasOwnProperty.call(sound, 'muteUserBells');
+    if (muteMethodPresent) state.muteMethodBells = !!sound.muteMethodBells;
+    if (muteUserPresent) state.muteUserBells = !!sound.muteUserBells;
+    if (muteMethodPresent || muteUserPresent) saveSoundMuteTogglesToLS();
+    try { syncSoundMuteTogglesUI(); } catch (_) {}
 
     
     // v019_p10_load_repro_hardening: leadProfilesV1 is applied in a deferred choke point after rows exist.
@@ -5057,6 +6109,51 @@ if (droneScaleSelect) droneScaleSelect.value = String(state.droneScaleKey || '')
       }
       ui.loadedCodeFileName = (opts && opts.sourceFileName) ? String(opts.sourceFileName) : '';
       ui.loadedCodeScoringSignature = buildScoringSignatureFromState();
+      // v022_p13a_loaded_stats_append_signature_fix_profiles: best-effort import normalization for p12/p13 mute snapshot mismatch
+      try {
+        const loadedSig = ui.loadedCodeScoringSignature;
+        const mp = normalizeMuteProfilesV1String(loadedSig && loadedSig.muteProfilesV1);
+        // Only needed for mixed patterns (uniform already matches legacy booleans).
+        if (loadedSig && mp && mp.length > 1) {
+          const digitsSet = {};
+          for (let i = 0; i < mp.length; i++) digitsSet[mp[i]] = true;
+
+          const patchRuns = (arr) => {
+            if (!Array.isArray(arr)) return 0;
+            let patched = 0;
+            for (let i = 0; i < arr.length; i++) {
+              const rec = arr[i];
+              if (!rec || !isPlainObject(rec)) continue;
+              const rs = rec.scoringSignature;
+              if (!rs || !isPlainObject(rs)) continue;
+              if (scoringSignatureEquals(rs, loadedSig)) continue;
+              if (!scoringSignatureEqualsIgnoreMutes(rs, loadedSig)) continue;
+
+              // Patch only when the record lacks a muteProfilesV1 field and its legacy mute digit is plausible for this setup.
+              const rp = normalizeMuteProfilesV1String(rs.muteProfilesV1);
+              if (rp) continue;
+              const rDigit = String((!!rs.muteMethodBells ? 1 : 0) + (!!rs.muteUserBells ? 2 : 0));
+              if (!digitsSet[rDigit]) continue;
+
+              rec.scoringSignature = deepCloneJsonable(loadedSig);
+              patched++;
+            }
+            return patched;
+          };
+
+          patchRuns(importedHistory);
+
+          // Also patch retained payload history so subsequent exports/appends use canonical signatures.
+          try {
+            if (ui.loadedCodePayload) {
+              const sh = ui.loadedCodePayload.statsHistory;
+              if (Array.isArray(sh)) patchRuns(sh);
+              else if (isPlainObject(sh) && Array.isArray(sh.runs)) patchRuns(sh.runs);
+            }
+          } catch (_) {}
+        }
+      } catch (_) {}
+
     } catch (_) {
       ui.loadedCodeRoot = null;
       ui.loadedCodePayload = null;
@@ -5145,6 +6242,7 @@ if (droneScaleSelect) droneScaleSelect.value = String(state.droneScaleKey || '')
   // Wire Load screen actions
   if (loadBtnGenerate) loadBtnGenerate.addEventListener('click', () => { loadScreenGenerateClicked(); });
   if (loadBtnSaveFile) loadBtnSaveFile.addEventListener('click', () => { loadScreenSaveFileClicked(); });
+  if (loadBtnOutputMIDI) loadBtnOutputMIDI.addEventListener('click', () => { loadScreenOutputMidiClicked(); });
   if (loadBtnAppendRun) loadBtnAppendRun.addEventListener('click', () => { loadScreenAppendRunClicked(); });
   if (loadBtnCopy) loadBtnCopy.addEventListener('click', () => { loadScreenCopyClicked(); });
   if (loadBtnLoad) loadBtnLoad.addEventListener('click', () => { loadScreenLoadClicked(); });
@@ -5354,6 +6452,10 @@ const pathNoneBtn = document.getElementById('pathNoneBtn');
   const LS_NOTATION_SWAPS_OVERLAY = 'notation_swaps_overlay';
   const LS_DISPLAY_LIVE_BELLS_ONLY = 'display_live_bells_only';
 
+  // v022_p07_view_unicode_glyphs_and_lead_palette_sets: Lead overlay palette/colors (persisted)
+  const LS_LEAD_OVERLAY_COLORS = 'rg_lead_overlay_colors_v1';
+  const LS_LEAD_OVERLAY_PALETTE = 'rg_lead_overlay_palette_v1';
+
   // v09_p07b_notation_spotlight_accuracy_dots
   const LS_ACCURACY_DOTS = 'rg_accuracy_dots_v1';
 
@@ -5464,6 +6566,10 @@ const pathNoneBtn = document.getElementById('pathNoneBtn');
   const LS_DRONE_LAYERS = 'rg_drone_layers_v1';
 // v014_p03_master_fx_limiter_reverb localStorage key
 const LS_MASTER_FX = 'rg_master_fx_v1';
+
+// v022_p04_mute_method_and_optional_mute_user_bells
+const LS_MUTE_METHOD_BELLS = 'rg_mute_method_bells_v1';
+const LS_MUTE_USER_BELLS = 'rg_mute_user_bells_v1';
 
 // v017_p01_polyrhythm_core localStorage key
 const LS_POLYRHYTHM = 'rg_polyrhythm_v1';
@@ -5601,8 +6707,8 @@ const LS_POLY_SCOPE = 'rg_polyrhythm_scope_v1';
     methodSource: 'built_in',
     methodMeta: null,
     stage: 6,
-    liveCount: 1,
-    liveBells: [1],
+    liveCount: 2,
+    liveBells: [1,2],
     bpm: 120,
 
     // musical settings
@@ -5624,6 +6730,9 @@ const LS_POLY_SCOPE = 'rg_polyrhythm_scope_v1';
     bellPitchPartialsShape: 'ladder', // 'ladder' | 'folded'
     // audio settings
     bellVolume: 100, // 0..100 master bell volume
+    // v022_p04_mute_method_and_optional_mute_user_bells (Sound-only; affects Play/Demo audio only)
+    muteMethodBells: false,
+    muteUserBells: false,
     // v014_p05a_bell_timbre_global (global bell strike timbre; defaults preserve legacy sound)
     bellRingLength: 0.5, // 0..1 (0.5 = legacy envelope)
     bellBrightness: 0.5, // 0..1 (0.5 = neutral/no-op)
@@ -5772,8 +6881,9 @@ fxReverbHighCutHz: 6000, // Hz
 
 
     // v019_p01_lead_overlay: per-lead tint overlay (view)
-    leadOverlayEnabled: false,
+    leadOverlayEnabled: true,
     leadOverlayColors: [],
+    leadOverlayPaletteKey: 'default',
 
     // v09_p07b_notation_spotlight_accuracy_dots: accuracy dot overlays (master + per-pane)
     accuracyDotsEnabled: true,
@@ -7230,9 +8340,26 @@ if (reverbImpulseRebuildTimer) {
       tStop = t2 + 0.04 * lenMult;
     }
 
-    gain.gain.setValueAtTime(g0, t);
+    // v022_p05_sound_declick_fast_overlaps: tiny deterministic de-click at voice start/stop (reduces clicks on fast overlaps)
+    const DEC_A = 0.002;
+    const DEC_R = 0.005;
+    const tAtk = Math.min(t1, t + DEC_A);
+
+    gain.gain.setValueAtTime(0.0, t);
+    if (tAtk > t) {
+      gain.gain.linearRampToValueAtTime(g0, tAtk);
+    } else {
+      gain.gain.setValueAtTime(g0, t);
+    }
     gain.gain.exponentialRampToValueAtTime(g1, t1);
     gain.gain.exponentialRampToValueAtTime(g2, t2);
+
+    // End de-click: fade to 0 exactly at stop time (linear supports 0)
+    const tRelStart = clamp(Math.max(t2, tStop - DEC_R), t, tStop);
+    if (tRelStart > t2) {
+      gain.gain.setValueAtTime(g2, tRelStart);
+    }
+    gain.gain.linearRampToValueAtTime(0.0, tStop);
 
     let dest = bellVoiceDestOverride || bellMasterGain || audioCtx.destination;
     if (!bellVoiceDestOverride) {
@@ -7277,8 +8404,13 @@ if (reverbImpulseRebuildTimer) {
         hardGain.gain.exponentialRampToValueAtTime(0.000001, t + ta + td);
         hardSrc.connect(hardGain);
         hardGain.connect(out);
+        // v022_p05_sound_declick_fast_overlaps: de-click at transient stop
+        const hardStopAt = Math.min(tStop, t + ta + td + 0.03);
+        const hardRelStart = Math.max(t + ta + td, hardStopAt - DEC_R);
+        hardGain.gain.setValueAtTime(0.000001, hardRelStart);
+        hardGain.gain.linearRampToValueAtTime(0.0, hardStopAt);
         hardSrc.start(t);
-        hardSrc.stop(Math.min(tStop, t + ta + td + 0.03));
+        hardSrc.stop(hardStopAt);
       } catch (_) {
         try { if (hardSrc) hardSrc.disconnect(); } catch (_) {}
         try { if (hardGain) hardGain.disconnect(); } catch (_) {}
@@ -7526,11 +8658,20 @@ if (reverbImpulseRebuildTimer) {
     const gain = audioCtx.createGain();
     osc.type = 'square';
     osc.frequency.setValueAtTime(1400, t);
-    gain.gain.setValueAtTime(0.0001, t);
+    // v022_p05_sound_declick_fast_overlaps: de-click start/stop for dense ticks
+    const DEC_A = 0.002;
+    const DEC_R = 0.005;
+    gain.gain.setValueAtTime(0.0, t);
+    gain.gain.linearRampToValueAtTime(0.0001, t + DEC_A);
     gain.gain.exponentialRampToValueAtTime(0.08, t + 0.005);
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
     osc.connect(gain).connect(bellMasterGain || audioCtx.destination);
     const tStop = t + 0.07;
+    try {
+      const tRelStart = Math.max(t + 0.06, tStop - DEC_R);
+      gain.gain.setValueAtTime(0.001, tRelStart);
+      gain.gain.linearRampToValueAtTime(0.0, tStop);
+    } catch (_) {}
     osc.start(t);
     osc.stop(tStop);
 
@@ -7722,11 +8863,24 @@ if (reverbImpulseRebuildTimer) {
 
     const s = clamp(Number(gainMul) || 1, 0, 2);
 
-    gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, 0.08 * s), t + 0.005);
-    gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, 0.001 * s), t + 0.06);
+    // v022_p05_sound_declick_fast_overlaps: de-click start/stop for dense ticks
+    const DEC_A = 0.002;
+    const DEC_R = 0.005;
+    const g0 = 0.0001;
+    const gPeak = Math.max(0.0002, 0.08 * s);
+    const gTail = Math.max(0.0001, 0.001 * s);
+    gain.gain.setValueAtTime(0.0, t);
+    gain.gain.linearRampToValueAtTime(g0, t + DEC_A);
+    gain.gain.exponentialRampToValueAtTime(gPeak, t + 0.005);
+    gain.gain.exponentialRampToValueAtTime(gTail, t + 0.06);
 
     const tStop = t + 0.07;
+
+    try {
+      const tRelStart = Math.max(t + 0.06, tStop - DEC_R);
+      gain.gain.setValueAtTime(gTail, tRelStart);
+      gain.gain.linearRampToValueAtTime(0.0, tStop);
+    } catch (_) {}
 
     const dest = polyMasterGain || bellMasterGain || audioCtx.destination;
     try {
@@ -7923,11 +9077,25 @@ if (reverbImpulseRebuildTimer) {
 
     try {
       gainParam.cancelScheduledValues(t);
-      gainParam.setValueAtTime(MIN_G, t);
+
+      // v022_p05_sound_declick_fast_overlaps: tiny deterministic de-click (start/end at 0)
+      const DEC_A = 0.002;
+      const DEC_R = 0.005;
+      const aDec = Math.min(DEC_A, a * 0.5);
+      const tAtk = t + aDec;
+      const tEnd = t + a + d + hold + r;
+
+      gainParam.setValueAtTime(0.0, t);
+      if (tAtk > t) {
+        gainParam.linearRampToValueAtTime(MIN_G, tAtk);
+      } else {
+        gainParam.setValueAtTime(MIN_G, t);
+      }
       gainParam.exponentialRampToValueAtTime(pk, t + a);
       gainParam.exponentialRampToValueAtTime(sus, t + a + d);
       gainParam.setValueAtTime(sus, t + a + d + hold);
-      gainParam.exponentialRampToValueAtTime(MIN_G, t + a + d + hold + r);
+      gainParam.exponentialRampToValueAtTime(MIN_G, tEnd);
+      gainParam.linearRampToValueAtTime(0.0, tEnd + DEC_R);
     } catch (_) {}
 
     return t + a + d + hold + r;
@@ -7943,14 +9111,19 @@ if (reverbImpulseRebuildTimer) {
     let last = t;
     try {
       gainParam.cancelScheduledValues(t);
-      gainParam.setValueAtTime(MIN_G, t);
+
+      // v022_p05_sound_declick_fast_overlaps: tiny deterministic de-click (start/end at 0)
+      const DEC_A = 0.001; // keep < tap attack (1.5ms)
+      const DEC_R = 0.005;
+      gainParam.setValueAtTime(0.0, t);
+      gainParam.linearRampToValueAtTime(MIN_G, t + DEC_A);
 
       for (let i = 0; i < taps.length; i++) {
         const ms = clamp(Number(taps[i]) || 0, 0, 120);
         const tt = t + ms / 1000;
         last = Math.max(last, tt);
 
-        gainParam.setValueAtTime(MIN_G, tt);
+        if (tt > t + 1e-6) gainParam.setValueAtTime(MIN_G, tt);
         gainParam.exponentialRampToValueAtTime(pk, tt + 0.0015);
         gainParam.exponentialRampToValueAtTime(MIN_G, tt + 0.011);
       }
@@ -7959,6 +9132,7 @@ if (reverbImpulseRebuildTimer) {
       const tailPk = Math.max(MIN_G * 1.1, pk * tail);
       gainParam.exponentialRampToValueAtTime(tailPk, tailStart);
       gainParam.exponentialRampToValueAtTime(MIN_G, tailStart + r);
+      gainParam.linearRampToValueAtTime(0.0, tailStart + r + DEC_R);
     } catch (_) {}
 
     return last + 0.014 + r;
@@ -8428,7 +9602,25 @@ function syncMasterFxUI() {
   if (masterReverbSize) masterReverbSize.value = String(clamp(Number(state.fxReverbSize) || 0, 0, 1));
   if (masterReverbMix) masterReverbMix.value = String(clamp(Number(state.fxReverbMix) || 0, 0, 1));
   if (masterReverbHighCut) masterReverbHighCut.value = String(clamp(Number(state.fxReverbHighCutHz) || 6000, 500, 20000));
+  try { syncSoundMasterFxSummaryUI(); } catch (_) {}
 }
+
+  // v022_p04_mute_method_and_optional_mute_user_bells
+  function loadSoundMuteTogglesFromLS() {
+    try { state.muteMethodBells = !!safeGetBoolLS(LS_MUTE_METHOD_BELLS, false); } catch (_) { state.muteMethodBells = false; }
+    try { state.muteUserBells = !!safeGetBoolLS(LS_MUTE_USER_BELLS, false); } catch (_) { state.muteUserBells = false; }
+  }
+
+  function saveSoundMuteTogglesToLS() {
+    try { safeSetBoolLS(LS_MUTE_METHOD_BELLS, !!state.muteMethodBells); } catch (_) {}
+    try { safeSetBoolLS(LS_MUTE_USER_BELLS, !!state.muteUserBells); } catch (_) {}
+  }
+
+  function syncSoundMuteTogglesUI() {
+    if (muteMethodBellsChk) muteMethodBellsChk.checked = !!state.muteMethodBells;
+    if (muteUserBellsChk) muteUserBellsChk.checked = !!state.muteUserBells;
+  }
+
 
   // v017_p01_polyrhythm_core: Polyrhythm (Sound) — config + UI (no backend, no external libs)
   // v017_p02_polyrhythm_layer_sound: per-layer bell sound profile (Mirror Base / Custom)
@@ -8943,11 +10135,40 @@ if (oe.pitch || oe.timbre || oe.chords || hasSpatial) {
 
   const POLY_HB_RHYTHM_PRESETS = [
     { id: 'hb_pedal_quarters', label: 'Pedal (root) — quarters', group: 'Bass' },
+    { id: 'hb_pedal_halves', label: 'Pedal (root) — halves', group: 'Bass' },
+    { id: 'hb_pedal_whole', label: 'Pedal (root) — whole', group: 'Bass' },
     { id: 'hb_pedal_8ths', label: 'Pedal (root) — 8ths', group: 'Bass' },
-    { id: 'hb_bounce_8ths', label: 'Bounce (two-tone) — 8ths', group: 'Bounce / Arp' },
-    { id: 'hb_arp_up_8ths', label: 'Arp up/down — 8ths', group: 'Bounce / Arp' },
+    { id: 'hb_pedal_16ths', label: 'Pedal (root) — 16ths', group: 'Bass' },
+    { id: 'hb_pedal_offbeat_8ths', label: 'Offbeat pedal — 8ths (rests)', group: 'Bass' },
+
+    { id: 'hb_bounce_8ths', label: 'Bounce (two-tone) — 8ths', group: 'Arp' },
+    { id: 'hb_bounce_16ths', label: 'Bounce (two-tone) — 16ths', group: 'Arp' },
+    { id: 'hb_bounce_3_8ths', label: 'Bounce (three-tone) — 8ths', group: 'Arp' },
+    { id: 'hb_arp_up_8ths', label: 'Arp up/down — 8ths', group: 'Arp' },
+    { id: 'hb_arp_down_8ths', label: 'Arp down/up — 8ths', group: 'Arp' },
+    { id: 'hb_arp_up_16ths', label: 'Arp up — 16ths (wrap)', group: 'Arp' },
+    { id: 'hb_arp_pingpong_16ths', label: 'Ping-pong — 16ths', group: 'Arp' },
+    { id: 'hb_arp_1_5_8_5_8ths', label: 'Power arp (1–5–8–5) — 8ths', group: 'Arp' },
+    { id: 'hb_arp_wide_8ths', label: 'Wide arp (skip) — 8ths', group: 'Arp' },
+    { id: 'hb_arp_4step_16ths', label: '4-step figure — 16ths', group: 'Arp' },
+
     { id: 'hb_swell_hdot_pickup', label: 'Swell — h. + 8ths pickup', group: 'Sustain' },
+    { id: 'hb_sustain_whole', label: 'Sustain — whole', group: 'Sustain' },
+    { id: 'hb_sustain_halves', label: 'Sustain — halves', group: 'Sustain' },
+    { id: 'hb_sustain_hdot_q', label: 'Sustain — h. + q', group: 'Sustain' },
+
     { id: 'hb_sync_edot_s', label: 'Syncopated — e. + s (x4)', group: 'Syncopation' },
+    { id: 'hb_sync_tresillo', label: 'Tresillo (3–3–2)', group: 'Syncopation' },
+    { id: 'hb_sync_habanera', label: 'Habanera (q. + e + q + q)', group: 'Syncopation' },
+    { id: 'hb_sync_charleston', label: 'Charleston (e. + s + q + q + q)', group: 'Syncopation' },
+    { id: 'hb_sync_backbeat', label: 'Backbeat (rests on 1 & 3)', group: 'Syncopation' },
+    { id: 'hb_sync_upbeats_8ths', label: 'Upbeats — 8ths (rests)', group: 'Syncopation' },
+    { id: 'hb_sync_push_qe', label: 'Push (q + e + e + h)', group: 'Syncopation' },
+
+    { id: 'hb_waltz_3q', label: 'Waltz — 3 quarters', group: 'Waltz & Compound' },
+    { id: 'hb_waltz_6e', label: 'Waltz — 6 8ths', group: 'Waltz & Compound' },
+    { id: 'hb_compound_qdot_qdot', label: '6/8 feel — q. + q.', group: 'Waltz & Compound' },
+    { id: 'hb_compound_qdot_e_q', label: '6/8 sync — q. + e + q', group: 'Waltz & Compound' },
   ];
 
   function polyHBTokenToPhraseChar(tok) {
@@ -9006,7 +10227,7 @@ if (oe.pitch || oe.timbre || oe.chords || hasSpatial) {
   }
 
   function polyHBGenerateToneSetSuggestions(toneCount) {
-    const tc = clamp(parseInt(toneCount, 10) || 0, 1, 6);
+    const tc = clamp(parseInt(toneCount, 10) || 0, 1, 12);
     const stage = clamp(parseInt(state.stage, 10) || 0, 1, 12);
     const def = polyHBGetEffectiveScaleDef();
     const minorLike = polyHBIsMinorLike(def);
@@ -9052,9 +10273,29 @@ if (oe.pitch || oe.timbre || oe.chords || hasSpatial) {
       } else if (tc === 6) {
         cands.push({ id: 'hex', label: 'Hexatonic (I–II–III–IV–V–VI)', idxs: [0, 1, 2, 3, 4, 5] });
         cands.push({ id: 'hex_wide', label: 'Wide hex (I–II–IV–V–VI–VIII)', idxs: [0, 1, 3, 4, 5, 7] });
+      } else if (tc === 7) {
+        cands.push({ id: 'hept', label: 'Heptatonic (I–II–III–IV–V–VI–VII)', idxs: [0, 1, 2, 3, 4, 5, 6] });
+        cands.push({ id: 'hept_wide', label: 'Wide hept (I–II–III–V–VI–VII–VIII)', idxs: [0, 1, 2, 4, 5, 6, 7] });
+        cands.push({ id: 'hept_open', label: 'Open hept (I–III–IV–V–VII–VIII–IX)', idxs: [0, 2, 3, 4, 6, 7, 8] });
+      } else if (tc === 8) {
+        cands.push({ id: 'oct', label: 'Octatonic fragment (I–II–III–IV–V–VI–VII–VIII)', idxs: [0, 1, 2, 3, 4, 5, 6, 7] });
+        cands.push({ id: 'oct_wide', label: 'Wide oct (I–II–III–V–VI–VII–VIII–X)', idxs: [0, 1, 2, 4, 5, 6, 7, 9] });
+        cands.push({ id: 'oct_open', label: 'Open oct (I–III–IV–V–VII–VIII–IX–XI)', idxs: [0, 2, 3, 4, 6, 7, 8, 10] });
+      } else if (tc === 9) {
+        cands.push({ id: 'nona', label: 'Nonatonic (I–II–III–IV–V–VI–VII–VIII–IX)', idxs: [0, 1, 2, 3, 4, 5, 6, 7, 8] });
+        cands.push({ id: 'nona_wide', label: 'Wide nona (I–II–III–IV–V–VII–VIII–IX–XI)', idxs: [0, 1, 2, 3, 4, 6, 7, 8, 10] });
+      } else if (tc === 10) {
+        cands.push({ id: 'deca', label: 'Decatonic (I–II–III–IV–V–VI–VII–VIII–IX–X)', idxs: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] });
+        cands.push({ id: 'deca_wide', label: 'Wide deca (I–II–III–IV–V–VI–VIII–IX–X–XII)', idxs: [0, 1, 2, 3, 4, 5, 7, 8, 9, 11] });
+      } else if (tc === 11) {
+        cands.push({ id: 'undeca', label: 'Undecatonic (I–II–III–IV–V–VI–VII–VIII–IX–X–XI)', idxs: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10] });
+        cands.push({ id: 'undeca_skip', label: 'Wide undeca (skip VII)', idxs: [0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11] });
+      } else if (tc === 12) {
+        cands.push({ id: 'full12', label: 'Full set (I–…–XII)', idxs: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] });
       }
 
-      const out = [];
+
+const out = [];
       for (let i = 0; i < cands.length; i++) {
         const c = cands[i];
         const toks = pick(c.idxs);
@@ -9138,6 +10379,198 @@ if (oe.pitch || oe.timbre || oe.chords || hasSpatial) {
       }
       return out;
     }
+    // Bass
+    if (rid === 'hb_pedal_halves') {
+      return [
+        { ti: 0, dur: 'h' },
+        { ti: 0, dur: 'h' },
+      ];
+    }
+    if (rid === 'hb_pedal_whole') {
+      return [
+        { ti: 0, dur: 'w' },
+      ];
+    }
+    if (rid === 'hb_pedal_16ths') {
+      const out = [];
+      for (let i = 0; i < 16; i++) out.push({ ti: 0, dur: 's' });
+      return out;
+    }
+    if (rid === 'hb_pedal_offbeat_8ths') {
+      const out = [];
+      for (let i = 0; i < 8; i++) out.push({ ti: (i % 2 === 0) ? -1 : 0, dur: 'e' });
+      return out;
+    }
+
+    // Arp / motion
+    if (rid === 'hb_bounce_16ths') {
+      const out = [];
+      const n = Math.max(1, Math.min(2, tc));
+      for (let i = 0; i < 16; i++) out.push({ ti: (i % n), dur: 's' });
+      return out;
+    }
+    if (rid === 'hb_bounce_3_8ths') {
+      const out = [];
+      const n = Math.max(1, Math.min(3, tc));
+      for (let i = 0; i < 8; i++) out.push({ ti: (i % n), dur: 'e' });
+      return out;
+    }
+    if (rid === 'hb_arp_down_8ths') {
+      const out = [];
+      const n = Math.max(1, tc);
+      const seq = [];
+      // 8 steps: down then up (deterministic)
+      for (let i = n - 1; i >= 0 && seq.length < 4; i--) seq.push(i);
+      for (let i = 1; i < n && seq.length < 8; i++) seq.push(i);
+      while (seq.length < 8) seq.push(0);
+      for (let i = 0; i < 8; i++) out.push({ ti: (seq[i] % n), dur: 'e' });
+      return out;
+    }
+    if (rid === 'hb_arp_up_16ths') {
+      const out = [];
+      const n = Math.max(1, tc);
+      for (let i = 0; i < 16; i++) out.push({ ti: (i % n), dur: 's' });
+      return out;
+    }
+    if (rid === 'hb_arp_pingpong_16ths') {
+      const out = [];
+      const n = Math.max(1, tc);
+      if (n <= 1) {
+        for (let i = 0; i < 16; i++) out.push({ ti: 0, dur: 's' });
+        return out;
+      }
+      const seq = [];
+      while (seq.length < 16) {
+        for (let i = 0; i < n && seq.length < 16; i++) seq.push(i);
+        for (let i = n - 2; i >= 1 && seq.length < 16; i--) seq.push(i);
+      }
+      for (let i = 0; i < 16; i++) out.push({ ti: (seq[i] % n), dur: 's' });
+      return out;
+    }
+    if (rid === 'hb_arp_1_5_8_5_8ths') {
+      const out = [];
+      const n = Math.max(1, tc);
+      const seq = [0, 4, 7, 4, 0, 4, 7, 4];
+      for (let i = 0; i < 8; i++) out.push({ ti: (seq[i] % n), dur: 'e' });
+      return out;
+    }
+    if (rid === 'hb_arp_wide_8ths') {
+      const out = [];
+      const n = Math.max(1, tc);
+      for (let i = 0; i < 8; i++) out.push({ ti: ((i * 2) % n), dur: 'e' });
+      return out;
+    }
+    if (rid === 'hb_arp_4step_16ths') {
+      const out = [];
+      const n = Math.max(1, Math.min(4, tc));
+      for (let i = 0; i < 16; i++) out.push({ ti: (i % n), dur: 's' });
+      return out;
+    }
+
+    // Sustain
+    if (rid === 'hb_sustain_whole') {
+      return [
+        { ti: 0, dur: 'w' },
+      ];
+    }
+    if (rid === 'hb_sustain_halves') {
+      return [
+        { ti: 0, dur: 'h' },
+        { ti: Math.min(1, tc - 1), dur: 'h' },
+      ];
+    }
+    if (rid === 'hb_sustain_hdot_q') {
+      return [
+        { ti: 0, dur: 'h.' },
+        { ti: Math.min(1, tc - 1), dur: 'q' },
+      ];
+    }
+
+    // Syncopation
+    if (rid === 'hb_sync_tresillo') {
+      const out = [];
+      const n = Math.max(1, tc);
+      out.push({ ti: 0, dur: 'q.' });
+      out.push({ ti: (1 % n), dur: 'q.' });
+      out.push({ ti: (2 % n), dur: 'q' });
+      return out;
+    }
+    if (rid === 'hb_sync_habanera') {
+      const out = [];
+      const n = Math.max(1, tc);
+      out.push({ ti: 0, dur: 'q.' });
+      out.push({ ti: (1 % n), dur: 'e' });
+      out.push({ ti: (2 % n), dur: 'q' });
+      out.push({ ti: (1 % n), dur: 'q' });
+      return out;
+    }
+    if (rid === 'hb_sync_charleston') {
+      const out = [];
+      const n = Math.max(1, tc);
+      out.push({ ti: 0, dur: 'e.' });
+      out.push({ ti: (1 % n), dur: 's' });
+      out.push({ ti: (2 % n), dur: 'q' });
+      out.push({ ti: 0, dur: 'q' });
+      out.push({ ti: (1 % n), dur: 'q' });
+      return out;
+    }
+    if (rid === 'hb_sync_backbeat') {
+      const n = Math.max(1, tc);
+      return [
+        { ti: -1, dur: 'q' },
+        { ti: 0, dur: 'q' },
+        { ti: -1, dur: 'q' },
+        { ti: (1 % n), dur: 'q' },
+      ];
+    }
+    if (rid === 'hb_sync_upbeats_8ths') {
+      const out = [];
+      const n = Math.max(1, tc);
+      for (let i = 0; i < 8; i++) {
+        const isHit = (i % 2 === 1);
+        out.push({ ti: isHit ? (Math.floor(i / 2) % n) : -1, dur: 'e' });
+      }
+      return out;
+    }
+    if (rid === 'hb_sync_push_qe') {
+      const out = [];
+      const n = Math.max(1, tc);
+      out.push({ ti: 0, dur: 'q' });
+      out.push({ ti: (1 % n), dur: 'e' });
+      out.push({ ti: (2 % n), dur: 'e' });
+      out.push({ ti: 0, dur: 'h' });
+      return out;
+    }
+
+    // Waltz & compound
+    if (rid === 'hb_waltz_3q') {
+      const out = [];
+      const n = Math.max(1, Math.min(3, tc));
+      for (let i = 0; i < 3; i++) out.push({ ti: (i % n), dur: 'q' });
+      return out;
+    }
+    if (rid === 'hb_waltz_6e') {
+      const out = [];
+      const n = Math.max(1, Math.min(3, tc));
+      for (let i = 0; i < 6; i++) out.push({ ti: (i % n), dur: 'e' });
+      return out;
+    }
+    if (rid === 'hb_compound_qdot_qdot') {
+      const n = Math.max(1, tc);
+      return [
+        { ti: 0, dur: 'q.' },
+        { ti: (1 % n), dur: 'q.' },
+      ];
+    }
+    if (rid === 'hb_compound_qdot_e_q') {
+      const out = [];
+      const n = Math.max(1, tc);
+      out.push({ ti: 0, dur: 'q.' });
+      out.push({ ti: (1 % n), dur: 'e' });
+      out.push({ ti: (2 % n), dur: 'q' });
+      return out;
+    }
+
 
     // Default: hb_pedal_quarters
     return [
@@ -9202,6 +10635,7 @@ if (oe.pitch || oe.timbre || oe.chords || hasSpatial) {
     const p = polyFindLayerPresetById(presetId);
     if (!p) return;
 
+    polyPushUndoSnapshot();
     if (!Array.isArray(state.polyLayers)) state.polyLayers = [];
     const layers = Array.isArray(p.layers) ? p.layers : [];
     for (let i = 0; i < layers.length; i++) {
@@ -9300,6 +10734,38 @@ if (oe.pitch || oe.timbre || oe.chords || hasSpatial) {
     return out;
   }
 
+// v022_p15_sound_synth_preset_autofill_and_drone_synth_advanced: preset -> advanced params autofill (best-effort)
+function applyPolySynthPresetAutofillToAdvanced(existingAdv, preset) {
+  const base = (existingAdv && typeof existingAdv === 'object' && !Array.isArray(existingAdv)) ? existingAdv : {};
+  const next = Object.assign({}, base);
+
+  // Env (ADSR) - only copy values present on the preset.
+  if (preset && preset.env && typeof preset.env === 'object' && !Array.isArray(preset.env)) {
+    const pe = preset.env;
+    const cur = (next.env && typeof next.env === 'object' && !Array.isArray(next.env)) ? Object.assign({}, next.env) : {};
+    let touched = false;
+    const a = Number(pe.a); if (Number.isFinite(a)) { cur.a = a; touched = true; }
+    const d = Number(pe.d); if (Number.isFinite(d)) { cur.d = d; touched = true; }
+    const s = Number(pe.s); if (Number.isFinite(s)) { cur.s = s; touched = true; }
+    const r = Number(pe.r); if (Number.isFinite(r)) { cur.r = r; touched = true; }
+    if (touched) next.env = cur;
+  }
+
+  // Filter - only copy values present on the preset.
+  if (preset && preset.filter && typeof preset.filter === 'object' && !Array.isArray(preset.filter)) {
+    const pf = preset.filter;
+    const cur = (next.filter && typeof next.filter === 'object' && !Array.isArray(next.filter)) ? Object.assign({}, next.filter) : {};
+    let touched = false;
+    if (typeof pf.type === 'string' && pf.type) { cur.type = pf.type; touched = true; }
+    const hz = Number(pf.cutoffHz); if (Number.isFinite(hz)) { cur.cutoffHz = hz; touched = true; }
+    const q = Number(pf.Q); if (Number.isFinite(q)) { cur.Q = q; touched = true; }
+    if (touched) next.filter = cur;
+  }
+
+  // Keep other fields (detuneCents/unison/velocity) as-is; sanitize clamps and prunes empties.
+  return sanitizePolySynthParamsAdvanced(next);
+}
+
   function sanitizePolyTokenOverrides(raw) {
     const r = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : null;
     const out = {};
@@ -9339,6 +10805,40 @@ if (oe.pitch || oe.timbre || oe.chords || hasSpatial) {
     }
     return out;
   }
+
+  // v022_p10a_poly_layer_offset_dropdown_fix: normalize offsets to allowed fraction strings (fail-open)
+  function normalizePolyLayerOffset(intervalKey, offsetRaw) {
+    try {
+      const opts = polyOffsetOptionsForInterval(intervalKey);
+      if (!Array.isArray(opts) || !opts.length) return '0';
+
+      const rawStr = (typeof offsetRaw === 'string') ? offsetRaw.trim() : String(offsetRaw ?? '').trim();
+
+      // Exact match (preserve canonical strings)
+      if (rawStr) {
+        for (let i = 0; i < opts.length; i++) {
+          if (String(opts[i].value) === rawStr) return String(opts[i].value);
+        }
+      }
+
+      // Numeric/decimal/fraction forms: map to nearest allowed option within epsilon
+      const wantBeats = polyFracToBeats((offsetRaw == null || rawStr === '') ? '0' : offsetRaw);
+      if (!Number.isFinite(wantBeats)) return '0';
+
+      const EPS = 1e-6;
+      let best = null;
+      let bestDiff = Infinity;
+      for (let i = 0; i < opts.length; i++) {
+        const v = String(opts[i].value);
+        const b = polyFracToBeats(v);
+        const d = Math.abs(b - wantBeats);
+        if (d < bestDiff) { bestDiff = d; best = v; }
+      }
+      if (best != null && bestDiff <= EPS) return best;
+    } catch (_) {}
+    return '0';
+  }
+
 function coercePolyLayer(raw, fallbackIdx = 0) {
     const r = (raw && typeof raw === 'object') ? raw : {};
     const id = (typeof r.id === 'string' && r.id.trim()) ? r.id.trim() : rid('pl_');
@@ -9348,12 +10848,8 @@ function coercePolyLayer(raw, fallbackIdx = 0) {
 
     const interval = (r.interval === '2' || r.interval === '1' || r.interval === '1/2' || r.interval === '1/3' || r.interval === '1/4') ? r.interval : '1';
 
-    let offset = (typeof r.offset === 'string') ? r.offset : String(r.offset ?? '0');
-    offset = String(offset || '0').trim();
-    const offOpts = polyOffsetOptionsForInterval(interval);
-    if (!offOpts.some(o => o.value === offset)) offset = '0';
-
-    const volume = clamp(Number(r.volume ?? 80) || 0, 0, 100);
+    let offset = normalizePolyLayerOffset(interval, r.offset);
+const volume = clamp(Number(r.volume ?? 80) || 0, 0, 100);
     const token = clamp(parseInt(r.token ?? (fallbackIdx + 1), 10) || 1, 1, 12);
     const phrase = (r.phrase == null) ? '' : String(r.phrase);
 
@@ -9492,6 +10988,7 @@ function coercePolyLayer(raw, fallbackIdx = 0) {
     const prev = coercePolyScope(state.polyScope);
     const next = coercePolyScope(nextScope);
     if (next === prev) return;
+    polyClearUndoStack();
 
     // Leaving per-profile scope: capture the current profile snapshot so its polyrhythm is preserved.
     if (prev === 'profile' && next === 'global') {
@@ -9608,6 +11105,94 @@ function loadPolyrhythmFromLS() {
     } catch (_) {}
   }
 
+  // v022_p03_poly_undo_layers_structural: UI-only bounded undo for polyrhythm *structural* layer actions
+  function polyEnsureUndoState() {
+    ui.poly = ui.poly || {};
+    const P = ui.poly;
+    if (!Array.isArray(P.undoStack)) P.undoStack = [];
+    return P;
+  }
+
+  function polyClearUndoStack() {
+    const P = polyEnsureUndoState();
+    P.undoStack.length = 0;
+    if (P.undoBtn) P.undoBtn.disabled = true;
+  }
+
+  function polyMakeUndoSnapshot() {
+    const layers = Array.isArray(state.polyLayers) ? state.polyLayers : [];
+    return {
+      enabledForRuns: !!state.polyEnabledForRuns,
+      masterVolume: clamp(Number(state.polyMasterVolume) || 0, 0, 100),
+      rowCycleLen: clampInt(state.polyRowCycleLen, 1, 32, 1),
+      layers: deepCloneJsonable(layers),
+    };
+  }
+
+  function polyPushUndoSnapshot() {
+    const P = polyEnsureUndoState();
+    if (P.undoApplying) return;
+    try {
+      const snap = polyMakeUndoSnapshot();
+      P.undoStack.push(snap);
+      if (P.undoStack.length > 20) P.undoStack.shift();
+      if (P.undoBtn) P.undoBtn.disabled = (P.undoStack.length === 0);
+    } catch (_) {}
+  }
+
+  function polyUndoOnce() {
+    const P = polyEnsureUndoState();
+    if (!P.undoStack.length) return;
+
+    const snap = P.undoStack.pop();
+    if (P.undoBtn) P.undoBtn.disabled = (P.undoStack.length === 0);
+
+    P.undoApplying = true;
+    try {
+      // Cleanup similar to Reset layers (avoid stale per-layer caches)
+      try { cancelScheduledPolyAudioNow(); } catch (_) {}
+      try {
+        if (Array.isArray(state.polyLayers)) {
+          for (let i = 0; i < state.polyLayers.length; i++) {
+            const l = state.polyLayers[i];
+            if (l && l.id) { try { dropPolyBellSpatialStagesForLayer(l.id); } catch (_) {} }
+          }
+        }
+      } catch (_) {}
+      try { polySchedNextById = Object.create(null); } catch (_) {}
+
+      // Restore config (structural-first; preserves non-structural edits for surviving layer IDs)
+      state.polyEnabledForRuns = !!(snap && snap.enabledForRuns);
+      state.polyMasterVolume = clamp(Number(snap && snap.masterVolume) || 0, 0, 100);
+      state.polyRowCycleLen = clampInt((snap && snap.rowCycleLen), 1, 32, 1);
+
+      const cur = Array.isArray(state.polyLayers) ? state.polyLayers : [];
+      const curById = Object.create(null);
+      for (let i = 0; i < cur.length; i++) {
+        const l = cur[i];
+        if (l && l.id) curById[l.id] = l;
+      }
+
+      const tgt = (snap && Array.isArray(snap.layers)) ? snap.layers : [];
+      const out = [];
+      for (let i = 0; i < tgt.length; i++) {
+        const sl = tgt[i];
+        if (sl && sl.id && curById[sl.id]) out.push(curById[sl.id]); // keep edits (phrase, etc.)
+        else if (sl) out.push(deepCloneJsonable(sl));                // resurrect removed layers
+      }
+      state.polyLayers = out;
+
+      savePolyrhythmToLS();
+      rebuildPolyrhythmUI();
+      polyResyncActiveNow();
+    } catch (_) {
+      // fail-open
+    } finally {
+      P.undoApplying = false;
+    }
+  }
+
+
   function polyIsRunActive() {
     return !!(state.polyEnabledForRuns && (state.mode === 'demo' || state.mode === 'play') && (state.phase === 'countdown' || state.phase === 'running'));
   }
@@ -9661,7 +11246,12 @@ function loadPolyrhythmFromLS() {
 
     ui.poly = ui.poly || {};
     const P = ui.poly;
+    P.undoStack = Array.isArray(P.undoStack) ? P.undoStack : [];
     P.layerUiById = Object.create(null);
+    // v022_p09_builder_synth_advanced_apply: Builder-only synth advanced params (UI-only state)
+    if (!P.builderSynthAdv || typeof P.builderSynthAdv !== 'object' || Array.isArray(P.builderSynthAdv)) P.builderSynthAdv = {};
+    P.builderSynthAdvOpen = !!P.builderSynthAdvOpen;
+
 
     P.rowCycleInput = null;
 
@@ -9740,6 +11330,7 @@ function loadPolyrhythmFromLS() {
       state.polyMasterVolume = clamp(Number(vol.value) || 0, 0, 100);
       savePolyrhythmToLS();
       applyPolyMasterGain();
+      try { syncSoundPolyrhythmSummaryUI(); } catch (_) {}
     });
     vol.addEventListener('change', () => {
       applyPolyMasterGain();
@@ -9804,6 +11395,7 @@ function loadPolyrhythmFromLS() {
     addBtn.className = 'pill';
     addBtn.textContent = 'Add layer';
     addBtn.addEventListener('click', () => {
+      polyPushUndoSnapshot();
       if (!Array.isArray(state.polyLayers)) state.polyLayers = [];
       state.polyLayers.push(makeDefaultPolyLayer());
       savePolyrhythmToLS();
@@ -9819,7 +11411,8 @@ function loadPolyrhythmFromLS() {
     resetBtn.className = 'pill';
     resetBtn.textContent = 'Reset layers';
     resetBtn.addEventListener('click', () => {
-      if (!confirm('Reset all polyrhythm layers? This will remove all layers and cannot be undone.')) return;
+      if (!confirm('Reset all polyrhythm layers? This will remove all layers.')) return;
+      polyPushUndoSnapshot();
       try { cancelScheduledPolyAudioNow(); } catch (_) {}
       try {
         if (Array.isArray(state.polyLayers)) {
@@ -9838,6 +11431,18 @@ function loadPolyrhythmFromLS() {
     P.resetBtn = resetBtn;
     global.appendChild(resetBtn);
 
+    // Undo (structural only)
+    const undoBtn = document.createElement('button');
+    undoBtn.type = 'button';
+    undoBtn.className = 'pill';
+    undoBtn.textContent = 'Undo';
+    try { undoBtn.disabled = !(P.undoStack && P.undoStack.length); } catch (_) { undoBtn.disabled = true; }
+    undoBtn.addEventListener('click', () => {
+      polyUndoOnce();
+    });
+    P.undoBtn = undoBtn;
+    global.appendChild(undoBtn);
+
     // Presets (inline details panel)
     const presetsDetails = document.createElement('details');
     presetsDetails.className = 'rg-poly-presets-details';
@@ -9853,6 +11458,22 @@ function loadPolyrhythmFromLS() {
     const presetsPanel = document.createElement('div');
     presetsPanel.className = 'rg-poly-presets-panel';
     presetsDetails.appendChild(presetsPanel);
+
+    // Builder (inline details panel)
+    const builderDetails = document.createElement('details');
+    builderDetails.className = 'rg-poly-presets-details';
+    const builderSummary = document.createElement('summary');
+    builderSummary.className = 'pill rg-poly-presets-summary';
+    builderSummary.textContent = 'Builder';
+    builderDetails.appendChild(builderSummary);
+
+    // Persist open/closed state across rebuilds (UI-only)
+    builderDetails.open = !!P.builderOpen;
+    builderDetails.addEventListener('toggle', () => { P.builderOpen = builderDetails.open; });
+
+    const builderPanel = document.createElement('div');
+    builderPanel.className = 'rg-poly-presets-panel';
+    builderDetails.appendChild(builderPanel);
 
     const percSel = document.createElement('select');
     polyPopulatePresetSelect(percSel, POLY_LAYER_PRESET_LIBRARY.percussion, 'Percussion presets…');
@@ -9872,7 +11493,7 @@ function loadPolyrhythmFromLS() {
       quickSel.value = '';
       polyApplyLayerPresetById(id);
     });
-    presetsPanel.appendChild(mkControl('Bell / Synth (quick)', quickSel));
+    presetsPanel.appendChild(mkControl('Bell / Synth', quickSel));
 
     // Harmony/Bass builder (v021_p07): tone-count + rhythm + deterministic tone-set suggestions.
     try {
@@ -9886,13 +11507,13 @@ function loadPolyrhythmFromLS() {
 
       // Tones (unique)
       const hbToneCountSel = document.createElement('select');
-      for (let i = 1; i <= 6; i++) {
+      for (let i = 1; i <= 12; i++) {
         const o = document.createElement('option');
         o.value = String(i);
         o.textContent = String(i);
         hbToneCountSel.appendChild(o);
       }
-      const hbToneCountDefault = clamp(parseInt(P.hbToneCount, 10) || 3, 1, 6);
+      const hbToneCountDefault = clamp(parseInt(P.hbToneCount, 10) || 3, 1, 12);
       hbToneCountSel.value = String(hbToneCountDefault);
       hbWrap.appendChild(mkControl('Tones', hbToneCountSel));
 
@@ -9929,11 +11550,234 @@ function loadPolyrhythmFromLS() {
       hbAddBtn.textContent = 'Add preset';
       hbWrap.appendChild(hbAddBtn);
 
+      // Advanced Synth (Builder-only; shown only when Add as = synth)
+      const hbAdvDetails = document.createElement('details');
+      hbAdvDetails.className = 'rg-poly-adv-details';
+      hbAdvDetails.open = !!P.builderSynthAdvOpen;
+      const hbAdvSummary = document.createElement('summary');
+      hbAdvSummary.textContent = 'Advanced Synth';
+      hbAdvDetails.appendChild(hbAdvSummary);
+
+      const hbAdvBody = document.createElement('div');
+      hbAdvBody.className = 'rg-poly-adv-body';
+      hbAdvDetails.appendChild(hbAdvBody);
+
+      const hbAdvHint = document.createElement('div');
+      hbAdvHint.className = 'rg-poly-inline-note';
+      hbAdvHint.textContent = 'Applies to new Synth layers added by Builder. Leave fields blank to use preset.';
+      hbAdvBody.appendChild(hbAdvHint);
+
+      // ADSR
+      const hbAdvAdsrControls = document.createElement('div');
+      hbAdvAdsrControls.className = 'rg-poly-sound-controls';
+      hbAdvBody.appendChild(hbAdvAdsrControls);
+
+      const hbAdvAInput = document.createElement('input');
+      hbAdvAInput.type = 'number';
+      hbAdvAInput.min = '0.0001';
+      hbAdvAInput.max = '1';
+      hbAdvAInput.step = '0.001';
+      hbAdvAdsrControls.appendChild(mkControl('A', hbAdvAInput));
+
+      const hbAdvDInput = document.createElement('input');
+      hbAdvDInput.type = 'number';
+      hbAdvDInput.min = '0.0001';
+      hbAdvDInput.max = '2';
+      hbAdvDInput.step = '0.001';
+      hbAdvAdsrControls.appendChild(mkControl('D', hbAdvDInput));
+
+      const hbAdvSInput = document.createElement('input');
+      hbAdvSInput.type = 'number';
+      hbAdvSInput.min = '0';
+      hbAdvSInput.max = '1';
+      hbAdvSInput.step = '0.01';
+      hbAdvAdsrControls.appendChild(mkControl('S', hbAdvSInput));
+
+      const hbAdvRInput = document.createElement('input');
+      hbAdvRInput.type = 'number';
+      hbAdvRInput.min = '0.0001';
+      hbAdvRInput.max = '3';
+      hbAdvRInput.step = '0.001';
+      hbAdvAdsrControls.appendChild(mkControl('R', hbAdvRInput));
+
+      // Filter
+      const hbAdvFilterControls = document.createElement('div');
+      hbAdvFilterControls.className = 'rg-poly-sound-controls';
+      hbAdvBody.appendChild(hbAdvFilterControls);
+
+      const hbAdvFilterTypeSel = mkSelect([
+        { value: '', label: '(Preset)' },
+        { value: 'lowpass', label: 'Lowpass' },
+        { value: 'highpass', label: 'Highpass' },
+        { value: 'bandpass', label: 'Bandpass' },
+        { value: 'notch', label: 'Notch' },
+        { value: 'allpass', label: 'Allpass' },
+        { value: 'lowshelf', label: 'Low-shelf' },
+        { value: 'highshelf', label: 'High-shelf' },
+        { value: 'peaking', label: 'Peaking' },
+      ]);
+      hbAdvFilterControls.appendChild(mkControl('Filter', hbAdvFilterTypeSel));
+
+      const hbAdvFilterCutoffInput = document.createElement('input');
+      hbAdvFilterCutoffInput.type = 'number';
+      hbAdvFilterCutoffInput.min = '20';
+      hbAdvFilterCutoffInput.max = '20000';
+      hbAdvFilterCutoffInput.step = '1';
+      hbAdvFilterControls.appendChild(mkControl('Cutoff', hbAdvFilterCutoffInput));
+
+      const hbAdvFilterQInput = document.createElement('input');
+      hbAdvFilterQInput.type = 'number';
+      hbAdvFilterQInput.min = '0.1';
+      hbAdvFilterQInput.max = '20';
+      hbAdvFilterQInput.step = '0.1';
+      hbAdvFilterControls.appendChild(mkControl('Q', hbAdvFilterQInput));
+
+      // Detune / Unison / Velocity
+      const hbAdvMiscControls = document.createElement('div');
+      hbAdvMiscControls.className = 'rg-poly-sound-controls';
+      hbAdvBody.appendChild(hbAdvMiscControls);
+
+      const hbAdvUnisonInput = document.createElement('input');
+      hbAdvUnisonInput.type = 'number';
+      hbAdvUnisonInput.min = '1';
+      hbAdvUnisonInput.max = '4';
+      hbAdvUnisonInput.step = '1';
+      hbAdvMiscControls.appendChild(mkControl('Unison', hbAdvUnisonInput));
+
+      const hbAdvDetuneInput = document.createElement('input');
+      hbAdvDetuneInput.type = 'number';
+      hbAdvDetuneInput.min = '0';
+      hbAdvDetuneInput.max = '100';
+      hbAdvDetuneInput.step = '0.1';
+      hbAdvMiscControls.appendChild(mkControl('Detune (c)', hbAdvDetuneInput));
+
+      const hbAdvVelocityInput = document.createElement('input');
+      hbAdvVelocityInput.type = 'number';
+      hbAdvVelocityInput.min = '0';
+      hbAdvVelocityInput.max = '2';
+      hbAdvVelocityInput.step = '0.01';
+      hbAdvMiscControls.appendChild(mkControl('Velocity', hbAdvVelocityInput));
+
+      hbAdvDetails.addEventListener('toggle', () => {
+        P.builderSynthAdvOpen = !!hbAdvDetails.open;
+      });
+
+      function hbEnsureBuilderAdvObj() {
+        if (!P.builderSynthAdv || typeof P.builderSynthAdv !== 'object' || Array.isArray(P.builderSynthAdv)) P.builderSynthAdv = {};
+        return P.builderSynthAdv;
+      }
+      function hbEnsureBuilderAdvEnv() {
+        const adv = hbEnsureBuilderAdvObj();
+        if (!adv.env || typeof adv.env !== 'object' || Array.isArray(adv.env)) adv.env = {};
+        return adv.env;
+      }
+      function hbEnsureBuilderAdvFilter() {
+        const adv = hbEnsureBuilderAdvObj();
+        if (!adv.filter || typeof adv.filter !== 'object' || Array.isArray(adv.filter)) adv.filter = {};
+        return adv.filter;
+      }
+      function hbPruneBuilderAdv() {
+        const adv = hbEnsureBuilderAdvObj();
+        if (adv.env && typeof adv.env === 'object' && !Array.isArray(adv.env) && !Object.keys(adv.env).length) delete adv.env;
+        if (adv.filter && typeof adv.filter === 'object' && !Array.isArray(adv.filter) && !Object.keys(adv.filter).length) delete adv.filter;
+      }
+
+      function hbBindBuilderAdvNum(inputEl, kind, key, minV, maxV, isInt) {
+        function apply() {
+          const vStr = String(inputEl.value || '').trim();
+          if (!vStr) {
+            const adv = hbEnsureBuilderAdvObj();
+            if (kind === 'env') {
+              const e = hbEnsureBuilderAdvEnv();
+              delete e[key];
+              hbPruneBuilderAdv();
+            } else if (kind === 'filter') {
+              const f = hbEnsureBuilderAdvFilter();
+              delete f[key];
+              hbPruneBuilderAdv();
+            } else {
+              delete adv[key];
+              hbPruneBuilderAdv();
+            }
+            return;
+          }
+          const num = Number(vStr);
+          if (!Number.isFinite(num)) return;
+          const adv = hbEnsureBuilderAdvObj();
+          if (kind === 'env') {
+            const e = hbEnsureBuilderAdvEnv();
+            e[key] = clamp(isInt ? Math.round(num) : num, minV, maxV);
+            hbPruneBuilderAdv();
+          } else if (kind === 'filter') {
+            const f = hbEnsureBuilderAdvFilter();
+            f[key] = clamp(isInt ? Math.round(num) : num, minV, maxV);
+            hbPruneBuilderAdv();
+          } else {
+            adv[key] = clamp(isInt ? Math.round(num) : num, minV, maxV);
+            hbPruneBuilderAdv();
+          }
+        }
+        inputEl.addEventListener('input', apply);
+        inputEl.addEventListener('change', apply);
+      }
+
+      // Bind ADSR
+      hbBindBuilderAdvNum(hbAdvAInput, 'env', 'a', 0.0001, 1.0, false);
+      hbBindBuilderAdvNum(hbAdvDInput, 'env', 'd', 0.0001, 2.0, false);
+      hbBindBuilderAdvNum(hbAdvSInput, 'env', 's', 0.0, 1.0, false);
+      hbBindBuilderAdvNum(hbAdvRInput, 'env', 'r', 0.0001, 3.0, false);
+
+      // Bind filter params (type handled separately)
+      hbBindBuilderAdvNum(hbAdvFilterCutoffInput, 'filter', 'cutoffHz', 20, 20000, false);
+      hbBindBuilderAdvNum(hbAdvFilterQInput, 'filter', 'Q', 0.1, 20, false);
+
+      hbAdvFilterTypeSel.addEventListener('change', () => {
+        const v = String(hbAdvFilterTypeSel.value || '').trim();
+        const adv = hbEnsureBuilderAdvObj();
+        if (!v) {
+          if (adv.filter && typeof adv.filter === 'object' && !Array.isArray(adv.filter)) {
+            delete adv.filter.type;
+            hbPruneBuilderAdv();
+          }
+        } else {
+          const f = hbEnsureBuilderAdvFilter();
+          f.type = v;
+          hbPruneBuilderAdv();
+        }
+      });
+
+      // Bind misc top-level params
+      hbBindBuilderAdvNum(hbAdvUnisonInput, 'root', 'unison', 1, 4, true);
+      hbBindBuilderAdvNum(hbAdvDetuneInput, 'root', 'detuneCents', 0, 100, false);
+      hbBindBuilderAdvNum(hbAdvVelocityInput, 'root', 'velocity', 0, 2, false);
+
+      // Initial UI values
+      try {
+        const adv = hbEnsureBuilderAdvObj();
+        const env = (adv.env && typeof adv.env === 'object' && !Array.isArray(adv.env)) ? adv.env : {};
+        hbAdvAInput.value = (env.a != null) ? String(env.a) : '';
+        hbAdvDInput.value = (env.d != null) ? String(env.d) : '';
+        hbAdvSInput.value = (env.s != null) ? String(env.s) : '';
+        hbAdvRInput.value = (env.r != null) ? String(env.r) : '';
+        const filter = (adv.filter && typeof adv.filter === 'object' && !Array.isArray(adv.filter)) ? adv.filter : {};
+        const ft = String(filter.type || '');
+        hbAdvFilterTypeSel.value = ft;
+        if (String(hbAdvFilterTypeSel.value || '') !== ft) hbAdvFilterTypeSel.value = '';
+        hbAdvFilterCutoffInput.value = (filter.cutoffHz != null) ? String(filter.cutoffHz) : '';
+        hbAdvFilterQInput.value = (filter.Q != null) ? String(filter.Q) : '';
+        hbAdvUnisonInput.value = (adv.unison != null) ? String(adv.unison) : '';
+        hbAdvDetuneInput.value = (adv.detuneCents != null) ? String(adv.detuneCents) : '';
+        hbAdvVelocityInput.value = (adv.velocity != null) ? String(adv.velocity) : '';
+      } catch (_) {}
+
+      hbWrap.appendChild(hbAdvDetails);
+
+
       const hbNote = document.createElement('div');
       hbNote.className = 'rg-poly-hb-note';
       hbWrap.appendChild(hbNote);
 
-      presetsPanel.appendChild(hbWrap);
+      builderPanel.appendChild(hbWrap);
 
       // Populate synth options (tone presets only)
       try {
@@ -9968,11 +11812,12 @@ function loadPolyrhythmFromLS() {
       function hbUpdateSynthVisibility() {
         const isSynth = (String(hbAddAsSel.value || 'bell') === 'synth');
         setVisible(hbSynthCtl, isSynth);
+        setVisible(hbAdvDetails, isSynth);
       }
 
       function hbRebuildToneSuggestions(keepValue) {
         hbSugById = Object.create(null);
-        const tc = clamp(parseInt(hbToneCountSel.value, 10) || 3, 1, 6);
+        const tc = clamp(parseInt(hbToneCountSel.value, 10) || 3, 1, 12);
         const sug = polyHBGenerateToneSetSuggestions(tc) || [];
 
         hbToneSetSel.innerHTML = '';
@@ -10006,7 +11851,7 @@ function loadPolyrhythmFromLS() {
       hbRebuildToneSuggestions(P.hbToneSetId);
 
       hbToneCountSel.addEventListener('change', () => {
-        const tc = clamp(parseInt(hbToneCountSel.value, 10) || 3, 1, 6);
+        const tc = clamp(parseInt(hbToneCountSel.value, 10) || 3, 1, 12);
         P.hbToneCount = tc;
         hbRebuildToneSuggestions(P.hbToneSetId);
       });
@@ -10050,11 +11895,14 @@ function loadPolyrhythmFromLS() {
             layer.pitchSource = 'bell12';
             layer.synthPreset = String(hbSynthSel.value || P.hbSynthPreset || layer.synthPreset || 'tone_sine');
             layer.volume = 56;
+            // v022_p09_builder_synth_advanced_apply: apply builder advanced synth params
+            try { layer.synthParamsAdvanced = sanitizePolySynthParamsAdvanced(P.builderSynthAdv); } catch (_) {}
           } else {
             layer.sound = 'bell';
             layer.volume = 62;
           }
 
+          polyPushUndoSnapshot();
           state.polyLayers.push(layer);
           savePolyrhythmToLS();
           rebuildPolyrhythmUI();
@@ -10064,6 +11912,8 @@ function loadPolyrhythmFromLS() {
     } catch (_) {}
 
     global.appendChild(presetsDetails);
+
+    global.appendChild(builderDetails);
 
 
     const layersWrap = document.createElement('div');
@@ -10093,7 +11943,7 @@ function loadPolyrhythmFromLS() {
         o.textContent = String(opts[i].label);
         sel.appendChild(o);
       }
-      const wanted = String(keepValue ?? '0');
+      const wanted = normalizePolyLayerOffset(intervalKey, keepValue);
       const has = opts.some(o => String(o.value) === wanted);
       sel.value = has ? wanted : '0';
     }
@@ -10136,6 +11986,7 @@ function loadPolyrhythmFromLS() {
       removeBtn.className = 'pill';
       removeBtn.textContent = 'Remove';
       removeBtn.addEventListener('click', () => {
+        polyPushUndoSnapshot();
         // Cancel only polyrhythm scheduled audio (not base bells)
         try { cancelScheduledPolyAudioNow(); } catch (_) {}
         // v021_p02_poly_bell_spatial_token_custom_drag_fix: drop per-layer poly spatial stages
@@ -10208,6 +12059,7 @@ function loadPolyrhythmFromLS() {
 
       // Offset
       const offsetSel = mkOffsetSelect(layer.interval);
+      offsetSel.value = normalizePolyLayerOffset(layer.interval, layer.offset);
       offsetSel.addEventListener('change', () => {
         layer.offset = offsetSel.value;
         savePolyrhythmToLS();
@@ -11563,6 +13415,11 @@ perBellUi[b] = {
       // v018_p01_poly_synth_core: synth/perc controls
       synthPresetSel.addEventListener('change', () => {
         layer.synthPreset = String(synthPresetSel.value || 'tone_sine');
+        // v022_p15_sound_synth_preset_autofill_and_drone_synth_advanced: preset -> advanced params autofill (best-effort)
+        try {
+          const p = polyGetSynthPreset(layer.synthPreset);
+          layer.synthParamsAdvanced = applyPolySynthPresetAutofillToAdvanced(layer.synthParamsAdvanced, p);
+        } catch (_) {}
         savePolyrhythmToLS();
         polyResyncActiveNow();
         syncPolyrhythmUI();
@@ -11730,9 +13587,8 @@ perBellUi[b] = {
       lu.soundSel.value = layer.sound;
       lu.intervalSel.value = layer.interval;
 
-      // Ensure offset list is compatible with interval
-      const opts = polyOffsetOptionsForInterval(layer.interval);
-      if (!opts.some(o => o.value === layer.offset)) layer.offset = '0';
+      // Ensure offset is compatible with interval (normalize numeric/decimal forms; fail-open)
+      layer.offset = normalizePolyLayerOffset(layer.interval, layer.offset);
       if (lu.offsetSel.value !== layer.offset) lu.offsetSel.value = layer.offset;
 
       lu.volRange.value = String(clamp(Number(layer.volume) || 0, 0, 100));
@@ -11960,6 +13816,7 @@ const hasChord = !!(ent && ent.chords);
         }
       }
     }
+    try { syncSoundPolyrhythmSummaryUI(); } catch (_) {}
   }
 
 
@@ -13009,8 +14866,12 @@ function startDroneLayer(layerIndex, effCfg) {
   }
 
   const soundType = (layer.soundType === 'synth') ? 'synth' : 'drone';
-  const synthAdv = (soundType === 'synth' && layer.synthParamsAdvanced && typeof layer.synthParamsAdvanced === 'object' && !Array.isArray(layer.synthParamsAdvanced)) ? layer.synthParamsAdvanced : {};
+  let synthAdv = {};
+  if (soundType === 'synth' && layer.synthParamsAdvanced && typeof layer.synthParamsAdvanced === 'object' && !Array.isArray(layer.synthParamsAdvanced)) {
+    try { synthAdv = sanitizePolySynthParamsAdvanced(layer.synthParamsAdvanced); } catch (_) { synthAdv = layer.synthParamsAdvanced || {}; }
+  }
   const synthVel = (soundType === 'synth' && Number.isFinite(Number(synthAdv.velocity))) ? clamp(Number(synthAdv.velocity), 0, 2) : 1.0;
+  const synthDet = (soundType === 'synth' && Number.isFinite(Number(synthAdv.detuneCents))) ? clamp(Number(synthAdv.detuneCents), 0, 100) : 0;
   const synthPresetId = (soundType === 'synth') ? String(layer.synthPreset || '') : '';
   const synthPreset = (soundType === 'synth') ? polyGetSynthPreset(synthPresetId) : null;
 
@@ -13022,18 +14883,27 @@ function startDroneLayer(layerIndex, effCfg) {
     const modRatio = clamp(Number(synthPreset && synthPreset.modRatio) || 2, 0.1, 16);
     const modIndexHz = clamp(Number(synthPreset && synthPreset.modIndexHz) || 0, 0, 2000);
 
+    var synthFilterType = null;
+    var synthFilterCutoffHz = null;
+    var synthFilterQ = null;
+
     // Optional filter (preset + advanced overrides)
     const fBase = (synthPreset && synthPreset.filter && typeof synthPreset.filter === 'object') ? synthPreset.filter : null;
     const fAdv = (synthAdv && synthAdv.filter && typeof synthAdv.filter === 'object') ? synthAdv.filter : null;
     const fType = (fAdv && typeof fAdv.type === 'string' && fAdv.type) ? fAdv.type : (fBase && fBase.type);
     const fCut = (fAdv && Number.isFinite(Number(fAdv.cutoffHz))) ? clamp(Number(fAdv.cutoffHz), 20, nyquist) : (fBase && Number.isFinite(Number(fBase.cutoffHz)) ? clamp(Number(fBase.cutoffHz), 20, nyquist) : null);
     const fQ = (fAdv && Number.isFinite(Number(fAdv.Q))) ? clamp(Number(fAdv.Q), 0.1, 30) : (fBase && Number.isFinite(Number(fBase.Q)) ? clamp(Number(fBase.Q), 0.1, 30) : null);
+    synthFilterType = fType || null;
+    synthFilterCutoffHz = (fCut == null) ? null : fCut;
+    synthFilterQ = (fQ == null) ? null : fQ;
+
 
     for (const v of (spec.voices || [])) {
       const osc = audioCtx.createOscillator();
       osc.type = carrierType || 'sine';
       osc.frequency.setValueAtTime(v.f, now);
-      if (Number.isFinite(v.detune)) osc.detune.setValueAtTime(v.detune, now);
+      const baseDet = (Number.isFinite(v.detune) ? v.detune : 0) + synthDet;
+      if (baseDet) osc.detune.setValueAtTime(baseDet, now);
 
       let modOsc = null;
       let modGain = null;
@@ -13041,7 +14911,7 @@ function startDroneLayer(layerIndex, effCfg) {
         modOsc = audioCtx.createOscillator();
         modOsc.type = modType || 'sine';
         modOsc.frequency.setValueAtTime(clamp(v.f * modRatio, 20, nyquist * 0.9), now);
-        if (Number.isFinite(v.detune)) modOsc.detune.setValueAtTime(v.detune, now);
+        if (baseDet && modOsc.detune) modOsc.detune.setValueAtTime(baseDet, now);
 
         modGain = audioCtx.createGain();
         modGain.gain.setValueAtTime(0.0001, now);
@@ -13076,7 +14946,7 @@ function startDroneLayer(layerIndex, effCfg) {
         osc,
         gain: g,
         baseFreq: v.f,
-        baseDetune: Number.isFinite(v.detune) ? v.detune : 0,
+        baseDetune: baseDet,
         drift: 0,
         motion: 0,
         modOsc,
@@ -13163,6 +15033,10 @@ function startDroneLayer(layerIndex, effCfg) {
     soundType,
     synthPreset: (soundType === 'synth') ? String(layer.synthPreset || '') : '',
     synthVel,
+    synthDetuneCents: synthDet,
+    synthFilterType: (soundType === 'synth') ? (synthFilterType || '') : '',
+    synthFilterCutoffHz: (soundType === 'synth') ? synthFilterCutoffHz : null,
+    synthFilterQ: (soundType === 'synth') ? synthFilterQ : null,
     groupGain,
     variantGain,
     layerGain,
@@ -13222,11 +15096,43 @@ function refreshDroneLayer(layerIndex, effCfg) {
 
   const now = audioCtx.currentTime;
   const synthPreset = (soundType === 'synth') ? polyGetSynthPreset(layer.synthPreset) : null;
-  const synthAdv = (soundType === 'synth' && layer.synthParamsAdvanced && typeof layer.synthParamsAdvanced === 'object' && !Array.isArray(layer.synthParamsAdvanced)) ? layer.synthParamsAdvanced : {};
+  let synthAdv = {};
+  if (soundType === 'synth' && layer.synthParamsAdvanced && typeof layer.synthParamsAdvanced === 'object' && !Array.isArray(layer.synthParamsAdvanced)) {
+    try { synthAdv = sanitizePolySynthParamsAdvanced(layer.synthParamsAdvanced); } catch (_) { synthAdv = layer.synthParamsAdvanced || {}; }
+  }
   const synthVel = (soundType === 'synth' && Number.isFinite(Number(synthAdv.velocity))) ? clamp(Number(synthAdv.velocity), 0, 2) : 1.0;
-  if (soundType === 'synth') cur.synthVel = synthVel;
+  const synthDet = (soundType === 'synth' && Number.isFinite(Number(synthAdv.detuneCents))) ? clamp(Number(synthAdv.detuneCents), 0, 100) : 0;
+  if (soundType === 'synth') { cur.synthVel = synthVel; cur.synthDetuneCents = synthDet; }
 
   const nyquist = audioCtx.sampleRate * 0.5;
+
+// v022_p15_sound_synth_preset_autofill_and_drone_synth_advanced: synth filter nodes are created on start; restart if filter config changed.
+if (soundType === 'synth') {
+  const fBase = (synthPreset && synthPreset.filter && typeof synthPreset.filter === 'object') ? synthPreset.filter : null;
+  const fAdv = (synthAdv && synthAdv.filter && typeof synthAdv.filter === 'object') ? synthAdv.filter : null;
+  const fType = (fAdv && typeof fAdv.type === 'string' && fAdv.type) ? fAdv.type : (fBase && fBase.type);
+  const fCut = (fAdv && Number.isFinite(Number(fAdv.cutoffHz)))
+    ? clamp(Number(fAdv.cutoffHz), 20, nyquist)
+    : (fBase && Number.isFinite(Number(fBase.cutoffHz)) ? clamp(Number(fBase.cutoffHz), 20, nyquist) : null);
+  const fQ = (fAdv && Number.isFinite(Number(fAdv.Q)))
+    ? clamp(Number(fAdv.Q), 0.1, 30)
+    : (fBase && Number.isFinite(Number(fBase.Q)) ? clamp(Number(fBase.Q), 0.1, 30) : null);
+
+  const pt = String(cur.synthFilterType || '');
+  const pc = (cur.synthFilterCutoffHz == null) ? null : Number(cur.synthFilterCutoffHz);
+  const pq = (cur.synthFilterQ == null) ? null : Number(cur.synthFilterQ);
+
+  const sameType = String(fType || '') === pt;
+  const sameCut = ((fCut == null && pc == null) || (fCut != null && pc != null && Math.abs(fCut - pc) < 0.0001));
+  const sameQ = ((fQ == null && pq == null) || (fQ != null && pq != null && Math.abs(fQ - pq) < 0.0001));
+  if (!sameType || !sameCut || !sameQ) {
+    startDroneLayer(layerIndex, effCfg);
+    return;
+  }
+  cur.synthFilterType = String(fType || '');
+  cur.synthFilterCutoffHz = (fCut == null) ? null : fCut;
+  cur.synthFilterQ = (fQ == null) ? null : fQ;
+}
   const f = getDroneLayerRootFrequency(layer);
   const effectiveTemperamentKey = getEffectiveTemperamentForDroneLayer(layer);
 
@@ -13298,7 +15204,7 @@ function refreshDroneLayer(layerIndex, effCfg) {
     }
 
     cv.baseFreq = sv.f;
-    cv.baseDetune = Number.isFinite(sv.detune) ? sv.detune : 0;
+    cv.baseDetune = (Number.isFinite(sv.detune) ? sv.detune : 0) + ((soundType === 'synth') ? synthDet : 0);
 
     try {
       cv.osc.frequency.cancelScheduledValues(now);
@@ -13556,6 +15462,7 @@ function syncLayerCardHeaderUI(layerIndex, shell) {
     shell.muteBtn.setAttribute('aria-pressed', 'false');
     shell.muteBtn.textContent = 'Mute';
   }
+  try { syncSoundDroneSummaryUI(); } catch (_) {}
 }
 
 function rebuildDroneLayersUI() {
@@ -13598,6 +15505,95 @@ function rebuildDroneLayersUI() {
     selEl.value = cur;
   };
 
+
+// v022_p15_sound_synth_preset_autofill_and_drone_synth_advanced: per-layer synth advanced params (subset)
+function getDroneLayerByIndex(idx) {
+  ensureDroneLayersState();
+  return (state.droneLayers && state.droneLayers[idx]) ? state.droneLayers[idx] : null;
+}
+function ensureDroneAdvObj(layer) {
+  if (!layer) return {};
+  if (!layer.synthParamsAdvanced || typeof layer.synthParamsAdvanced !== 'object' || Array.isArray(layer.synthParamsAdvanced)) {
+    layer.synthParamsAdvanced = {};
+  }
+  return layer.synthParamsAdvanced;
+}
+function ensureDroneAdvFilter(layer) {
+  const adv = ensureDroneAdvObj(layer);
+  if (!adv.filter || typeof adv.filter !== 'object' || Array.isArray(adv.filter)) adv.filter = {};
+  return adv.filter;
+}
+function pruneDroneAdv(layer) {
+  const adv = ensureDroneAdvObj(layer);
+  if (adv.env && typeof adv.env === 'object' && !Array.isArray(adv.env) && !Object.keys(adv.env).length) delete adv.env;
+  if (adv.filter && typeof adv.filter === 'object' && !Array.isArray(adv.filter) && !Object.keys(adv.filter).length) delete adv.filter;
+}
+function bindDroneAdvNum(inputEl, layerIndex, kind, key, minV, maxV, isInt) {
+  if (!inputEl || inputEl._rgBound) return;
+  inputEl._rgBound = true;
+  function apply() {
+    const layer = getDroneLayerByIndex(layerIndex);
+    if (!layer) return;
+    const vStr = String(inputEl.value || '').trim();
+    if (!vStr) {
+      const adv = ensureDroneAdvObj(layer);
+      if (kind === 'filter') {
+        const f = ensureDroneAdvFilter(layer);
+        delete f[key];
+        pruneDroneAdv(layer);
+      } else {
+        delete adv[key];
+      }
+      return;
+    }
+    const num = Number(vStr);
+    if (!Number.isFinite(num)) return;
+    if (kind === 'filter') {
+      const f = ensureDroneAdvFilter(layer);
+      f[key] = clamp(isInt ? Math.round(num) : num, minV, maxV);
+      pruneDroneAdv(layer);
+    } else {
+      const adv = ensureDroneAdvObj(layer);
+      adv[key] = clamp(isInt ? Math.round(num) : num, minV, maxV);
+    }
+  }
+  inputEl.addEventListener('input', () => {
+    apply();
+    saveDroneLayersToLS();
+  });
+  inputEl.addEventListener('change', () => {
+    apply();
+    saveDroneLayersToLS();
+    if (state.droneOn) refreshAllDroneLayers();
+  });
+}
+function bindDroneAdvFilterType(selEl, layerIndex) {
+  if (!selEl || selEl._rgBound) return;
+  selEl._rgBound = true;
+  function apply() {
+    const layer = getDroneLayerByIndex(layerIndex);
+    if (!layer) return;
+    const v = String(selEl.value || '').trim();
+    if (!v) {
+      const f = ensureDroneAdvFilter(layer);
+      delete f.type;
+      pruneDroneAdv(layer);
+      return;
+    }
+    // whitelist matches sanitizePolySynthParamsAdvanced
+    const ok = (v === 'lowpass' || v === 'highpass' || v === 'bandpass' || v === 'notch'
+      || v === 'allpass' || v === 'lowshelf' || v === 'highshelf' || v === 'peaking');
+    if (!ok) return;
+    const f = ensureDroneAdvFilter(layer);
+    f.type = v;
+    pruneDroneAdv(layer);
+  }
+  selEl.addEventListener('change', () => {
+    apply();
+    saveDroneLayersToLS();
+    if (state.droneOn) refreshAllDroneLayers();
+  });
+}
   // Ensure stack shells match layer count
   const desired = (state.droneLayers || []).length;
   while (uiD.cards.length < desired) {
@@ -13771,6 +15767,11 @@ function rebuildDroneLayersUI() {
       ensureDroneLayersState();
       const l1 = state.droneLayers[0];
       l1.synthPreset = presetSel.value;
+      // v022_p15_sound_synth_preset_autofill_and_drone_synth_advanced: preset -> advanced params autofill (best-effort)
+      try {
+        const p = polyGetSynthPreset(l1.synthPreset);
+        l1.synthParamsAdvanced = applyPolySynthPresetAutofillToAdvanced(l1.synthParamsAdvanced, p);
+      } catch (_) {}
       saveDroneLayersToLS();
       rebuildDroneLayersUI();
       if (state.droneOn) refreshAllDroneLayers();
@@ -13870,6 +15871,166 @@ function rebuildDroneLayersUI() {
       if (soundSel) soundSel.value = st;
       if (presetCtl) presetCtl.classList.toggle('hidden', st !== 'synth');
       if (presetSel) fillPolySynthPresetSelect(presetSel, layer.synthPreset || 'tone_sine');
+
+// v022_p15_sound_synth_preset_autofill_and_drone_synth_advanced: Layer 1 Advanced Synth UI (synth only)
+let advDetails = document.getElementById('droneLayerSynthAdvDetails_L1');
+if (!advDetails) {
+  advDetails = document.createElement('details');
+  advDetails.id = 'droneLayerSynthAdvDetails_L1';
+  advDetails.className = 'rg-poly-adv-details rg-drone-adv-details';
+  const sum = document.createElement('summary');
+  sum.textContent = 'Advanced Synth';
+  advDetails.appendChild(sum);
+
+  const body = document.createElement('div');
+  body.className = 'rg-poly-adv-body';
+
+  // Preset (autofill)
+  const pCtl = document.createElement('div');
+  pCtl.className = 'control';
+  const pLab = document.createElement('label');
+  pLab.textContent = 'Preset (autofill)';
+  const pSel = document.createElement('select');
+  pSel.id = 'droneLayerSynthAdvPreset_L1';
+  pCtl.appendChild(pLab);
+  pCtl.appendChild(pSel);
+  body.appendChild(pCtl);
+
+  // Filter type
+  const ftCtl = document.createElement('div');
+  ftCtl.className = 'control';
+  const ftLab = document.createElement('label');
+  ftLab.textContent = 'Filter type';
+  const ftSel = document.createElement('select');
+  ftSel.id = 'droneLayerSynthAdvFilterType_L1';
+  ftSel.appendChild(new Option('Preset/default', ''));
+  ftSel.appendChild(new Option('Lowpass', 'lowpass'));
+  ftSel.appendChild(new Option('Highpass', 'highpass'));
+  ftSel.appendChild(new Option('Bandpass', 'bandpass'));
+  ftSel.appendChild(new Option('Notch', 'notch'));
+  ftSel.appendChild(new Option('Allpass', 'allpass'));
+  ftSel.appendChild(new Option('Lowshelf', 'lowshelf'));
+  ftSel.appendChild(new Option('Highshelf', 'highshelf'));
+  ftSel.appendChild(new Option('Peaking', 'peaking'));
+  ftCtl.appendChild(ftLab);
+  ftCtl.appendChild(ftSel);
+  body.appendChild(ftCtl);
+
+  // Cutoff/Q
+  const cutCtl = document.createElement('div');
+  cutCtl.className = 'control';
+  const cutLab = document.createElement('label');
+  cutLab.textContent = 'Cutoff (Hz)';
+  const cutIn = document.createElement('input');
+  cutIn.type = 'number';
+  cutIn.min = '20';
+  cutIn.max = '20000';
+  cutIn.step = '1';
+  cutIn.placeholder = '';
+  cutIn.id = 'droneLayerSynthAdvCutoff_L1';
+  cutCtl.appendChild(cutLab);
+  cutCtl.appendChild(cutIn);
+  body.appendChild(cutCtl);
+
+  const qCtl = document.createElement('div');
+  qCtl.className = 'control';
+  const qLab = document.createElement('label');
+  qLab.textContent = 'Q';
+  const qIn = document.createElement('input');
+  qIn.type = 'number';
+  qIn.min = '0.1';
+  qIn.max = '20';
+  qIn.step = '0.1';
+  qIn.placeholder = '';
+  qIn.id = 'droneLayerSynthAdvQ_L1';
+  qCtl.appendChild(qLab);
+  qCtl.appendChild(qIn);
+  body.appendChild(qCtl);
+
+  // Detune / Velocity
+  const detCtl = document.createElement('div');
+  detCtl.className = 'control';
+  const detLab = document.createElement('label');
+  detLab.textContent = 'Detune (cents)';
+  const detIn = document.createElement('input');
+  detIn.type = 'number';
+  detIn.min = '0';
+  detIn.max = '100';
+  detIn.step = '1';
+  detIn.placeholder = '';
+  detIn.id = 'droneLayerSynthAdvDetune_L1';
+  detCtl.appendChild(detLab);
+  detCtl.appendChild(detIn);
+  body.appendChild(detCtl);
+
+  const velCtl = document.createElement('div');
+  velCtl.className = 'control';
+  const velLab = document.createElement('label');
+  velLab.textContent = 'Velocity';
+  const velIn = document.createElement('input');
+  velIn.type = 'number';
+  velIn.min = '0';
+  velIn.max = '2';
+  velIn.step = '0.01';
+  velIn.placeholder = '';
+  velIn.id = 'droneLayerSynthAdvVelocity_L1';
+  velCtl.appendChild(velLab);
+  velCtl.appendChild(velIn);
+  body.appendChild(velCtl);
+
+  advDetails.appendChild(body);
+  try { shell.body.appendChild(advDetails); } catch (_) {}
+}
+
+// Toggle visibility based on sound type.
+advDetails.classList.toggle('hidden', st !== 'synth');
+
+// Sync values + bind events (once).
+try {
+  const l1 = getDroneLayerByIndex(0) || layer;
+  const adv = (l1 && l1.synthParamsAdvanced && typeof l1.synthParamsAdvanced === 'object' && !Array.isArray(l1.synthParamsAdvanced))
+    ? l1.synthParamsAdvanced : {};
+
+  const pSel = document.getElementById('droneLayerSynthAdvPreset_L1');
+  if (pSel) {
+    fillPolySynthPresetSelect(pSel, l1.synthPreset || 'tone_sine');
+    if (!pSel._rgBound) {
+      pSel._rgBound = true;
+      pSel.addEventListener('change', () => {
+        ensureDroneLayersState();
+        const ll = state.droneLayers[0];
+        ll.synthPreset = String(pSel.value || 'tone_sine');
+        try {
+          const p = polyGetSynthPreset(ll.synthPreset);
+          ll.synthParamsAdvanced = applyPolySynthPresetAutofillToAdvanced(ll.synthParamsAdvanced, p);
+        } catch (_) {}
+        saveDroneLayersToLS();
+        rebuildDroneLayersUI();
+        if (state.droneOn) refreshAllDroneLayers();
+      });
+    }
+  }
+
+  const ftSel = document.getElementById('droneLayerSynthAdvFilterType_L1');
+  if (ftSel) ftSel.value = (adv.filter && typeof adv.filter.type === 'string') ? adv.filter.type : '';
+  bindDroneAdvFilterType(ftSel, 0);
+
+  const cutIn = document.getElementById('droneLayerSynthAdvCutoff_L1');
+  if (cutIn) cutIn.value = (adv.filter && Number.isFinite(Number(adv.filter.cutoffHz))) ? String(Math.round(Number(adv.filter.cutoffHz))) : '';
+  bindDroneAdvNum(cutIn, 0, 'filter', 'cutoffHz', 20, 20000, false);
+
+  const qIn = document.getElementById('droneLayerSynthAdvQ_L1');
+  if (qIn) qIn.value = (adv.filter && Number.isFinite(Number(adv.filter.Q))) ? String(Number(adv.filter.Q)) : '';
+  bindDroneAdvNum(qIn, 0, 'filter', 'Q', 0.1, 20, false);
+
+  const detIn = document.getElementById('droneLayerSynthAdvDetune_L1');
+  if (detIn) detIn.value = Number.isFinite(Number(adv.detuneCents)) ? String(Math.round(Number(adv.detuneCents))) : '';
+  bindDroneAdvNum(detIn, 0, 'root', 'detuneCents', 0, 100, true);
+
+  const velIn = document.getElementById('droneLayerSynthAdvVelocity_L1');
+  if (velIn) velIn.value = Number.isFinite(Number(adv.velocity)) ? String(Number(adv.velocity)) : '';
+  bindDroneAdvNum(velIn, 0, 'root', 'velocity', 0, 2, false);
+} catch (_) {}
       if (tempSel) tempSel.value = coerceTemperamentOverrideKey(layer.temperamentOverrideKey);
 
       if (volIn) volIn.value = String(Math.round(clamp(Number(layer.volume) || 0, 0, 1) * 100));
@@ -13967,6 +16128,146 @@ function rebuildDroneLayersUI() {
       shell.body.appendChild(presetCtl);
 
       const st = (layer.soundType === 'synth') ? 'synth' : 'drone';
+
+// v022_p15_sound_synth_preset_autofill_and_drone_synth_advanced: Advanced Synth UI (synth only)
+if (st === 'synth') {
+  const advDetails2 = document.createElement('details');
+  advDetails2.className = 'rg-poly-adv-details rg-drone-adv-details';
+  advDetails2.id = `droneLayerSynthAdvDetails_L${i + 1}`;
+  const sum2 = document.createElement('summary');
+  sum2.textContent = 'Advanced Synth';
+  advDetails2.appendChild(sum2);
+
+  const body2 = document.createElement('div');
+  body2.className = 'rg-poly-adv-body';
+
+  // Preset (autofill)
+  const pCtl2 = document.createElement('div');
+  pCtl2.className = 'control';
+  const pLab2 = document.createElement('label');
+  pLab2.textContent = 'Preset (autofill)';
+  const pSel2 = document.createElement('select');
+  pSel2.id = `droneLayerSynthAdvPreset_L${i + 1}`;
+  pCtl2.appendChild(pLab2);
+  pCtl2.appendChild(pSel2);
+  body2.appendChild(pCtl2);
+
+  // Filter type
+  const ftCtl2 = document.createElement('div');
+  ftCtl2.className = 'control';
+  const ftLab2 = document.createElement('label');
+  ftLab2.textContent = 'Filter type';
+  const ftSel2 = document.createElement('select');
+  ftSel2.id = `droneLayerSynthAdvFilterType_L${i + 1}`;
+  ftSel2.appendChild(new Option('Preset/default', ''));
+  ftSel2.appendChild(new Option('Lowpass', 'lowpass'));
+  ftSel2.appendChild(new Option('Highpass', 'highpass'));
+  ftSel2.appendChild(new Option('Bandpass', 'bandpass'));
+  ftSel2.appendChild(new Option('Notch', 'notch'));
+  ftSel2.appendChild(new Option('Allpass', 'allpass'));
+  ftSel2.appendChild(new Option('Lowshelf', 'lowshelf'));
+  ftSel2.appendChild(new Option('Highshelf', 'highshelf'));
+  ftSel2.appendChild(new Option('Peaking', 'peaking'));
+  ftCtl2.appendChild(ftLab2);
+  ftCtl2.appendChild(ftSel2);
+  body2.appendChild(ftCtl2);
+
+  // Cutoff/Q
+  const cutCtl2 = document.createElement('div');
+  cutCtl2.className = 'control';
+  const cutLab2 = document.createElement('label');
+  cutLab2.textContent = 'Cutoff (Hz)';
+  const cutIn2 = document.createElement('input');
+  cutIn2.type = 'number';
+  cutIn2.min = '20';
+  cutIn2.max = '20000';
+  cutIn2.step = '1';
+  cutIn2.placeholder = '';
+  cutIn2.id = `droneLayerSynthAdvCutoff_L${i + 1}`;
+  cutCtl2.appendChild(cutLab2);
+  cutCtl2.appendChild(cutIn2);
+  body2.appendChild(cutCtl2);
+
+  const qCtl2 = document.createElement('div');
+  qCtl2.className = 'control';
+  const qLab2 = document.createElement('label');
+  qLab2.textContent = 'Q';
+  const qIn2 = document.createElement('input');
+  qIn2.type = 'number';
+  qIn2.min = '0.1';
+  qIn2.max = '20';
+  qIn2.step = '0.1';
+  qIn2.placeholder = '';
+  qIn2.id = `droneLayerSynthAdvQ_L${i + 1}`;
+  qCtl2.appendChild(qLab2);
+  qCtl2.appendChild(qIn2);
+  body2.appendChild(qCtl2);
+
+  // Detune / Velocity
+  const detCtl2 = document.createElement('div');
+  detCtl2.className = 'control';
+  const detLab2 = document.createElement('label');
+  detLab2.textContent = 'Detune (cents)';
+  const detIn2 = document.createElement('input');
+  detIn2.type = 'number';
+  detIn2.min = '0';
+  detIn2.max = '100';
+  detIn2.step = '1';
+  detIn2.placeholder = '';
+  detIn2.id = `droneLayerSynthAdvDetune_L${i + 1}`;
+  detCtl2.appendChild(detLab2);
+  detCtl2.appendChild(detIn2);
+  body2.appendChild(detCtl2);
+
+  const velCtl2 = document.createElement('div');
+  velCtl2.className = 'control';
+  const velLab2 = document.createElement('label');
+  velLab2.textContent = 'Velocity';
+  const velIn2 = document.createElement('input');
+  velIn2.type = 'number';
+  velIn2.min = '0';
+  velIn2.max = '2';
+  velIn2.step = '0.01';
+  velIn2.placeholder = '';
+  velIn2.id = `droneLayerSynthAdvVelocity_L${i + 1}`;
+  velCtl2.appendChild(velLab2);
+  velCtl2.appendChild(velIn2);
+  body2.appendChild(velCtl2);
+
+  advDetails2.appendChild(body2);
+  shell.body.appendChild(advDetails2);
+
+  // Init values + bind
+  fillPolySynthPresetSelect(pSel2, layer.synthPreset || 'tone_sine');
+  pSel2.addEventListener('change', () => {
+    ensureDroneLayersState();
+    layer.synthPreset = String(pSel2.value || 'tone_sine');
+    try {
+      const p = polyGetSynthPreset(layer.synthPreset);
+      layer.synthParamsAdvanced = applyPolySynthPresetAutofillToAdvanced(layer.synthParamsAdvanced, p);
+    } catch (_) {}
+    saveDroneLayersToLS();
+    rebuildDroneLayersUI();
+    if (state.droneOn) refreshAllDroneLayers();
+  });
+
+  const adv2 = (layer.synthParamsAdvanced && typeof layer.synthParamsAdvanced === 'object' && !Array.isArray(layer.synthParamsAdvanced))
+    ? layer.synthParamsAdvanced : {};
+  ftSel2.value = (adv2.filter && typeof adv2.filter.type === 'string') ? adv2.filter.type : '';
+  bindDroneAdvFilterType(ftSel2, i);
+
+  cutIn2.value = (adv2.filter && Number.isFinite(Number(adv2.filter.cutoffHz))) ? String(Math.round(Number(adv2.filter.cutoffHz))) : '';
+  bindDroneAdvNum(cutIn2, i, 'filter', 'cutoffHz', 20, 20000, false);
+
+  qIn2.value = (adv2.filter && Number.isFinite(Number(adv2.filter.Q))) ? String(Number(adv2.filter.Q)) : '';
+  bindDroneAdvNum(qIn2, i, 'filter', 'Q', 0.1, 20, false);
+
+  detIn2.value = Number.isFinite(Number(adv2.detuneCents)) ? String(Math.round(Number(adv2.detuneCents))) : '';
+  bindDroneAdvNum(detIn2, i, 'root', 'detuneCents', 0, 100, true);
+
+  velIn2.value = Number.isFinite(Number(adv2.velocity)) ? String(Number(adv2.velocity)) : '';
+  bindDroneAdvNum(velIn2, i, 'root', 'velocity', 0, 2, false);
+}
       soundSel.value = st;
       fillPolySynthPresetSelect(presetSel, layer.synthPreset || 'tone_sine');
       presetCtl.classList.toggle('hidden', st !== 'synth');
@@ -14129,6 +16430,11 @@ function rebuildDroneLayersUI() {
         presetSel.addEventListener('change', () => {
           ensureDroneLayersState();
           layer.synthPreset = presetSel.value;
+          // v022_p15_sound_synth_preset_autofill_and_drone_synth_advanced: preset -> advanced params autofill (best-effort)
+          try {
+            const p = polyGetSynthPreset(layer.synthPreset);
+            layer.synthParamsAdvanced = applyPolySynthPresetAutofillToAdvanced(layer.synthParamsAdvanced, p);
+          } catch (_) {}
           layerUpdateAndRefresh();
         });
       }
@@ -14333,6 +16639,7 @@ function rebuildDroneLayersUI() {
       }
     }
   }
+  try { syncSoundDroneSummaryUI(); } catch (_) {}
 }
 
 
@@ -14451,6 +16758,7 @@ function droneModTick() {
 
     // Game-screen pause button visibility + label (and safety reset while off).
     syncDronePauseBtnUI();
+    try { syncSoundDroneSummaryUI(); } catch (_) {}
   }
 
   
@@ -14482,19 +16790,24 @@ function setDroneOn(on) {
 
 
   function syncDronePauseBtnUI() {
-    if (!dronePauseBtn) return;
+    if (!dronePauseBtn) {
+      try { syncSoundDroneSummaryUI(); } catch (_) {}
+      return;
+    }
 
     if (!state.droneOn) {
       state.dronePaused = false;
       dronePauseBtn.classList.add('hidden');
       dronePauseBtn.disabled = true;
       dronePauseBtn.textContent = 'Pause Drone';
+      try { syncSoundDroneSummaryUI(); } catch (_) {}
       return;
     }
 
     dronePauseBtn.classList.remove('hidden');
     dronePauseBtn.disabled = false;
     dronePauseBtn.textContent = state.dronePaused ? 'Resume Drone' : 'Pause Drone';
+    try { syncSoundDroneSummaryUI(); } catch (_) {}
   }
 
   
@@ -15286,6 +17599,41 @@ const LEAD_OVERLAY_DEFAULT_PALETTE = [
   '#CC6677', '#882255', '#AA4499', '#0072B2', '#E69F00', '#009E73'
 ];
 
+// v022_p07_view_unicode_glyphs_and_lead_palette_sets: lead overlay palette presets (View)
+const LEAD_OVERLAY_HIGH_CONTRAST_PALETTE = [
+  '#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#FF8000', '#8000FF'
+];
+
+const LEAD_OVERLAY_COLORBLIND_PALETTE = [
+  '#E69F00', '#56B4E9', '#009E73', '#F0E442', '#0072B2', '#D55E00', '#CC79A7', '#999999'
+];
+
+function normalizeLeadOverlayPaletteKey(k) {
+  const s = String(k || '').trim().toLowerCase();
+  if (s === 'highcontrast' || s === 'high_contrast' || s === 'high-contrast') return 'high_contrast';
+  if (s === 'colorblind' || s === 'colorblind_friendly' || s === 'colorblind-friendly') return 'colorblind';
+  if (s === 'custom') return 'custom';
+  return 'default';
+}
+
+function getLeadOverlayPaletteBase(paletteKey) {
+  const k = normalizeLeadOverlayPaletteKey(paletteKey);
+  if (k === 'high_contrast') return LEAD_OVERLAY_HIGH_CONTRAST_PALETTE;
+  if (k === 'colorblind') return LEAD_OVERLAY_COLORBLIND_PALETTE;
+  return LEAD_OVERLAY_DEFAULT_PALETTE;
+}
+
+function getLeadOverlayPaletteColors(leadCount, paletteKey) {
+  let n = Number(leadCount);
+  if (!isFinite(n) || n <= 0) n = 1;
+  n = Math.max(1, Math.floor(n));
+  const k = normalizeLeadOverlayPaletteKey(paletteKey);
+  const base = getLeadOverlayPaletteBase((k === 'custom') ? 'default' : k);
+  const out = [];
+  for (let i = 0; i < n; i++) out.push(base[i % base.length]);
+  return out;
+}
+
 function sanitizeHexColor(v) {
   if (v == null) return null;
   let s = String(v).trim();
@@ -15330,6 +17678,11 @@ function captureCurrentSoundConfigSnapshot() {
     const p = buildSettingsExportPayload({});
     const snd = (p && p.config && isPlainObject(p.config.sound)) ? deepCloneJsonable(p.config.sound) : {};
     try { delete snd.leadProfilesV1; } catch (_) {}
+    // v022_p12_profiles_per_profile_mutes_and_glyphs: per-profile glyph settings
+    try {
+      snd.glyphBindings = (state && state.glyphBindings && typeof state.glyphBindings === 'object') ? deepCloneJsonable(state.glyphBindings) : {};
+      snd.glyphStyle = (state && state.glyphStyle && typeof state.glyphStyle === 'object') ? deepCloneJsonable(state.glyphStyle) : { defaultColor: '', bellColors: {}, colorOnly: {} };
+    } catch (_) {}
     return snd;
   } catch (_) {
     return {};
@@ -15355,6 +17708,40 @@ function ensureSoundProfilesV1Exists() {
   state.soundProfilesV1 = { profiles, selectedProfileIndex: sel, leadAssignments };
 }
 
+
+
+// v022_p12_profiles_per_profile_mutes_and_glyphs: per-profile edits (UI-driven) should update the selected snapshot immediately.
+function getSelectedSoundProfileSnapshotRef() {
+  try { ensureSoundProfilesV1Exists(); } catch (_) {}
+  try {
+    const sp = (state && isPlainObject(state.soundProfilesV1)) ? state.soundProfilesV1 : null;
+    const profiles = (sp && Array.isArray(sp.profiles)) ? sp.profiles : [];
+    if (!profiles || profiles.length < 1) return null;
+    const k = Math.max(1, Math.min(MAX_SAFE_PROFILES, profiles.length || 1));
+    const sel = clampInt(sp ? sp.selectedProfileIndex : 1, 1, k, 1);
+    const p = profiles[sel - 1];
+    if (p && isPlainObject(p)) return p;
+  } catch (_) {}
+  return null;
+}
+
+function commitSelectedSoundProfileMutesFromState() {
+  const p = getSelectedSoundProfileSnapshotRef();
+  if (!p) return;
+  try {
+    p.muteMethodBells = !!state.muteMethodBells;
+    p.muteUserBells = !!state.muteUserBells;
+  } catch (_) {}
+}
+
+function commitSelectedSoundProfileGlyphsFromState() {
+  const p = getSelectedSoundProfileSnapshotRef();
+  if (!p) return;
+  try {
+    p.glyphBindings = (state && state.glyphBindings && typeof state.glyphBindings === 'object') ? deepCloneJsonable(state.glyphBindings) : {};
+    p.glyphStyle = (state && state.glyphStyle && typeof state.glyphStyle === 'object') ? deepCloneJsonable(state.glyphStyle) : { defaultColor: '', bellColors: {}, colorOnly: {} };
+  } catch (_) {}
+}
 
 function syncSoundLeadCountUI() {
   if (!soundLeadCountValue) return;
@@ -15554,6 +17941,7 @@ function syncSoundProfilesUI() {
 
   syncSoundLeadCountUI();
   try { syncSoundLeadAssignmentsUI(); } catch (_) {}
+  try { syncSoundProfilesSummaryUI(); } catch (_) {}
 }
 
 
@@ -15571,7 +17959,20 @@ function applySoundSnapshotForEditing(snapshot) {
     const profs = (sp && Array.isArray(sp.profiles)) ? sp.profiles.map((p) => sanitizeSoundProfileSnapshot(p)).slice(0, MAX_SAFE_PROFILES) : [snap];
     const sel = clampInt(sp ? sp.selectedProfileIndex : 1, 1, profs.length, 1);
 
+    // v022_p12_profiles_per_profile_mutes_and_glyphs: per-profile glyph settings
+    try {
+      if (!cfg.input || typeof cfg.input !== 'object') cfg.input = {};
+      if (Object.prototype.hasOwnProperty.call(snap, 'glyphBindings') && isPlainObject(snap.glyphBindings)) {
+        cfg.input.glyphBindings = deepCloneJsonable(snap.glyphBindings);
+      }
+      if (Object.prototype.hasOwnProperty.call(snap, 'glyphStyle') && isPlainObject(snap.glyphStyle)) {
+        cfg.input.glyphStyle = deepCloneJsonable(snap.glyphStyle);
+      }
+    } catch (_) {}
+
+
     cfg.sound = deepCloneJsonable(snap);
+
 
     // v021_p03_polyrhythm_scope: in Global scope, do NOT apply per-profile polyrhythm
     if (coercePolyScope(state.polyScope) === 'global') {
@@ -15582,6 +17983,8 @@ function applySoundSnapshotForEditing(snapshot) {
     cfg.sound.leadProfilesV1 = { profiles: profs, selectedProfileIndex: sel, leadAssignments };
 
     applyImportedSettingsConfig(cfg, { importedConfig: cfg, dronesHint: 'profiles' });
+    // v022_p12_profiles_per_profile_mutes_and_glyphs: ensure glyph UI reflects the applied snapshot
+    try { rebuildKeybindPanel(); } catch (_) {}
   } catch (_) {}
 
   try { ensureSoundProfilesV1Exists(); } catch (_) {}
@@ -15798,6 +18201,23 @@ function applySoundProfileRuntime(profileIndex) {
 
   if (!snap) return;
 
+  // v022_p12_profiles_per_profile_mutes_and_glyphs: apply per-profile mutes + glyph config (no persistence)
+  try {
+    if (Object.prototype.hasOwnProperty.call(snap, 'muteMethodBells')) state.muteMethodBells = !!snap.muteMethodBells;
+    if (Object.prototype.hasOwnProperty.call(snap, 'muteUserBells')) state.muteUserBells = !!snap.muteUserBells;
+
+    if (Object.prototype.hasOwnProperty.call(snap, 'glyphBindings') && isPlainObject(snap.glyphBindings)) {
+      state.glyphBindings = deepCloneJsonable(snap.glyphBindings);
+      try { ensureGlyphBindings(); } catch (_) {}
+    }
+    if (Object.prototype.hasOwnProperty.call(snap, 'glyphStyle') && isPlainObject(snap.glyphStyle)) {
+      state.glyphStyle = deepCloneJsonable(snap.glyphStyle);
+      try { ensureGlyphStyleState(); } catch (_) {}
+    }
+  } catch (_) {}
+
+
+
   // Snapshot shape matches buildSettingsExportPayload(...).config.sound
   try {
     // === Pitch / scale (bells) ===
@@ -16011,6 +18431,7 @@ function switchSoundProfileTab(nextIndex) {
   const cur = clampInt(sp ? sp.selectedProfileIndex : 1, 1, k, 1);
   const next = clampInt(nextIndex, 1, k, 1);
   if (next === cur) return;
+  polyClearUndoStack();
 
   // Commit current snapshot.
   try {
@@ -16420,7 +18841,7 @@ function getDefaultLeadOverlayColors(leadCount) {
 
 function normalizeLeadOverlayColorsForCurrentLeadCount() {
   const leadCount = getLeadCount();
-  const defaults = getDefaultLeadOverlayColors(leadCount);
+  const defaults = getLeadOverlayPaletteColors(leadCount, state.leadOverlayPaletteKey);
   const src = Array.isArray(state.leadOverlayColors) ? state.leadOverlayColors : [];
   const out = [];
   for (let i = 0; i < leadCount; i++) {
@@ -16436,7 +18857,7 @@ function getLeadOverlayColorForRow(rowIdx) {
   const li = leadIndexForRow(rowIdx);
   const arr = Array.isArray(state.leadOverlayColors) ? state.leadOverlayColors : [];
   const c = arr[clampInt(li - 1, 0, Math.max(0, leadCount - 1), 0)];
-  return sanitizeHexColor(c) || getDefaultLeadOverlayColors(leadCount)[li - 1] || null;
+  return sanitizeHexColor(c) || getLeadOverlayPaletteColors(leadCount, state.leadOverlayPaletteKey)[li - 1] || null;
 }
 
 // v019_p08_lead_range_editor: lead range editor actions (View menu)
@@ -16498,11 +18919,18 @@ function normalizeV19LeadAndProfileStateAfterRows() {
           state.leadOverlayEnabled = !!p.leadOverlay.enabled;
           try { if (leadOverlayToggle) leadOverlayToggle.checked = !!state.leadOverlayEnabled; } catch (_) {}
         }
-        if (Array.isArray(p.leadOverlay.colors)) {
-          // Store raw; normalize below once rows exist.
-          state.leadOverlayColors = p.leadOverlay.colors.slice();
-        }
-      }
+  if (typeof p.leadOverlay.paletteKey !== 'undefined') {
+    state.leadOverlayPaletteKey = normalizeLeadOverlayPaletteKey(p.leadOverlay.paletteKey);
+  }
+  if (Array.isArray(p.leadOverlay.colors)) {
+    // Store raw; normalize below once rows exist.
+    state.leadOverlayColors = p.leadOverlay.colors.slice();
+    // No palette key provided -> treat as Custom (back-compat).
+    if (typeof p.leadOverlay.paletteKey === 'undefined') state.leadOverlayPaletteKey = 'custom';
+  }
+  try { saveLeadOverlayPrefs(); } catch (_) {}
+}
+
 
       // sound profiles + per-lead assignments
       if (p.soundProfilesV1 && isPlainObject(p.soundProfilesV1)) {
@@ -16558,9 +18986,10 @@ function normalizeV19LeadAndProfileStateAfterRows() {
 function insertLeadOverlayColorAt(index0, color) {
   const arr = Array.isArray(state.leadOverlayColors) ? state.leadOverlayColors.slice() : [];
   const i = clampInt(Number(index0) || 0, 0, Math.max(0, arr.length), arr.length);
-  const v = sanitizeHexColor(color) || LEAD_OVERLAY_DEFAULT_PALETTE[i % LEAD_OVERLAY_DEFAULT_PALETTE.length];
+  const v = sanitizeHexColor(color) || getLeadOverlayPaletteBase(state.leadOverlayPaletteKey)[i % getLeadOverlayPaletteBase(state.leadOverlayPaletteKey).length];
   arr.splice(i, 0, v);
   state.leadOverlayColors = arr;
+  try { saveLeadOverlayPrefs(); } catch (_) {}
 }
 
 function removeLeadOverlayColorAt(index0) {
@@ -16568,6 +18997,7 @@ function removeLeadOverlayColorAt(index0) {
   const i = clampInt(Number(index0) || 0, 0, Math.max(0, arr.length - 1), 0);
   if (arr.length && i >= 0 && i < arr.length) arr.splice(i, 1);
   state.leadOverlayColors = arr;
+  try { saveLeadOverlayPrefs(); } catch (_) {}
 }
 
 function insertSoundLeadAssignmentAt(index0, value) {
@@ -16637,7 +19067,7 @@ function tryAddLeadAfter(index0) {
     ranges.splice(i + 1, 0, newRange);
 
     // Default color: next palette entry.
-    insertLeadOverlayColorAt(i + 1, LEAD_OVERLAY_DEFAULT_PALETTE[(i + 1) % LEAD_OVERLAY_DEFAULT_PALETTE.length]);
+    insertLeadOverlayColorAt(i + 1, null);
 
     // Sound lead assignment: copy from the split lead (more user-friendly than resetting to 1).
     const sp = (state && isPlainObject(state.soundProfilesV1)) ? state.soundProfilesV1 : null;
@@ -16660,7 +19090,7 @@ function tryAddLeadAfter(index0) {
       ranges.splice(i + 1, 0, { a: take, b: take });
       ranges[i + 2] = { a: take + 1, b: nxt.b };
 
-      insertLeadOverlayColorAt(i + 1, LEAD_OVERLAY_DEFAULT_PALETTE[(i + 1) % LEAD_OVERLAY_DEFAULT_PALETTE.length]);
+      insertLeadOverlayColorAt(i + 1, null);
 
       const sp = (state && isPlainObject(state.soundProfilesV1)) ? state.soundProfilesV1 : null;
       const assigns = (sp && Array.isArray(sp.leadAssignments)) ? sp.leadAssignments : [];
@@ -16681,7 +19111,7 @@ function tryAddLeadAfter(index0) {
       ranges[i - 1] = { a: prv.a, b: take - 1 };
       ranges.splice(i, 0, { a: take, b: take });
 
-      insertLeadOverlayColorAt(i, LEAD_OVERLAY_DEFAULT_PALETTE[(i) % LEAD_OVERLAY_DEFAULT_PALETTE.length]);
+      insertLeadOverlayColorAt(i, null);
 
       const sp = (state && isPlainObject(state.soundProfilesV1)) ? state.soundProfilesV1 : null;
       const assigns = (sp && Array.isArray(sp.leadAssignments)) ? sp.leadAssignments : [];
@@ -16802,11 +19232,70 @@ function rebuildLeadOverlayEditorUI() {
     leadOverlayColors.appendChild(note2);
   }
 
+// v022_p07_view_unicode_glyphs_and_lead_palette_sets: lead overlay palette presets (UI)
+const paletteRow = document.createElement('div');
+paletteRow.className = 'lead-overlay-palette-row';
+
+const paletteLbl = document.createElement('div');
+paletteLbl.className = 'lead-overlay-palette-label';
+paletteLbl.textContent = 'Lead colors:';
+
+const paletteSel = document.createElement('select');
+paletteSel.className = 'lead-overlay-palette-select';
+paletteSel.setAttribute('aria-label', 'Lead colors palette');
+
+const optDefault = document.createElement('option');
+optDefault.value = 'default';
+optDefault.textContent = 'Default';
+
+const optHC = document.createElement('option');
+optHC.value = 'high_contrast';
+optHC.textContent = 'High contrast';
+
+const optCB = document.createElement('option');
+optCB.value = 'colorblind';
+optCB.textContent = 'Colorblind-friendly';
+
+const optCustom = document.createElement('option');
+optCustom.value = 'custom';
+optCustom.textContent = 'Custom';
+
+paletteSel.appendChild(optDefault);
+paletteSel.appendChild(optHC);
+paletteSel.appendChild(optCB);
+paletteSel.appendChild(optCustom);
+
+try { paletteSel.value = normalizeLeadOverlayPaletteKey(state.leadOverlayPaletteKey); } catch (_) {}
+
+const paletteBtn = document.createElement('button');
+paletteBtn.type = 'button';
+paletteBtn.className = 'lead-overlay-palette-apply rg-btn';
+paletteBtn.textContent = 'Apply palette';
+
+paletteBtn.addEventListener('click', () => {
+  markUserTouchedConfig();
+  clearLeadOverlayEditorNote();
+  const key = normalizeLeadOverlayPaletteKey(paletteSel.value);
+  if (key && key !== 'custom') {
+    state.leadOverlayPaletteKey = key;
+    state.leadOverlayColors = getLeadOverlayPaletteColors(getLeadCount(), key);
+    try { saveLeadOverlayPrefs(); } catch (_) {}
+    syncLeadOverlayControlsUI();
+    markDirty();
+    kickLoop();
+  }
+});
+
+paletteRow.appendChild(paletteLbl);
+paletteRow.appendChild(paletteSel);
+paletteRow.appendChild(paletteBtn);
+leadOverlayColors.appendChild(paletteRow);
+
   const ranges = (mode === 'manual') ? activeRanges : autoRanges;
 
   // Ensure colors array is present for active lead count.
   const colors = Array.isArray(state.leadOverlayColors) ? state.leadOverlayColors : [];
-  const defaults = getDefaultLeadOverlayColors(leadCount);
+  const defaults = getLeadOverlayPaletteColors(leadCount, state.leadOverlayPaletteKey);
 
   for (let i = 0; i < ranges.length; i++) {
     const rr = ranges[i] || { a: 1, b: rc };
@@ -16832,6 +19321,11 @@ function rebuildLeadOverlayEditorUI() {
       clearLeadOverlayEditorNote();
       const v = sanitizeHexColor(colorInp.value) || defaults[i];
       state.leadOverlayColors[i] = v;
+    if (state.leadOverlayPaletteKey !== 'custom') {
+      state.leadOverlayPaletteKey = 'custom';
+      try { paletteSel.value = 'custom'; } catch (_) {}
+    }
+    try { saveLeadOverlayPrefs(); } catch (_) {}
       hex.textContent = v;
       markDirty();
       kickLoop();
@@ -17145,6 +19639,19 @@ function computeRows() {
       return 0;
     }
 
+    // Collection-level metadata (optional)
+    let collectionDate = '';
+    let collectionUuid = '';
+    let collectionDecisionsYear = '';
+    try {
+      const root = doc.documentElement;
+      if (root && root.nodeType === 1) {
+        collectionDate = (root.getAttribute('date') || '').trim();
+        collectionUuid = (root.getAttribute('uuid') || root.getAttribute('id') || '').trim();
+        collectionDecisionsYear = (root.getAttribute('mx:decisionsYear') || root.getAttribute('decisionsYear') || '').trim();
+      }
+    } catch (_) {}
+
     let added = 0;
 
     for (let i = 0; i < methodEls.length; i++) {
@@ -17196,6 +19703,131 @@ function computeRows() {
       pnNorm = pnNorm.replace(/;/g, ' ').replace(/\s+/g, ' ').trim();
       pnNorm = pnNorm.replace(/\s*,\s*/g, ',');
 
+      // Extra attribution metadata (fail-open)
+      let attributionCCCBRId = '';
+      let attributionCCCBRUrl = '';
+      let attributionComposer = '';
+      let attributionAuthor = '';
+      let attributionArranger = '';
+      let attributionProvenance = '';
+      let attributionSource = '';
+      let attributionYear = '';
+      let attributionDate = '';
+      let attributionPlace = '';
+      let attributionCountry = '';
+      let attributionRegion = '';
+      let attributionSociety = '';
+      let attributionPerformanceType = '';
+      let attributionRWRef = '';
+      let attributionBNRef = '';
+      let attributionCBRef = '';
+      try {
+        if (mEl && typeof mEl.getAttribute === 'function') {
+          const mid = mEl.getAttribute('id');
+          if (mid) attributionCCCBRId = String(mid).trim();
+          const murl = mEl.getAttribute('url') || mEl.getAttribute('href');
+          if (murl) attributionCCCBRUrl = String(murl).trim();
+        }
+
+        // Optional common attribution tags (not always present in CCCBR)
+        attributionComposer = cccbFirstText(mEl, ['composer', 'composedBy', 'composerName']);
+        attributionAuthor = cccbFirstText(mEl, ['author', 'authoredBy', 'authorName']);
+        attributionArranger = cccbFirstText(mEl, ['arranger', 'arrangedBy', 'arrangerName']);
+        attributionProvenance = cccbFirstText(mEl, ['provenance', 'origin', 'history']);
+        attributionSource = cccbFirstText(mEl, ['source', 'publication', 'collection']);
+
+        // References (very common)
+        attributionRWRef = cccbFirstText(mEl, ['rwRef', 'rwref', 'ringingWorldRef', 'ringingworldRef']);
+        attributionBNRef = cccbFirstText(mEl, ['bnRef', 'bnref', 'bellNewsRef', 'bellnewsRef']);
+        attributionCBRef = cccbFirstText(mEl, ['cbRef', 'cbref', 'churchBellRef', 'churchbellsRef', 'churchBellJournalRef']);
+
+        // Performances (often present): choose a "best" performance for date/place
+        const perfs = cccbGetElements(mEl, 'performances');
+        const perRoot = (perfs && perfs[0]) ? perfs[0] : null;
+        if (perRoot) {
+          const pref = [
+            'firstTowerbellPeal',
+            'firstHandbellPeal',
+            'firstInclusionInTowerbellPeal',
+            'firstInclusionInHandbellPeal',
+            'firstTowerbellQuarterPeal',
+            'firstHandbellQuarterPeal',
+            'firstInclusionInTowerbellQuarterPeal',
+            'firstInclusionInHandbellQuarterPeal'
+          ];
+
+          let perfEl = null;
+          let perfName = '';
+
+          for (let p = 0; p < pref.length && !perfEl; p++) {
+            const nm = pref[p];
+            const els = cccbGetElements(perRoot, nm);
+            if (els && els.length) {
+              // Prefer direct child if possible
+              let found = null;
+              for (let k = 0; k < els.length; k++) {
+                if (els[k] && els[k].parentNode === perRoot) { found = els[k]; break; }
+              }
+              perfEl = found || els[0];
+              perfName = nm;
+            }
+          }
+
+          if (!perfEl && perRoot.children && perRoot.children.length) {
+            for (let k = 0; k < perRoot.children.length; k++) {
+              const child = perRoot.children[k];
+              if (!child) continue;
+              const dt = cccbFirstText(child, ['date', 'year']);
+              if (dt) { perfEl = child; perfName = child.localName || child.nodeName || ''; break; }
+            }
+          }
+
+          if (perfEl) {
+            attributionPerformanceType = perfName;
+            attributionDate = cccbFirstText(perfEl, ['date', 'year']);
+
+            // Location
+            const locEls = cccbGetElements(perfEl, 'location');
+            const loc = (locEls && locEls[0]) ? locEls[0] : null;
+            if (loc) {
+              const building = cccbFirstText(loc, ['building', 'venue', 'church']);
+              const room = cccbFirstText(loc, ['room']);
+              const town = cccbFirstText(loc, ['town', 'city', 'village', 'locality']);
+              const county = cccbFirstText(loc, ['county', 'district', 'state', 'province']);
+              const region = cccbFirstText(loc, ['region']);
+              const country = cccbFirstText(loc, ['country']);
+
+              if (region) attributionRegion = region;
+              if (country) attributionCountry = country;
+
+              const pp = [];
+              if (building) pp.push(building);
+              if (room) pp.push(room);
+              if (town) pp.push(town);
+              if (county) pp.push(county);
+              if (region && pp.indexOf(region) === -1) pp.push(region);
+              if (country && pp.indexOf(country) === -1) pp.push(country);
+              const pl = pp.join(', ').trim();
+              if (pl) attributionPlace = pl;
+            }
+
+            const soc = cccbFirstText(perfEl, ['society', 'association']);
+            if (soc) attributionSociety = soc;
+          }
+        }
+
+        // Year fallback from date or refs
+        const yearSrc = (attributionYear || attributionDate || '') + ' ' + (attributionRWRef || '') + ' ' + (attributionBNRef || '') + ' ' + (attributionCBRef || '');
+        const ym = String(yearSrc).match(/\b(1[0-9]{3}|20[0-9]{2})\b/);
+        if (ym) attributionYear = ym[1];
+
+        // CCCBR URL fallback from common elements
+        if (!attributionCCCBRUrl) {
+          const u = cccbFirstText(mEl, ['url', 'URI', 'uri', 'href', 'link']);
+          if (u) attributionCCCBRUrl = u;
+        }
+      } catch (_) {}
+
       const methodObj = {
         title: title,
         class: classText || '',
@@ -17205,6 +19837,27 @@ function computeRows() {
         lh: lh || '',
         family: family
       };
+
+      if (attributionCCCBRId) methodObj.attributionCCCBRId = attributionCCCBRId;
+      if (attributionCCCBRUrl) methodObj.attributionCCCBRUrl = attributionCCCBRUrl;
+      if (attributionComposer) methodObj.attributionComposer = attributionComposer;
+      if (attributionAuthor) methodObj.attributionAuthor = attributionAuthor;
+      if (attributionArranger) methodObj.attributionArranger = attributionArranger;
+      if (attributionProvenance) methodObj.attributionProvenance = attributionProvenance;
+      if (attributionSource) methodObj.attributionSource = attributionSource;
+      if (attributionRWRef) methodObj.attributionRWRef = attributionRWRef;
+      if (attributionBNRef) methodObj.attributionBNRef = attributionBNRef;
+      if (attributionCBRef) methodObj.attributionCBRef = attributionCBRef;
+      if (attributionPerformanceType) methodObj.attributionPerformanceType = attributionPerformanceType;
+      if (attributionDate) methodObj.attributionDate = attributionDate;
+      if (attributionYear) methodObj.attributionYear = attributionYear;
+      if (attributionPlace) methodObj.attributionPlace = attributionPlace;
+      if (attributionRegion) methodObj.attributionRegion = attributionRegion;
+      if (attributionCountry) methodObj.attributionCountry = attributionCountry;
+      if (attributionSociety) methodObj.attributionSociety = attributionSociety;
+      if (collectionDate) methodObj.attributionCollectionDate = collectionDate;
+      if (collectionUuid) methodObj.attributionCollectionUuid = collectionUuid;
+      if (collectionDecisionsYear) methodObj.attributionDecisionsYear = collectionDecisionsYear;
 
       RG.methods.push(methodObj);
       added += 1;
@@ -17354,6 +20007,27 @@ function computeRows() {
       if (places.indexOf(place) === -1) places.push(place);
     }
     places.sort(function(a, b) { return a - b; });
+
+    // CCCBR/ringing.org shorthand: infer external places (1 and/or stage) by parity rule.
+    // Applies only to non-cross tokens with at least one explicit place.
+    if (places.length) {
+      const stageN = (stage == null) ? 0 : parseInt(stage, 10);
+      const first = places[0];
+      const last = places[places.length - 1];
+
+      // A) If the FIRST place is EVEN, then place 1 is implied.
+      if (first % 2 === 0 && places.indexOf(1) === -1) {
+        places.push(1);
+      }
+
+      // B) If the LAST place parity differs from the stage parity, then the last place (stage) is implied.
+      if (stageN && (last % 2 !== stageN % 2) && places.indexOf(stageN) === -1) {
+        places.push(stageN);
+      }
+
+      if (places.length > 1) places.sort(function(a, b) { return a - b; });
+    }
+
     return places;
   }
 
@@ -17421,6 +20095,71 @@ function computeRows() {
   // v016_p02_library_play_full_cycle_sync: guardrails for CCCBR Library→Play/Demo generation (synchronous)
   const CCCBR_PLAY_MAX_ROWS = 20000;
   const CCCBR_PLAY_MAX_LEADS = 2000;
+
+// v022_p10_method_rows_full_cycle_generation_cccbr_and_manual_pn:
+// Hard cap for full-cycle row generation from place notation (CCCBR + future manual PN).
+// NOTE: capped generation is fail-open (returns rows so far, or falls back to a small slice).
+const MAX_METHOD_ROWS_FULLCYCLE = 50000;
+const MAX_METHOD_LEADS_FULLCYCLE = 50000;
+
+// v022_p10_method_rows_full_cycle_generation_cccbr_and_manual_pn:
+// Shared helper for full-cycle PN → rows with cap + fail-open behavior.
+// Returns: { rows, done, rowsCapped, rowsCap, rowsGenerated, leadsDone, capReason, error }.
+async function cccbGenerateMethodRowsFromPnFullCycleCapped(stage, pn, opts) {
+  const s0 = parseInt(stage, 10);
+  const s = isFinite(s0) ? s0 : 0;
+  const pnStr = (pn == null) ? '' : String(pn);
+
+  // Prefer async full-cycle generation to avoid UI freezes on large cycles.
+  try {
+    const gen = await cccbRowsFromPnFullCycleAsync(s, pnStr, MAX_METHOD_ROWS_FULLCYCLE, MAX_METHOD_LEADS_FULLCYCLE, opts);
+
+    let rows = (gen && Array.isArray(gen.rows)) ? gen.rows : [];
+    if (!rows || !rows.length) {
+      // Fail-open fallback: previous small-lead behavior.
+      try {
+        const fb = cccbRowsFromPn(s, pnStr, 5);
+        if (fb && fb.length) rows = fb;
+      } catch (_) {}
+    }
+
+    const done = !!(gen && gen.done);
+    const capped = !!(gen && gen.capped && !done);
+    const capReason = (gen && gen.capReason) ? String(gen.capReason) : '';
+    const leadsDoneRaw = (gen && isFinite(gen.leadsDone)) ? Math.floor(gen.leadsDone) : 0;
+
+    return {
+      rows: rows,
+      done: done,
+      rowsCapped: capped,
+      rowsCap: MAX_METHOD_ROWS_FULLCYCLE,
+      rowsGenerated: rows ? rows.length : 0,
+      leadsDone: leadsDoneRaw,
+      capReason: capReason,
+      error: ''
+    };
+  } catch (err) {
+    const msg = (err && err.message) ? String(err.message) : String(err);
+
+    // Fail-open fallback: previous small-lead behavior.
+    let rows = [];
+    try {
+      const fb = cccbRowsFromPn(s, pnStr, 5);
+      if (fb && fb.length) rows = fb;
+    } catch (_) {}
+
+    return {
+      rows: rows,
+      done: false,
+      rowsCapped: false,
+      rowsCap: MAX_METHOD_ROWS_FULLCYCLE,
+      rowsGenerated: rows ? rows.length : 0,
+      leadsDone: 0,
+      capReason: '',
+      error: msg
+    };
+  }
+}
 
   // v016_p02_library_play_full_cycle_sync:
   // Full CCCBR "method" definition for Library Play/Demo:
@@ -17876,7 +20615,18 @@ function computeRows() {
       class: m.class || '',
       stage: stage,
       pnPresent: !!(m.pn && String(m.pn).trim()),
-      cycleWarning: ''
+      cycleWarning: '',
+
+      attributionComposer: m.attributionComposer || '',
+      attributionAuthor: m.attributionAuthor || '',
+      attributionArranger: m.attributionArranger || '',
+      attributionProvenance: m.attributionProvenance || '',
+      attributionSource: m.attributionSource || '',
+      attributionYear: m.attributionYear || '',
+      attributionDate: m.attributionDate || '',
+      attributionRWRef: m.attributionRWRef || '',
+      attributionBNRef: m.attributionBNRef || '',
+      attributionCBRef: m.attributionCBRef || ''
     };
 
     state.stage = stage;
@@ -17885,20 +20635,40 @@ function computeRows() {
     let rows = null;
     if (m.pn && String(m.pn).trim()) {
       try {
-        const gen = await cccbRowsFromPnFullCycleAsync(stage, m.pn, CCCBR_PLAY_MAX_ROWS, CCCBR_PLAY_MAX_LEADS, opts);
+        const gen = await cccbGenerateMethodRowsFromPnFullCycleCapped(stage, m.pn, opts);
         rows = (gen && gen.rows) ? gen.rows : null;
         try {
           const lc = (gen && isFinite(gen.leadsDone) && gen.leadsDone > 0) ? Math.floor(gen.leadsDone) : 1;
           if (state.methodMeta) state.methodMeta.leadCount = Math.max(1, lc);
         } catch (_) {}
 
-        if (gen && gen.capped && !gen.done) {
-          const warn = '⚠ Method truncated (limit reached); may not be a complete cycle.';
-          try { if (state.methodMeta) state.methodMeta.cycleWarning = warn; } catch (_) {}
-          alert('Warning: This library method hit the safety limit while generating and was truncated.\n\nIt may NOT be a complete cycle.');
-        } else {
-          try { if (state.methodMeta) state.methodMeta.cycleWarning = ''; } catch (_) {}
-        }
+        if (gen && gen.rowsCapped) {
+  const warn = '⚠ Rows capped at ' + gen.rowsCap + ' (generated ' + gen.rowsGenerated + '); method may be incomplete.';
+  try { if (state.methodMeta) state.methodMeta.cycleWarning = warn; } catch (_) {}
+
+  // Additive per-method metadata for Library details + debugging (fail-open)
+  try {
+    m.rowsCapped = true;
+    m.rowsCap = gen.rowsCap;
+    m.rowsGenerated = gen.rowsGenerated;
+    if (gen.capReason) m.rowsCapReason = gen.capReason;
+  } catch (_) {}
+} else {
+  try { if (state.methodMeta) state.methodMeta.cycleWarning = ''; } catch (_) {}
+  try { m.rowsCapped = false; } catch (_) {}
+}
+
+// Fail-open: if PN generation errored (or fell back), surface a non-blocking warning.
+if (gen && gen.error) {
+  try { m.rowsError = String(gen.error); } catch (_) {}
+  if (!(gen && gen.rowsCapped)) {
+    const warn2 = '⚠ Place notation could not generate a full cycle; using fallback rows.';
+    try { if (state.methodMeta) state.methodMeta.cycleWarning = warn2; } catch (_) {}
+  }
+} else {
+  try { if (m && m.rowsError) m.rowsError = ''; } catch (_) {}
+}
+
       } catch (err) {
         console.error('cccbRowsFromPn failed', m, err);
       }
@@ -17909,6 +20679,9 @@ function computeRows() {
 
     state.customRows = rows.slice();
     computeRows();
+
+// If this method is currently selected in the Library pane, refresh details so cap warnings show immediately.
+try { if (ui && ui.librarySelectedIdx === i) selectLibraryMethod(i); } catch (_) {}
 
     rebuildLiveCountOptions();
     ensureLiveBells();
@@ -17936,7 +20709,86 @@ function computeRows() {
   }
 
   // v012_p03_setup_method_block_sources_dropdown: keep Method dropdown reflecting source (built-in / library / file).
-  function syncMethodSelectSourceDropdown() {
+  
+// v022_p14_setup_method_input_pn_lh_and_default_live_bells_2: keep manual PN/LH inputs in sync (best-effort).
+
+// v022_p18_stage_dropdown_in_method_pane: PN guidance tip (manual PN input only).
+let manualPnStageTipEl = null;
+function ensureManualPnStageTipEl() {
+  try {
+    if (manualPnStageTipEl && manualPnStageTipEl.isConnected) return manualPnStageTipEl;
+    const pnEl = methodPnInput;
+    if (!pnEl || !pnEl.closest) return null;
+    const ctl = pnEl.closest('.control');
+    if (!ctl) return null;
+
+    let tip = document.getElementById('manualPnStageTip');
+    if (!tip) {
+      tip = document.createElement('div');
+      tip.id = 'manualPnStageTip';
+      tip.className = 'control-note rg-muted hidden';
+      tip.textContent = 'Tip: Place notation depends on the Stage (number of bells). Make sure Stage matches the method (e.g., Major = 8) before generating rows.';
+    } else {
+      try {
+        if (!tip.classList.contains('control-note')) tip.classList.add('control-note');
+        if (!tip.classList.contains('rg-muted')) tip.classList.add('rg-muted');
+      } catch (_) {}
+    }
+
+    // Place immediately after the PN textarea within its control.
+    try {
+      if (tip.parentElement !== ctl) ctl.appendChild(tip);
+      const after = pnEl.nextSibling;
+      if (after !== tip) ctl.insertBefore(tip, after);
+    } catch (_) {}
+
+    manualPnStageTipEl = tip;
+    return tip;
+  } catch (_) { return null; }
+}
+
+function syncManualPnStageTip() {
+  try {
+    const tip = ensureManualPnStageTipEl();
+    if (!tip) return;
+
+    const isCustom = (state && state.method === 'custom');
+    const src = state ? state.methodSource : '';
+    const mm = (isCustom && state && state.methodMeta) ? state.methodMeta : null;
+
+    // Show only for manual PN workflow: custom + custom_rows, but not file-loaded TXT/XML/library.
+    const manualPn = (!mm) || (mm && mm.inputType === 'manual_pn_lh');
+    const show = isCustom && (src === 'custom_rows') && manualPn;
+
+    if (show) tip.classList.remove('hidden');
+    else tip.classList.add('hidden');
+  } catch (_) {}
+}
+
+
+function syncManualMethodInputsFromState() {
+  try {
+    const isCustom = (state.method === 'custom');
+    const mm = (isCustom && state.methodMeta) ? state.methodMeta : null;
+
+    const pn = (mm && typeof mm.pn !== 'undefined') ? String(mm.pn || '') : '';
+    const lh = (mm && (typeof mm.lh !== 'undefined' || typeof mm.leadHead !== 'undefined')) ? String((mm.lh || mm.leadHead) || '') : '';
+
+    if (!isCustom) {
+      try { if (methodPnInput) methodPnInput.value = ''; } catch (_) {}
+      try { if (methodLhInput) methodLhInput.value = ''; } catch (_) {}
+      try { syncManualPnStageTip(); } catch (_) {}
+      return;
+    }
+
+    // Only overwrite the UI when we actually have stored PN/LH (avoid clobbering user scratch input).
+    if (pn) { try { if (methodPnInput) methodPnInput.value = pn; } catch (_) {} }
+    if (lh) { try { if (methodLhInput) methodLhInput.value = lh; } catch (_) {} }
+    try { syncManualPnStageTip(); } catch (_) {}
+  } catch (_) {}
+}
+
+function syncMethodSelectSourceDropdown() {
     try {
       if (!methodSelect) return;
 
@@ -17968,8 +20820,12 @@ function computeRows() {
         label = '[method from library] ' + (title ? shortenForUi(title, 46) : 'Custom');
       } else if (state.methodSource === 'custom_rows') {
         wantedVal = '__from_file';
-        const fn = (state.methodMeta && state.methodMeta.fileName) ? String(state.methodMeta.fileName) : '';
-        label = '[method from file] ' + (fn ? shortenForUi(fn, 46) : 'Custom');
+        const mm = state.methodMeta || {};
+        const isManual = !!(mm && mm.inputType === 'manual_pn_lh');
+        const fn = (mm && mm.fileName) ? String(mm.fileName) : '';
+        const tt = (mm && mm.title) ? String(mm.title) : '';
+        const best = fn || tt;
+        label = (isManual ? '[method input] ' : '[method from file] ') + (best ? shortenForUi(best, 46) : 'Custom');
       }
 
       if (!wantedVal) {
@@ -18035,6 +20891,44 @@ function computeRows() {
         if (state.methodMeta && state.methodMeta.class) parts.push(String(state.methodMeta.class));
         if (state.methodMeta && state.methodMeta.cycleWarning) parts.push(String(state.methodMeta.cycleWarning));
         attr = parts.filter(Boolean).join(' • ');
+
+        // Append a short attribution suffix when available (composer/author/source/year)
+        try {
+          const mm = state.methodMeta || {};
+          let who = '';
+          if (mm.attributionComposer) who = String(mm.attributionComposer);
+          else if (mm.attributionAuthor) who = String(mm.attributionAuthor);
+          else if (mm.attributionArranger) who = String(mm.attributionArranger);
+          else if (mm.attributionProvenance) who = String(mm.attributionProvenance);
+
+          let year = mm.attributionYear ? String(mm.attributionYear) : '';
+          if (!year && mm.attributionDate) {
+            const m2 = String(mm.attributionDate).match(/\b(1[0-9]{3}|20[0-9]{2})\b/);
+            if (m2) year = m2[1];
+          }
+
+          let srcShort = '';
+          if (mm.attributionSource) srcShort = String(mm.attributionSource);
+          else if (mm.attributionRWRef) srcShort = 'RW';
+          else if (mm.attributionBNRef) srcShort = 'BN';
+          else if (mm.attributionCBRef) srcShort = 'CB';
+
+          who = (who || '').trim();
+          year = (year || '').trim();
+          srcShort = (srcShort || '').trim();
+
+          let sfx = '';
+          if (who) {
+            const whoShort = shortenForUi(who, 24);
+            if (year && whoShort.indexOf(year) === -1) sfx = whoShort + ' ' + year;
+            else sfx = whoShort;
+          } else if (srcShort || year) {
+            if (srcShort && year) sfx = shortenForUi(srcShort, 16) + ' ' + year;
+            else sfx = shortenForUi(srcShort || year, 18);
+          }
+
+          if (sfx) attr = attr ? (attr + ' • ' + sfx) : sfx;
+        } catch (_) {}
       } else if (state.methodSource === 'custom_rows') {
         const fn = state.methodMeta && state.methodMeta.fileName ? String(state.methodMeta.fileName) : '';
         if (fn) attr = shortenForUi(fn, 52);
@@ -19136,6 +22030,7 @@ function pianoNoteFromScaleKey(key) {
 
     // Keep per-bell effective labels in sync when global chord changes.
     try { syncBellOverridesEffectiveUI(); } catch (_) {}
+    try { syncSoundBellSoundSummaryUI(); } catch (_) {}
   }
 
   // v011_p02_sound_test_instrument_row: stage-sized bell test instrument row (Sound menu)
@@ -19658,6 +22553,43 @@ function pianoNoteFromScaleKey(key) {
   const LS_GLYPHBINDS = 'rg_glyph_bindings_v1';
 
   const LS_GLYPHSTYLE = 'rg_glyph_style_v1';
+// v022_p07_view_unicode_glyphs_and_lead_palette_sets: grapheme-safe glyph normalization
+let _rgGraphemeSegmenter = null;
+
+function _rgFirstGraphemeCluster(str) {
+  try {
+    if (typeof str !== 'string') return '';
+    if (!str.length) return '';
+    if (typeof Intl !== 'undefined' && Intl && Intl.Segmenter) {
+      if (!_rgGraphemeSegmenter) {
+        try { _rgGraphemeSegmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' }); } catch (_) { _rgGraphemeSegmenter = null; }
+      }
+      if (_rgGraphemeSegmenter) {
+        const it = _rgGraphemeSegmenter.segment(str)[Symbol.iterator]();
+        const first = it.next();
+        if (first && !first.done && first.value) return String(first.value.segment || '');
+      }
+    }
+  } catch (_) {}
+  try {
+    const a = Array.from(String(str || ''));
+    return (a && a.length) ? String(a[0] || '') : '';
+  } catch (_) { return ''; }
+}
+
+// Reject empty/whitespace-only; fail-open by taking only the first grapheme cluster.
+function normalizeGlyphClusterInput(str) {
+  try {
+    if (typeof str !== 'string') return '';
+    if (!str.length) return '';
+    if (str.trim().length === 0) return '';
+    const g = _rgFirstGraphemeCluster(str);
+    return (g && g.trim().length) ? g : '';
+  } catch (_) {
+    return '';
+  }
+}
+
   function loadGlyphBindings() {
     state.glyphBindings = {};
     const raw = safeGetLS(LS_GLYPHBINDS);
@@ -19668,7 +22600,8 @@ function pianoNoteFromScaleKey(key) {
         const bell = parseInt(k, 10);
         if (!isFinite(bell) || bell < 1 || bell > 12) continue;
         const val = parsed[k];
-        if (typeof val === 'string' && val.length === 1) state.glyphBindings[bell] = val;
+        const g = normalizeGlyphClusterInput(val);
+        if (g) state.glyphBindings[bell] = g;
       }
     }
   }
@@ -19689,7 +22622,8 @@ function pianoNoteFromScaleKey(key) {
       const bell = parseInt(k, 10);
       if (!isFinite(bell) || bell < 1 || bell > 12) continue;
       const v = state.glyphBindings[k];
-      if (typeof v === 'string' && v.length === 1) cleaned[bell] = v;
+      const g = normalizeGlyphClusterInput(v);
+      if (g) cleaned[bell] = g;
     }
     state.glyphBindings = cleaned;
   }
@@ -19795,7 +22729,8 @@ function pianoNoteFromScaleKey(key) {
     const v = (state.glyphBindings && Object.prototype.hasOwnProperty.call(state.glyphBindings, b))
       ? state.glyphBindings[b]
       : null;
-    return (typeof v === 'string' && v.length === 1) ? v : bellToGlyph(b);
+    const g = normalizeGlyphClusterInput(v);
+    return g ? g : bellToGlyph(b);
   }
 
   function getBellGlyphColor(bell) {
@@ -19845,7 +22780,8 @@ function pianoNoteFromScaleKey(key) {
     const v = (state.glyphBindings && Object.prototype.hasOwnProperty.call(state.glyphBindings, bell))
       ? state.glyphBindings[bell]
       : null;
-    return (typeof v === 'string' && v.length === 1) ? v : bellToGlyph(bell);
+    const g = normalizeGlyphClusterInput(v);
+    return g ? g : bellToGlyph(bell);
   }
 
   // v013_p01a_glyph_binding_allow_modifiers_and_paste:
@@ -19869,14 +22805,15 @@ function pianoNoteFromScaleKey(key) {
     return el;
   }
 
-  // Deterministic rule: the glyph is the FIRST character of the typed/pasted text.
+  // Deterministic rule: the glyph is the FIRST grapheme cluster of the typed/pasted text.
   function applyGlyphCaptureText(text) {
-    const g = (typeof text === 'string' && text.length) ? text[0] : '';
+    const g = normalizeGlyphClusterInput(text);
     const bell = state.glyphCaptureBell;
-    if (bell != null && g && g.length === 1) {
+    if (bell != null && g) {
       if (!state.glyphBindings || typeof state.glyphBindings !== 'object') state.glyphBindings = {};
       state.glyphBindings[bell] = g;
       saveGlyphBindings();
+      try { commitSelectedSoundProfileGlyphsFromState(); } catch (_) {}
     }
     state.glyphCaptureBell = null;
     blurGlyphCaptureInput();
@@ -20072,6 +23009,7 @@ function pianoNoteFromScaleKey(key) {
         if (!state.glyphBindings || typeof state.glyphBindings !== 'object') state.glyphBindings = {};
         state.glyphBindings[bell] = ch;
         saveGlyphBindings();
+        try { commitSelectedSoundProfileGlyphsFromState(); } catch (_) {}
         closeGlyphPicker();
         rebuildKeybindPanel();
       });
@@ -20168,6 +23106,7 @@ function pianoNoteFromScaleKey(key) {
       ensureGlyphStyleState();
       state.glyphStyle.defaultColor = normalizeHexColor(globalColorInput.value);
       saveGlyphStyle();
+      try { commitSelectedSoundProfileGlyphsFromState(); } catch (_) {}
       rebuildKeybindPanel();
     });
 
@@ -20187,6 +23126,7 @@ function pianoNoteFromScaleKey(key) {
       ensureGlyphStyleState();
       state.glyphStyle.defaultColor = '';
       saveGlyphStyle();
+      try { commitSelectedSoundProfileGlyphsFromState(); } catch (_) {}
       rebuildKeybindPanel();
     });
 
@@ -20307,6 +23247,7 @@ function pianoNoteFromScaleKey(key) {
         const c = normalizeHexColor(colorInput.value);
         if (c) state.glyphStyle.bellColors[b] = c;
         saveGlyphStyle();
+        try { commitSelectedSoundProfileGlyphsFromState(); } catch (_) {}
         rebuildKeybindPanel();
       });
 
@@ -20328,6 +23269,7 @@ function pianoNoteFromScaleKey(key) {
           delete state.glyphStyle.bellColors[b];
         }
         saveGlyphStyle();
+        try { commitSelectedSoundProfileGlyphsFromState(); } catch (_) {}
         rebuildKeybindPanel();
       });
 
@@ -20344,6 +23286,7 @@ function pianoNoteFromScaleKey(key) {
         if (co.checked) state.glyphStyle.colorOnly[b] = true;
         else if (state.glyphStyle.colorOnly && Object.prototype.hasOwnProperty.call(state.glyphStyle.colorOnly, b)) delete state.glyphStyle.colorOnly[b];
         saveGlyphStyle();
+        try { commitSelectedSoundProfileGlyphsFromState(); } catch (_) {}
         rebuildKeybindPanel();
       });
       coLabel.appendChild(co);
@@ -20442,6 +23385,7 @@ function pianoNoteFromScaleKey(key) {
         if (touched) {
           saveGlyphBindings();
           saveGlyphStyle();
+          try { commitSelectedSoundProfileGlyphsFromState(); } catch (_) {}
         }
         rebuildKeybindPanel();
       });
@@ -20596,9 +23540,9 @@ function pianoNoteFromScaleKey(key) {
   // v06_p15_notation_single_page_mode
   function syncNotationLayoutUI() {
     let v = safeGetLS(LS_NOTATION_LAYOUT);
-    if (!v) v = isMobileLikely() ? 'one_page' : 'two_page';
+    if (!v) v = 'two_page';
     v = String(v);
-    if (!(v === 'two_page' || v === 'one_page')) v = isMobileLikely() ? 'one_page' : 'two_page';
+    if (!(v === 'two_page' || v === 'one_page')) v = 'two_page';
 
     ui.notationLayout = v;
     if (notationLayoutSelect) notationLayoutSelect.value = v;
@@ -20635,7 +23579,38 @@ function pianoNoteFromScaleKey(key) {
     }
   }
 
-  // v09_p07b_notation_spotlight_accuracy_dots: preferences + UI
+  
+// v022_p07_view_unicode_glyphs_and_lead_palette_sets: lead overlay palette/colors persistence (View)
+function loadLeadOverlayPrefs() {
+  // Palette key (string)
+  try {
+    const pkRaw = safeGetLS(LS_LEAD_OVERLAY_PALETTE);
+    if (pkRaw != null) state.leadOverlayPaletteKey = normalizeLeadOverlayPaletteKey(pkRaw);
+  } catch (_) {}
+
+  // Colors (JSON array)
+  try {
+    const raw = safeGetLS(LS_LEAD_OVERLAY_COLORS);
+    const parsed = raw ? safeJsonParse(raw) : null;
+    if (Array.isArray(parsed)) {
+      state.leadOverlayColors = parsed.slice();
+      // Pre-v022_p07 (or manual) without palette key -> treat as Custom.
+      try {
+        if (safeGetLS(LS_LEAD_OVERLAY_PALETTE) == null) state.leadOverlayPaletteKey = 'custom';
+      } catch (_) {}
+    }
+  } catch (_) {}
+
+  // Normalize key (fail-open)
+  try { state.leadOverlayPaletteKey = normalizeLeadOverlayPaletteKey(state.leadOverlayPaletteKey || 'default'); } catch (_) { state.leadOverlayPaletteKey = 'default'; }
+}
+
+function saveLeadOverlayPrefs() {
+  try { safeSetLS(LS_LEAD_OVERLAY_PALETTE, normalizeLeadOverlayPaletteKey(state.leadOverlayPaletteKey) || 'default'); } catch (_) {}
+  try { safeSetLS(LS_LEAD_OVERLAY_COLORS, JSON.stringify(Array.isArray(state.leadOverlayColors) ? state.leadOverlayColors : [])); } catch (_) {}
+}
+
+// v09_p07b_notation_spotlight_accuracy_dots: preferences + UI
   function loadAccuracyDotsPrefs() {
     const raw = safeGetLS(LS_ACCURACY_DOTS);
     const j = safeJsonParse(raw || '');
@@ -21188,7 +24163,8 @@ function pianoNoteFromScaleKey(key) {
         applySoundProfileRuntime(profIdx);
       }
     } catch (_) {}
-playBellAt(bell, now);
+    // v022_p04_mute_method_and_optional_mute_user_bells: mute user bell audio during Play/Demo runs only.
+    if (!(state.muteUserBells && (state.mode === 'play' || state.mode === 'demo') && (state.phase === 'running' || state.phase === 'countdown'))) playBellAt(bell, now);
     // v09_p09_p01_first_hit_window_fix: during the countdown→running boundary,
     // the first scoring window can begin before state.phase flips to 'running'.
     // Let scoreHit decide eligibility based on the timing reference.
@@ -22175,7 +25151,16 @@ playBellAt(bell, now);
   // === Notation ===
   const PATH_STYLES = [[ ], [8,4], [2,6], [10,4,2,4], [4,4], [1,3], [12,5,3,5]];
 
-  function getNotationPagingMeta() {
+  
+  // v022_p13_view_menu_reorg_defaults_and_setup_notation_browser: Setup notation browsing forces two-page spread while open
+  function getEffectiveNotationLayout() {
+    try {
+      if (ui && ui.screen === 'play' && setupNotationDetails && setupNotationDetails.open) return 'two_page';
+    } catch (_) {}
+    return ui.notationLayout;
+  }
+
+function getNotationPagingMeta() {
     const pageSize = Math.max(1, Number(state.notationPageSize) || 1);
     const rowsLen = (state.rows && state.rows.length) ? state.rows.length : 0;
     const totalPages = Math.ceil(rowsLen / pageSize);
@@ -22190,7 +25175,7 @@ playBellAt(bell, now);
     if (!notationPrevBtn || !notationNextBtn) return;
 
     const { totalPages, lastLeft, lastPage } = getNotationPagingMeta();
-    const onePage = (ui.notationLayout === 'one_page');
+    const onePage = (getEffectiveNotationLayout() === 'one_page');
     let changed = false;
 
     const prevPage = ui.notationPage;
@@ -22252,7 +25237,7 @@ playBellAt(bell, now);
     ui.notationFollow = false;
     const prevPage = Number(ui.notationPage) || 0;
     const { lastLeft, lastPage } = getNotationPagingMeta();
-    const onePage = (ui.notationLayout === 'one_page');
+    const onePage = (getEffectiveNotationLayout() === 'one_page');
     // v08_p03_two_page_present_peek: in two-page mode, arrows turn the PRESENT page by one page.
     const delta = 1;
     const maxP = onePage ? lastPage : lastLeft;
@@ -22282,7 +25267,7 @@ playBellAt(bell, now);
     const strikeIdx = clamp(state.execBeatIndex - 1, 0, Math.max(0, totalBeats - 1));
     const activeRowIdx = Math.floor(strikeIdx / stage);
 
-    const onePage = (ui.notationLayout === 'one_page');
+    const onePage = (getEffectiveNotationLayout() === 'one_page');
     const pad = 14;
     const gap = onePage ? 0 : 14;
     const pageW = onePage ? (W - pad * 2) : ((W - pad * 2 - gap) / 2);
@@ -22881,7 +25866,7 @@ if (state.leadOverlayEnabled) {
     const H = rect.height;
     const stage = state.stage;
 
-    const onePage = (ui.notationLayout === 'one_page');
+    const onePage = (getEffectiveNotationLayout() === 'one_page');
     const pad = 14;
     const gap = onePage ? 0 : 14;
     const pageW = onePage ? (W - pad * 2) : ((W - pad * 2 - gap) / 2);
@@ -24027,6 +27012,7 @@ if (state.leadOverlayEnabled) {
     const liveSet = new Set(state.liveBells);
 
     const isDemo = state.mode === 'demo';
+    let muteBots = !!state.muteMethodBells && (state.mode === 'play' || state.mode === 'demo');
     const horizonMs = isDemo ? demoEffectiveHorizonMs() : Math.max(LOOKAHEAD_MS, getMaintenanceIntervalMs());
     let schedThisPass = 0;
 
@@ -24039,10 +27025,12 @@ if (state.leadOverlayEnabled) {
           const leadIdx = leadIndexForRow(rowIdx);
           const profIdx = resolveRuntimeProfileIndexForLeadIdx(leadIdx);
           applySoundProfileRuntime(profIdx);
+          // v022_p12_profiles_per_profile_mutes_and_glyphs: per-profile mute method applies immediately
+          muteBots = !!state.muteMethodBells && (state.mode === 'play' || state.mode === 'demo');
         }
 
         const bell = getBellForStrikeIndex(state.schedBeatIndex);
-        if (state.mode === 'demo' || !liveSet.has(bell)) playBellAt(bell, tMs);
+        if (!muteBots && (isDemo || !liveSet.has(bell))) playBellAt(bell, tMs);
         state.schedBeatIndex += 1;
         if (isDemo) schedThisPass += 1;
       } else break;
@@ -24107,17 +27095,39 @@ if (state.leadOverlayEnabled) {
     const useRAF = shouldUseRAFForRender();
 
     const screenIsGame = (ui && ui.screen === 'game');
+    const screenIsSetup = (ui && ui.screen === 'play');
+    const setupNotationOpen = !!(setupNotationDetails && setupNotationDetails.open);
 
-    if (screenIsGame && (needsRedraw || useRAF)) {
-      renderCountdownOverlay(nowMs);
+    if ((screenIsGame || (screenIsSetup && setupNotationOpen)) && (needsRedraw || useRAF)) {
+      if (screenIsGame) {
+        renderCountdownOverlay(nowMs);
 
-      if (viewDisplay.checked) drawDisplay(nowMs);
-      if (viewSpotlight.checked) drawSpotlight(nowMs);
-      if (viewNotation.checked) drawNotation();
-      if (viewStats.checked) renderStats(nowMs);
+        if (viewDisplay.checked) drawDisplay(nowMs);
+        if (viewSpotlight.checked) drawSpotlight(nowMs);
+        if (viewNotation.checked) drawNotation();
+        if (viewStats.checked) {
+          let doStats = true;
+          if (useRAF) {
+            const first = (ui.lastStatsRenderMs === 0);
+            const beatKey = (state.phase + '|' + state.execBeatIndex + '|' + state.countExec);
+            const beatChanged = (ui.lastStatsBeatKey !== beatKey);
+            const activeRun = (state.phase === 'running' || state.phase === 'countdown');
+            const timeDue = (!first && (nowMs - ui.lastStatsRenderMs) >= 200);
+            doStats = first || beatChanged || (activeRun && timeDue);
+            if (doStats) {
+              ui.lastStatsBeatKey = beatKey;
+              ui.lastStatsRenderMs = nowMs;
+            }
+          }
+          if (doStats) renderStats(nowMs);
+        }
+      } else {
+        // Setup-only notation browsing (no gameplay visuals here).
+        drawNotation();
+      }
       needsRedraw = false;
-    } else if (!screenIsGame && needsRedraw) {
-      // Game screen is hidden; avoid zero-size canvas layout work until shown.
+    } else if (!(screenIsGame || (screenIsSetup && setupNotationOpen)) && needsRedraw) {
+      // Game screen is hidden (or Setup notation is closed); avoid zero-size canvas layout work until shown.
       needsRedraw = false;
     }
 
@@ -24280,13 +27290,66 @@ if (state.leadOverlayEnabled) {
       return;
     }
   });
+  // Display tap/drag: ring bells by tapping, or by dragging across bells while pressed.
+  // v022_p01_game_ui_footer_privacy_display_drag
+  function endDisplayDrag(evt) {
+    if (!ui.displayDragActive) return;
+    if (evt && ui.displayDragPointerId != null && evt.pointerId !== ui.displayDragPointerId) return;
+    const pid = ui.displayDragPointerId;
+    ui.displayDragActive = false;
+    ui.displayDragPointerId = null;
+    ui.displayDragLastBell = null;
+    if (pid != null) {
+      try { displayCanvas.releasePointerCapture(pid); } catch (_) {}
+    }
+  }
 
-  // Display tap: ring the tapped bell (standard touch control).
   displayCanvas.addEventListener('pointerdown', (e) => {
     const bell = displayHitTest(e.clientX, e.clientY);
-    if (bell != null) { e.preventDefault(); if (tryCaptureAnyInput(perfNow(), 'tap', e, null)) return; markRunInputUsed('tap'); ringBell(bell); }
+    if (bell == null) return;
+
+    // If another pointer is already dragging, ignore additional touches.
+    if (ui.displayDragActive && ui.displayDragPointerId != null && e.pointerId !== ui.displayDragPointerId) return;
+
+    ui.displayDragActive = true;
+    ui.displayDragPointerId = e.pointerId;
+    ui.displayDragLastBell = bell;
+    try { displayCanvas.setPointerCapture(e.pointerId); } catch (_) {}
+
+    e.preventDefault();
+    if (tryCaptureAnyInput(perfNow(), 'tap', e, null)) return;
+    markRunInputUsed('tap');
+    ringBell(bell);
   });
 
+  displayCanvas.addEventListener('pointermove', (e) => {
+    if (!ui.displayDragActive) return;
+    if (ui.displayDragPointerId != null && e.pointerId !== ui.displayDragPointerId) return;
+
+    const bell = displayHitTest(e.clientX, e.clientY);
+    if (bell == null) {
+      ui.displayDragLastBell = null;
+      e.preventDefault();
+      return;
+    }
+
+    if (bell === ui.displayDragLastBell) {
+      e.preventDefault();
+      return;
+    }
+    ui.displayDragLastBell = bell;
+
+    if (!tryCaptureAnyInput(perfNow(), 'tap', e, null)) { markRunInputUsed('tap'); ringBell(bell); }
+
+    e.preventDefault();
+  });
+
+  displayCanvas.addEventListener('pointerup', endDisplayDrag);
+  displayCanvas.addEventListener('pointercancel', endDisplayDrag);
+
+  // Safety net: if capture fails, still end the gesture when the pointer finishes elsewhere.
+  window.addEventListener('pointerup', endDisplayDrag);
+  window.addEventListener('pointercancel', endDisplayDrag);
   // v06_p13_notation_touch_polish: tap + drag-across-to-ring on notation (both pages)
   function endNotationDrag(evt) {
     if (!ui.notationDragActive) return;
@@ -24560,7 +27623,9 @@ if (state.leadOverlayEnabled) {
     } catch (_) {}
     try {
       if (liveCountSelect) {
-        liveCountSelect.value = '1';
+        // v022_p14_setup_method_input_pn_lh_and_default_live_bells_2: reset to two live bells (1 and 2).
+        try { state.liveBells = []; } catch (_) {}
+        liveCountSelect.value = '2';
         liveCountSelect.dispatchEvent(new Event('change', { bubbles: true }));
       }
     } catch (_) {}
@@ -24623,6 +27688,10 @@ if (state.leadOverlayEnabled) {
 
     // "Display scored bell(s) only" (persisted; special default when missing).
     try { safeDelLS(LS_DISPLAY_LIVE_BELLS_ONLY); } catch (_) {}
+    // Lead overlay palette/colors (persisted)
+    try { safeDelLS(LS_LEAD_OVERLAY_COLORS); } catch (_) {}
+    try { safeDelLS(LS_LEAD_OVERLAY_PALETTE); } catch (_) {}
+
 
     // Accuracy dots (persisted; pristine default keeps Spotlight dots OFF, so persist that explicitly).
     try { safeDelLS(LS_ACCURACY_DOTS); } catch (_) {}
@@ -24634,12 +27703,15 @@ if (state.leadOverlayEnabled) {
     state.spotlightShowN2 = true;
     state.notationSwapsOverlay = true;
     state.displayLiveBellsOnly = true;
+    // v022_p13_view_menu_reorg_defaults_and_setup_notation_browser: Line (blue line) default OFF
+    try { setPathNone(); } catch (_) { state.pathBells = []; try { rebuildPathPicker(); } catch (_) {} }
 // v019_p08_lead_range_editor: reset lead ranges to auto detection
 state.leadsV1 = { mode: 'auto', ranges: [] };
 try { normalizeLeadsV1AfterRows(); } catch (_) {}
 
-// v019_p01_lead_overlay: reset lead overlay (enabled off, colors to defaults for current method)
-state.leadOverlayEnabled = false;
+// v019_p01_lead_overlay: reset lead overlay (enabled on, colors to defaults for current method)
+state.leadOverlayEnabled = true;
+state.leadOverlayPaletteKey = 'default';
 try { state.leadOverlayColors = getDefaultLeadOverlayColors(getLeadCount()); } catch (_) { state.leadOverlayColors = []; }
 
     try { normalizeV19LeadAndProfileStateAfterRows(); } catch (_) {}
@@ -24668,7 +27740,65 @@ try { state.leadOverlayColors = getDefaultLeadOverlayColors(getLeadCount()); } c
     kickLoop();
   }
 
-  function restoreSoundDefaults() {
+  
+  // v022_p02_sound_reset_drones_test_btn_geometry: Drone-only restore (mirror drone portion of restoreSoundDefaults).
+  function restoreDroneDefaultsOnly() {
+    // Stop any currently playing drones so changes are immediate & safe.
+    try { stopDrone(); } catch (_) {}
+
+    // Clear ONLY drone-related persistence keys (keep bell/polyrhythm/master FX/etc unchanged).
+    try {
+      safeDelLS(LS_DRONE_ON);
+      safeDelLS(LS_DRONE_OCTAVE_C);
+      safeDelLS(LS_DRONE_VARIANTS);
+      safeDelLS(LS_DRONE_LAYERS);
+      // Legacy drone inference keys (boot migration). Clear so "Off" is truly default.
+      safeDelLS('rg_drone_type_v1');
+      safeDelLS('rg_drone_type');
+    } catch (_) {}
+
+    // Drone defaults.
+    try {
+      state.droneOn = false;
+      state.droneType = 'single';
+      state.droneScaleKey = 'Fs_major';
+      state.droneLastKeyScaleKey = (SCALE_LIBRARY.find(s => s.key === 'Fs_major')
+        ? 'Fs_major'
+        : (SCALE_LIBRARY[0] ? SCALE_LIBRARY[0].key : 'Fs_major'));
+      state.droneOctaveC = 3;
+      state.droneCustomHz = 440;
+      state.droneVolume = 50;
+      state.dronePaused = false;
+
+      state.droneNormalize = true;
+      state.droneDensity = 3;
+      state.droneDensityByType = {};
+      state.droneDriftCents = 0;
+      state.droneMotionRate = 0;
+      state.droneClusterWidth = 3;
+      state.droneNoiseTilt = 0;
+      state.droneNoiseQ = 1;
+
+      state.droneOwner = 'run';
+      state.dronesEnabled = false;
+      state.dronesPaused = false;
+      state.dronesMasterVolume = 50;
+      state.droneLayers = null;
+
+      loadDroneVariantsFromLS();
+      if (!loadDroneLayersFromLS()) {
+        ensureDroneLayersState();
+        saveDroneLayersToLS();
+      }
+
+      syncDroneOnOffUI();
+      syncDroneVariantsUI();
+      rebuildDroneLayersUI();
+      syncDronePauseBtnUI();
+    } catch (_) {}
+  }
+
+function restoreSoundDefaults() {
     // Safe during an active run: stop/cancel non-base audio only (poly test + drone), leave scoring unchanged.
     try { stopPolyrhythmTest(); } catch (_) {}
     try { cancelScheduledPolyAudioNow(); } catch (_) {}
@@ -24690,6 +27820,8 @@ try { state.leadOverlayColors = getDefaultLeadOverlayColors(getLeadCount()); } c
       safeDelLS(LS_SPATIAL_DEPTH_MODE);
       safeDelLS(LS_GLOBAL_CHORD);
       safeDelLS(LS_MASTER_FX);
+      safeDelLS(LS_MUTE_METHOD_BELLS);
+      safeDelLS(LS_MUTE_USER_BELLS);
       safeDelLS(LS_DRONE_ON);
       safeDelLS(LS_DRONE_OCTAVE_C);
       safeDelLS(LS_DRONE_VARIANTS);
@@ -24719,6 +27851,10 @@ try { state.leadOverlayColors = getDefaultLeadOverlayColors(getLeadCount()); } c
       state.bellPitchFifthsShape = 'folded';
       state.bellPitchPartialsShape = 'ladder';
       state.bellVolume = 100;
+      state.muteMethodBells = false;
+      state.muteUserBells = false;
+      try { syncSoundMuteTogglesUI(); } catch (_) {}
+
 
       // Global bell timbre defaults.
       state.bellRingLength = 0.5;
@@ -24863,6 +27999,7 @@ try { state.leadOverlayColors = getDefaultLeadOverlayColors(getLeadCount()); } c
 
     computeRows(); resetStats();
     syncGameHeaderMeta();
+    try { syncManualMethodInputsFromState(); } catch (_) {}
   });
 
   bellCountSelect.addEventListener('change', () => {
@@ -25002,6 +28139,9 @@ try { state.leadOverlayColors = getDefaultLeadOverlayColors(getLeadCount()); } c
   [viewDisplay, viewSpotlight, viewNotation, viewStats, viewMic].forEach(cb => cb.addEventListener('change', () => {
     markUserTouchedConfig();
     syncViewLayout();
+    // v022_p20_stats_render_throttle_raf: ensure Stats pane refreshes immediately after toggles.
+    ui.lastStatsRenderMs = 0;
+    ui.lastStatsBeatKey = null;
   }));
 
   // v09_p07b_notation_spotlight_accuracy_dots
@@ -25081,7 +28221,9 @@ if (leadOverlayToggle) {
 if (resetLeadColorsBtn) {
   resetLeadColorsBtn.addEventListener('click', () => {
     markUserTouchedConfig();
+    state.leadOverlayPaletteKey = 'default';
     state.leadOverlayColors = getDefaultLeadOverlayColors(getLeadCount());
+    try { saveLeadOverlayPrefs(); } catch (_) {}
     syncLeadOverlayControlsUI();
     markDirty();
     kickLoop();
@@ -26148,6 +29290,27 @@ if (clearLeadsBtn) {
     restoreSoundDefaults();
   });
 
+  // v022_p04_mute_method_and_optional_mute_user_bells
+  if (muteMethodBellsChk) muteMethodBellsChk.addEventListener('change', () => {
+    markUserTouchedConfig();
+    state.muteMethodBells = !!muteMethodBellsChk.checked;
+    saveSoundMuteTogglesToLS();
+    try { commitSelectedSoundProfileMutesFromState(); } catch (_) {}
+  });
+
+  if (muteUserBellsChk) muteUserBellsChk.addEventListener('change', () => {
+    markUserTouchedConfig();
+    state.muteUserBells = !!muteUserBellsChk.checked;
+    saveSoundMuteTogglesToLS();
+    try { commitSelectedSoundProfileMutesFromState(); } catch (_) {}
+  });
+
+
+  if (resetDronesBtn) resetDronesBtn.addEventListener('click', () => {
+    markUserTouchedConfig();
+    restoreDroneDefaultsOnly();
+  });
+
   // v019_p02_sound_profiles_tabs: Sound Profiles tab actions
   if (soundProfilesTabs) soundProfilesTabs.addEventListener('change', () => {
     try { ensureSoundProfilesV1Exists(); } catch (_) {}
@@ -26330,6 +29493,7 @@ if (temperamentSelect) {
     state.bellVolume = clamp(parseInt(bellVolume.value, 10) || 0, 0, 100);
     applyBellMasterGain();
     try { syncBellOverridesEffectiveUI(); } catch (_) {}
+    try { syncSoundMasterFxSummaryUI(); } catch (_) {}
   });
 
   // v014_p05a_bell_timbre_global (Sound → Bells: global bell timbre)
@@ -26818,13 +29982,19 @@ if (spatialDepthModeSelect) {
     markUserTouchedConfig();
 
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       if (isXml) {
         // XML: attempt to parse a single CCCBR-style method.
         try {
           const m = parseCCCBRSingleMethod(String(ev.target.result), name);
-          const rows = cccbRowsFromPn(m.stage, m.pn, 5);
-          if (!rows || !rows.length) throw new Error('Could not generate rows from place notation.');
+          const gen = await cccbGenerateMethodRowsFromPnFullCycleCapped(m.stage, m.pn, {});
+const rows = (gen && gen.rows) ? gen.rows : null;
+if (!rows || !rows.length) throw new Error('Could not generate rows from place notation.');
+
+const lc = (gen && isFinite(gen.leadsDone) && gen.leadsDone > 0) ? Math.floor(gen.leadsDone) : 5;
+const warn = (gen && gen.rowsCapped) ? ('⚠ Rows capped at ' + gen.rowsCap + ' (generated ' + gen.rowsGenerated + '); method may be incomplete.') : '';
+const warn2 = (!warn && gen && gen.error) ? '⚠ Place notation could not generate a full cycle; using fallback rows.' : '';
+
 
           state.method = 'custom';
           methodSelect.value = 'custom';
@@ -26832,7 +30002,7 @@ if (spatialDepthModeSelect) {
           state.stage = clamp(m.stage, 4, 12);
 
           state.methodSource = 'custom_rows';
-          state.methodMeta = { fileName: name || '', title: m.title || '', leadCount: 5 };
+          state.methodMeta = { fileName: name || '', title: m.title || '', leadCount: Math.max(1, lc), cycleWarning: (warn || warn2) };
 
           if (bellCountSelect) bellCountSelect.value = String(state.stage);
 
@@ -26890,6 +30060,124 @@ if (spatialDepthModeSelect) {
     };
     reader.readAsText(file);
   });
+// v022_p14_setup_method_input_pn_lh_and_default_live_bells_2: manual Place notation + Lead head input workflow.
+if (methodInputBtn) methodInputBtn.addEventListener('click', async () => {
+  // Setup changes can invalidate the active run; follow the same stop-first behavior as normal Setup edits.
+  try { markUserTouchedConfig(); } catch (_) {}
+  try { ensureIdleForPlayChange(); } catch (_) {}
+
+  const pnRaw = methodPnInput ? String(methodPnInput.value || '') : '';
+  const pn = pnRaw.trim();
+  const lhRaw = methodLhInput ? String(methodLhInput.value || '') : '';
+  let lh = lhRaw.trim();
+
+  if (!pn) {
+    alert('Place notation is required.');
+    return;
+  }
+
+  // Validate PN tokens (fail-open).
+  let tokens = null;
+  try { tokens = cccbParsePnTokens(pn); } catch (_) { tokens = null; }
+  if (!tokens || !tokens.length) {
+    alert('Invalid place notation.');
+    return;
+  }
+
+  const stage = clamp(parseInt(state.stage, 10) || 6, 4, 12);
+
+  // Auto-generate LH if missing (deterministic; do not throw).
+  let didAutoLh = false;
+  if (!lh) {
+    didAutoLh = true;
+    try {
+      let row = [];
+      for (let i = 1; i <= stage; i++) row.push(i);
+      for (const t of tokens) row = cccbApplyPn(row, stage, t);
+      lh = (Array.isArray(row) && row.length === stage) ? row.map(bellToCCCBRChar).join('') : '';
+    } catch (_) { lh = ''; }
+    try { if (methodLhInput) methodLhInput.value = lh; } catch (_) {}
+  }
+
+  // Generate full-cycle rows (capped, fail-open fallback handled by helper).
+  let gen = null;
+  try { gen = await cccbGenerateMethodRowsFromPnFullCycleCapped(stage, pn, {}); } catch (e) {
+    const msg = (e && e.message) ? String(e.message) : String(e || 'Generation failed.');
+    gen = { rows: [], done: false, rowsCapped: false, rowsCap: 0, rowsGenerated: 0, leadsDone: 0, capReason: '', error: msg };
+  }
+
+  const rows = (gen && Array.isArray(gen.rows)) ? gen.rows : null;
+  if (!rows || !rows.length) {
+    alert('Could not generate rows from place notation.');
+    return;
+  }
+
+  const lc = (gen && isFinite(gen.leadsDone) && gen.leadsDone > 0) ? Math.floor(gen.leadsDone) : 5;
+  const warn = (gen && gen.rowsCapped) ? ('⚠ Rows capped at ' + gen.rowsCap + ' (generated ' + gen.rowsGenerated + '); method may be incomplete.') : '';
+  const warn2 = (!warn && gen && gen.error) ? '⚠ Place notation could not generate a full cycle; using fallback rows.' : '';
+
+  // Apply as a playable custom method immediately.
+  state.method = 'custom';
+  if (methodSelect) methodSelect.value = 'custom';
+  state.customRows = rows.slice();
+  state.methodSource = 'custom_rows';
+  state.methodMeta = {
+    fileName: 'Manual input',
+    title: '',
+    pn: pn,
+    lh: lh,
+    inputType: 'manual_pn_lh',
+    leadCount: Math.max(1, lc),
+    cycleWarning: (warn || warn2)
+  };
+
+  if (bellCountSelect) bellCountSelect.value = String(state.stage);
+
+  rebuildLiveCountOptions();
+  ensureLiveBells();
+  rebuildBellPicker();
+  ensurePathBells();
+  rebuildPathPicker();
+  computeRows();
+  resetStats();
+  rebuildBellFrequencies();
+  rebuildBellOverridesUI();
+
+  syncGameHeaderMeta();
+  renderScoringExplanation();
+  try { syncManualMethodInputsFromState(); } catch (_) {}
+
+  // Success UX
+  if (didAutoLh) alert('Method and auto-generated lead head successfully inputted.');
+  else alert('Method and lead head successfully inputted.');
+
+  // Cap/fallback warning (v022_p10 behavior: accept but warn)
+  if (warn || warn2) alert(warn || warn2);
+
+  // Optional title/author prompts
+  try {
+    if (confirm('Would you like to give it a title and author?')) {
+      const t0 = (state.methodMeta && state.methodMeta.title) ? String(state.methodMeta.title) : '';
+      const a0 = (state.methodMeta && state.methodMeta.attributionAuthor) ? String(state.methodMeta.attributionAuthor) : '';
+      const t = prompt('Title:', t0);
+      if (t !== null) {
+        const tt = String(t).trim();
+        try { state.methodMeta.title = tt; } catch (_) {}
+        // Use title as the display name when present.
+        if (tt) { try { state.methodMeta.fileName = tt; } catch (_) {} }
+      }
+      const a = prompt('Author:', a0);
+      if (a !== null) {
+        const aa = String(a).trim();
+        try { state.methodMeta.attributionAuthor = aa; } catch (_) {}
+      }
+      syncGameHeaderMeta();
+    }
+  } catch (_) {}
+
+  markDirty();
+  kickLoop();
+});
 
   if (xmlInput) {
     xmlInput.addEventListener('change', async (e) => {
@@ -26941,6 +30229,16 @@ if (spatialDepthModeSelect) {
 
   if (notationPrevBtn) notationPrevBtn.addEventListener('click', notationPrevPressed);
   if (notationNextBtn) notationNextBtn.addEventListener('click', notationNextPressed);
+
+
+  // v022_p13_view_menu_reorg_defaults_and_setup_notation_browser: Setup Notation pane toggle -> redraw
+  if (setupNotationDetails) {
+    setupNotationDetails.addEventListener('toggle', () => {
+      try { syncNotationPagingUI(); } catch (_) {}
+      markDirty();
+      kickLoop();
+    });
+  }
 
   startBtn.addEventListener('click', () => startPressed('play'));
   if (pauseBtn) pauseBtn.addEventListener('click', togglePause);
@@ -27075,6 +30373,13 @@ if (spatialDepthModeSelect) {
 
     
     loadGlyphStyle();
+
+    // v022_p12_profiles_per_profile_mutes_and_glyphs: capture session fallback glyph state (non-persisted)
+    try {
+      if (ui && ui._profilesFallbackGlyphBindings == null) ui._profilesFallbackGlyphBindings = deepCloneJsonable((state && state.glyphBindings && typeof state.glyphBindings === 'object') ? state.glyphBindings : {});
+      if (ui && ui._profilesFallbackGlyphStyle == null) ui._profilesFallbackGlyphStyle = deepCloneJsonable((state && state.glyphStyle && typeof state.glyphStyle === 'object') ? state.glyphStyle : { defaultColor: '', bellColors: {}, colorOnly: {} });
+    } catch (_) {}
+
 // v10_p01_polish_defaults_privacy_home_buttons: pristine Play key defaults
     // Space rings bell 1; Enter rings bell 2 (only when no saved keybinds exist).
     if (pristineLS && safeGetLS(LS_KEYBINDS) == null) {
@@ -27318,6 +30623,15 @@ if (spatialDepthModeSelect) {
     syncDroneVariantsUI();
     loadMasterFxFromLS();
     syncMasterFxUI();
+    loadSoundMuteTogglesFromLS();
+    syncSoundMuteTogglesUI();
+
+    // v022_p12_profiles_per_profile_mutes_and_glyphs: capture session fallback mute state (non-persisted)
+    try {
+      if (ui && ui._profilesFallbackMuteMethodBells == null) ui._profilesFallbackMuteMethodBells = !!state.muteMethodBells;
+      if (ui && ui._profilesFallbackMuteUserBells == null) ui._profilesFallbackMuteUserBells = !!state.muteUserBells;
+    } catch (_) {}
+
     // v021_p03_polyrhythm_scope
     loadPolyScopeFromLS();
 
@@ -27354,7 +30668,7 @@ if (spatialDepthModeSelect) {
     rebuildBellPicker();
 
     // View default: line (blue line) = none on pristine sessions
-    state.pathBells = pristineLS ? [] : [1];
+    state.pathBells = [];
     rebuildPathPicker();
 
     computeRows();
@@ -27433,6 +30747,12 @@ if (spatialDepthModeSelect) {
     try { ensureSoundProfilesV1Exists(); } catch (_) {}
     try { syncSoundProfilesUI(); } catch (_) {}
 
+    // Sound: keep other collapsed header summaries in sync.
+    try { syncSoundProfilesSummaryUI(); } catch (_) {}
+    try { syncSoundDroneSummaryUI(); } catch (_) {}
+    try { syncSoundBellSoundSummaryUI(); } catch (_) {}
+    try { syncSoundPolyrhythmSummaryUI(); } catch (_) {}
+    try { syncSoundMasterFxSummaryUI(); } catch (_) {}
 
     ui.isBooting = false;
   }
